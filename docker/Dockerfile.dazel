@@ -1,0 +1,5 @@
+FROM openjdk:8
+
+ADD docker/installBazel /tmp/installBazel
+
+RUN /tmp/installBazel
