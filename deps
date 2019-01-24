@@ -1,0 +1,23 @@
+#!/bin/bash
+
+ROOT=`pwd`
+
+
+BAZEL_DEPS="/tmp/$(echo "$PWD" | sha256sum | awk '{ print $1 }')/.bazel-deps/"
+
+if [ -e $BAZEL_DEPS ]; then
+    if [ ! -d $BAZEL_DEPS ]; then
+        echo "'deps' expects to find 'bazel-deps' in the '$BAZEL_DEPS' folder"
+        echo "or to clone it there. But right now something that is not a directory"
+        echo "exists there"
+        exit 1
+    fi
+    cd "$BAZEL_DEPS"
+else
+    git clone https://github.com/johnynek/bazel-deps.git "$BAZEL_DEPS"
+    cd "$BAZEL_DEPS"
+    git checkout 1af8921d52f053fad575f26762533a3823b4a847
+fi
+
+bazel run //:parse -- generate -r $ROOT -s 3rdparty/workspace.bzl -d dependencies.yaml
+
