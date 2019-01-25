@@ -11,9 +11,7 @@ scala_library(
         "//3rdparty/jvm/io/netty:netty_all",
         "//main/io/iohk/network/telemetry",
         "@codecs//main/io/iohk/codecs",
-        "@crypto//main/io/iohk/crypto",
-        #"//main/io/iohk/cef/error",
-        #"//main/io/iohk/cef/utils",
+        "@crypto//main/io/iohk/crypto"
     ],
 )
 
@@ -40,8 +38,6 @@ scala_test(
         "//3rdparty/jvm/javax/activation:activation",
         "//main/io/iohk/network/telemetry",
         "@codecs//main/io/iohk/codecs",
-        "@crypto//main/io/iohk/crypto",
-        #"//main/io/iohk/cef/test",
-        #"//main/io/iohk/cef/utils",
+        "@crypto//main/io/iohk/crypto"
     ],
 )
