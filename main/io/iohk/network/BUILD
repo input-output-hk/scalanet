@@ -32,10 +32,6 @@ scala_test(
         "//3rdparty/jvm/org/mockito:mockito_core",
         "//3rdparty/jvm/org/scalacheck",
         "//3rdparty/jvm/org/scalatest",
-        "//3rdparty/jvm/javax/xml/bind:jaxb_api",
-        "//3rdparty/jvm/com/sun/xml/bind:jaxb_core",
-        "//3rdparty/jvm/com/sun/xml/bind:jaxb_impl",
-        "//3rdparty/jvm/javax/activation:activation",
         "//main/io/iohk/network/telemetry",
         "@codecs//main/io/iohk/codecs",
         "@crypto//main/io/iohk/crypto"
