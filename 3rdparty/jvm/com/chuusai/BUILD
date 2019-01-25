@@ -10,7 +10,7 @@ scala_import(
         "//external:jar/com/chuusai/shapeless_2_12"
     ],
     visibility = [
-        "//visibility:public"
+        "//3rdparty/jvm:__subpackages__"
     ]
 )
 
