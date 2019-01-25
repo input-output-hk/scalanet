@@ -13,19 +13,6 @@ options:
 
 dependencies:
 
-  javax.xml.bind:
-    jaxb-api:
-      version: "2.2.11"
-      lang: "java"
-  com.sun.xml.bind:
-    jaxb:
-      version: "2.2.11"
-      lang: "java"
-      modules: [core, impl]
-  javax.activation:
-    activation:
-      version: "1.1.1"
-      lang: "java"
   com.github.pureconfig:
     pureconfig:
       lang: scala
@@ -42,10 +29,6 @@ dependencies:
   io.monix:
     monix:
       version: "3.0.0-RC1"
-      lang: scala
-  org.scala-stm:
-    scala-stm:
-      version: "0.8"
       lang: scala
   org.scalatest:
     scalatest:
