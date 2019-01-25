@@ -1,6 +1,8 @@
 # scalanet
 A scala libaray for network
 
+[![CircleCI](https://circleci.com/gh/input-output-hk/scalanet.svg?style=svg&circle-token=de4aa64767f761c1f85c706500a5aca50074a244)](https://circleci.com/gh/input-output-hk/scalanet)
+
 ## Branches
 
 Two main branches will be maintained: `develop` and `master`. `master` contains the latest version of the code that was tested end-to-end. `develop` contains the latest version of the code that runs all the tests (unit and integration tests). Integration tests don't test all the integrations. Hence, any version in `develop` might have bugs when deployed for an end-to-end test.
