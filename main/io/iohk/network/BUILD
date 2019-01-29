@@ -10,8 +10,8 @@ scala_library(
         "//3rdparty/jvm/org/bouncycastle:bcprov_jdk15on",
         "//3rdparty/jvm/io/netty:netty_all",
         "//main/io/iohk/network/telemetry",
-        "@codecs//main/io/iohk/codecs",
-        "@crypto//main/io/iohk/crypto"
+        "@codecs//src/io/iohk/codecs",
+        "@crypto//src/io/iohk/crypto"
     ],
 )
 
@@ -33,7 +33,7 @@ scala_test(
         "//3rdparty/jvm/org/scalacheck",
         "//3rdparty/jvm/org/scalatest",
         "//main/io/iohk/network/telemetry",
-        "@codecs//main/io/iohk/codecs",
-        "@crypto//main/io/iohk/crypto"
+        "@codecs//src/io/iohk/codecs",
+        "@crypto//src/io/iohk/crypto"
     ],
 )
