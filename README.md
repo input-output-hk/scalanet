@@ -37,9 +37,9 @@ All rules in bazel have a label (similar to a full name in Java/Scala). This lab
 //<package_name>:<rule_name>
 ```
 
-Where `package_name` is the path containing the `BUILD` file. In our example the package_name of our package is `main/io/iohk/cef/codecs`. So the label for the `codecs` rule is `//main/io/iohk/cef/codecs:codecs`. And the label for the `tests` rule is `//main/io/iohk/cef/codecs:tests`.
+Where `package_name` is the path containing the `BUILD` file. In our example the package_name of our package is `main/io/iohk/cef/codecs`. So the label for the `codecs` rule is `//src/io/iohk/cef/codecs:codecs`. And the label for the `tests` rule is `//src/io/iohk/cef/codecs:tests`.
 
-If the last bit of `package_name` (that is `codecs` in our example) is the same than the rule name, the rule name can be omited. That is, we can label our two packages `//main/io/iohk/cef/codecs` and `//main/io/iohk/cef/codecs:tests` which is quite clean.
+If the last bit of `package_name` (that is `codecs` in our example) is the same than the rule name, the rule name can be omited. That is, we can label our two packages `//src/io/iohk/cef/codecs` and `//src/io/iohk/cef/codecs:tests` which is quite clean.
 
 There are three relevant command in bazel `build`, `run` and `test`. Usually run this way:
 
@@ -50,31 +50,31 @@ bazel <command> <label> [<label>...]
 For example, to build `crypto` you need to run this:
 
 ```bash
-bazel build //main/io/iohk/network
+bazel build //src/io/iohk/network
 ```
 
 Or, to run it's associated tests (that is the rule `tests`)
 
 ```bash
-bazel test //main/io/iohk/network
+bazel test //src/io/iohk/network
 ```
 
 Note that, by default only shows a summary of the test results, but not the whole thing. If you want the whole thing, you need this:
 
 ```bash
-bazel test //main/io/iohk/network --test_output=all
+bazel test //src/io/iohk/network --test_output=all
 ```
 
 Or, if you are only interested on the tests that fail:
 
 ```bash
-bazel test //main/io/iohk/network --test_output=errors
+bazel test //src/io/iohk/network --test_output=errors
 ```
 
 But the other two accept as many as you need. Or even better, you can use the `...` wildcard. This will run all the tests below `main` (recursively):
 
 ```bash
-bazel test //main/...
+bazel test //src/...
 ```
 
 Or this will build and test everything:
