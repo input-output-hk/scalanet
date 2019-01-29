@@ -29,7 +29,7 @@ Note 2: Bazel is designed from the grown-up for absolutelly reproducible builds,
 
 ### Using Bazel from the terminal
 
-I'm going to explain different things that can be done, using this sample situation: we have a build file in `main/io/iohk/cef/codecs/BUILD`, with two rules, an scala library named `codecs` and a set of tests named `tests`. Where the `main` folder is a subfolder of the `workspace`. The workspace is the folder containing the `WORKSPACE` file.
+I'm going to explain different things that can be done, using this sample situation: we have a build file in `src/io/iohk/cef/codecs/BUILD`, with two rules, an scala library named `codecs` and a set of tests named `tests`. Where the `main` folder is a subfolder of the `workspace`. The workspace is the folder containing the `WORKSPACE` file.
 
 All rules in bazel have a label (similar to a full name in Java/Scala). This labels when writen in full are something like this:
 
@@ -37,7 +37,7 @@ All rules in bazel have a label (similar to a full name in Java/Scala). This lab
 //<package_name>:<rule_name>
 ```
 
-Where `package_name` is the path containing the `BUILD` file. In our example the package_name of our package is `main/io/iohk/cef/codecs`. So the label for the `codecs` rule is `//src/io/iohk/cef/codecs:codecs`. And the label for the `tests` rule is `//src/io/iohk/cef/codecs:tests`.
+Where `package_name` is the path containing the `BUILD` file. In our example the package_name of our package is `src/io/iohk/cef/codecs`. So the label for the `codecs` rule is `//src/io/iohk/cef/codecs:codecs`. And the label for the `tests` rule is `//src/io/iohk/cef/codecs:tests`.
 
 If the last bit of `package_name` (that is `codecs` in our example) is the same than the rule name, the rule name can be omited. That is, we can label our two packages `//src/io/iohk/cef/codecs` and `//src/io/iohk/cef/codecs:tests` which is quite clean.
 
