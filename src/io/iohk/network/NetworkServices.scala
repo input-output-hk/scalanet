@@ -20,10 +20,10 @@ object NetworkServices {
     new DiscoveryManagerAdapter(discoveryManagerBehavior(clock, peerConfig, discoveryConfig))
 
   private def discoveryManagerBehavior(
-                                        clock: Clock,
-                                        peerConfig: PeerConfig,
-                                        discoveryConfig: DiscoveryConfig
-                                      ): Behavior[DiscoveryRequest] = {
+      clock: Clock,
+      peerConfig: PeerConfig,
+      discoveryConfig: DiscoveryConfig
+  ): Behavior[DiscoveryRequest] = {
 
     val nodeInfo = peerConfig2NodeInfoHack(peerConfig)
 
@@ -50,7 +50,7 @@ object NetworkServices {
   }
 
   private def listenerFactory(discoveryConfig: DiscoveryConfig, codec: NioCodec[DiscoveryWireMessage])(
-    context: ActorContext[DiscoveryRequest]
+      context: ActorContext[DiscoveryRequest]
   ): ActorRef[DiscoveryListenerRequest] = {
 
     context.spawn(

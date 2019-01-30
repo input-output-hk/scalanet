@@ -4,7 +4,7 @@ import java.io.OutputStream
 import java.net.{InetSocketAddress, ServerSocket, Socket}
 import java.nio.ByteBuffer
 
-import io.iohk.network.{ NodeId, PeerConfig, TransportConfig}
+import io.iohk.network.{NodeId, PeerConfig, TransportConfig}
 import io.iohk.network.NodeId.nodeIdBytes
 import io.iohk.network.discovery.NetworkDiscovery
 import io.iohk.network.transport.{FrameHeader, Transports}
@@ -92,11 +92,11 @@ object NetUtils {
   }
 
   case class NetworkFixture(
-                             nodeId: NodeId,
-                             peerConfig: PeerConfig,
-                             networkDiscovery: NetworkDiscovery,
-                             transports: Transports
-                           )
+      nodeId: NodeId,
+      peerConfig: PeerConfig,
+      networkDiscovery: NetworkDiscovery,
+      transports: Transports
+  )
 
   def randomNetworkFixture(messageTtl: Int = FrameHeader.defaultTtl): NetworkFixture = {
 

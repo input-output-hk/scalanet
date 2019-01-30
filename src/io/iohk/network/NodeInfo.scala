@@ -15,11 +15,11 @@ import scala.util.Try
   * FIXME replace NodeInfo with PeerInfo and NodeId
   */
 case class NodeInfo(
-                     id: ByteString,
-                     discoveryAddress: InetSocketAddress,
-                     serverAddress: InetSocketAddress,
-                     capabilities: Capabilities
-                   ) {
+    id: ByteString,
+    discoveryAddress: InetSocketAddress,
+    serverAddress: InetSocketAddress,
+    capabilities: Capabilities
+) {
 
   def getServerUri: URI = {
     val host = getHostName(serverAddress.getAddress)

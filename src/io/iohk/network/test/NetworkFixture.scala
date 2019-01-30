@@ -77,9 +77,9 @@ trait NetworkFixture {
   }
 
   private def discoveryManagerBehavior(
-                                        peerConfig: PeerConfig,
-                                        discoveryConfig: DiscoveryConfig
-                                      ): Behavior[DiscoveryRequest] = {
+      peerConfig: PeerConfig,
+      discoveryConfig: DiscoveryConfig
+  ): Behavior[DiscoveryRequest] = {
 
     val nodeInfo = peerConfig2NodeInfoHack(peerConfig)
 
@@ -109,7 +109,7 @@ trait NetworkFixture {
   }
 
   private def listenerFactory(discoveryConfig: DiscoveryConfig, codec: NioCodec[DiscoveryWireMessage])(
-    context: ActorContext[DiscoveryRequest]
+      context: ActorContext[DiscoveryRequest]
   ): ActorRef[DiscoveryListenerRequest] = {
 
     context.spawn(
