@@ -1,0 +1,9 @@
+#!/bin/bash
+
+export BAZEL_VERSION=0.20.0
+
+apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl gnupg \
+ && apt-get install -y --no-install-recommends bash-completion g++ unzip zlib1g-dev \
+ && curl -LO "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel_${BAZEL_VERSION}-linux-x86_64.deb" \
+ && dpkg -i bazel_*.deb \
+ && apt-get purge --auto-remove -y curl gnupg
