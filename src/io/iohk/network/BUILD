@@ -25,7 +25,7 @@ scala_test(
         "//3rdparty/jvm/com/typesafe/akka:akka_actor_typed",
         "//3rdparty/jvm/com/typesafe/akka:akka_slf4j",
         "//3rdparty/jvm/com/typesafe/akka:akka_testkit",
-        "//3rdparty/jvm/com/typesafe/akka:akka_testkit_typed",
+        "//3rdparty/jvm/com/typesafe/akka:akka_actor_testkit_typed",
         "//3rdparty/jvm/io/micrometer:micrometer_registry_datadog",
         "//3rdparty/jvm/io/monix",
         "//3rdparty/jvm/org/bouncycastle:bcprov_jdk15on",
