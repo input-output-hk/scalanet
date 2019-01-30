@@ -1,0 +1,57 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: openjdk:8
+    working_directory: ~/repo
+    steps:
+      - checkout
+
+      - run:
+          name: install coursier
+          command: curl -L -o coursier https://git.io/vgvpD && chmod +x coursier
+
+      - run:
+          name: install scalafmt
+          command: ./coursier bootstrap org.scalameta:scalafmt-cli_2.12:2.0.0-RC4 -r bintray:scalameta/maven -o scalafmt --main org.scalafmt.cli.Cli
+
+      - run:
+          name: install bazel-remote-proxy
+          command: |
+            # if go is already installed
+            # go install github.com/notnoopci/bazel-remote-proxy
+
+            # otherwise download latest artifact
+            DOWNLOAD_URL="$(curl -sSL \
+               https://circleci.com/api/v1.1/project/github/notnoopci/bazel-remote-proxy/latest/artifacts?branch=master \
+               | grep -o -e "https://[^\"]*/bazel-remote-proxy-$(uname -s)_$(uname -m)" \
+            )"
+
+            curl -o ~/bazel-remote-proxy "$DOWNLOAD_URL"
+            chmod +x ~/bazel-remote-proxy
+
+      - run:
+          name: install bazel
+          command: ~/repo/docker/installBazel
+
+      - run:
+          name: setup bazel remote proxy
+          command: ~/bazel-remote-proxy -backend circleci:// -bind localhost:7654
+          background: true
+
+      - run:
+          name: build
+          command: |
+            bazel \
+              --host_jvm_args=-Dbazel.DigestFunction=sha256 \
+              test \
+              --jobs=2 \
+              --spawn_strategy=standalone \
+              --strategy=Javac=standalone \
+              --genrule_strategy=standalone \
+              --remote_http_cache=http://localhost:7654 \
+              //... --test_output=errors
+
+      - run:
+          name: check that the code is formatted properly
+          command: ./scalafmt --test

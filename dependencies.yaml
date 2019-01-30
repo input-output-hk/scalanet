@@ -1,0 +1,89 @@
+options:
+  buildHeader: 
+    - "load(\"@io_bazel_rules_scala//scala:scala.bzl\", \"scala_library\")\nload(\"@io_bazel_rules_scala//scala:scala_import.bzl\", \"scala_import\")"
+  languages: [ "java", "scala:2.12.7" ]
+  resolverType: "coursier"
+  resolvers:
+    - id: "mavencentral"
+      type: "default"
+      url: https://repo.maven.apache.org/maven2/
+  strictVisibility: true
+  transitivity: exports # runtime_deps
+  versionConflictPolicy: highest
+
+dependencies:
+
+  com.github.pureconfig:
+    pureconfig:
+      lang: scala
+      version: "0.10.1"
+  com.typesafe:
+    config:
+      lang: java
+      version: "1.3.3"
+  com.typesafe.akka:
+    akka:
+      lang: scala
+      version: "2.5.12"
+      modules: [actor, actor-typed, slf4j, testkit, testkit-typed]
+  io.monix:
+    monix:
+      version: "3.0.0-RC1"
+      lang: scala
+  org.scalatest:
+    scalatest:
+      version: "3.0.5"
+      lang: scala
+  org.scalacheck:
+    scalacheck:
+      version: "1.14.0"
+      lang: scala
+  com.softwaremill.quicklens:
+    quicklens:
+      version: "1.4.11"
+      lang: scala
+  org.bouncycastle:
+    bcprov-jdk15on:
+      version: "1.59"
+      lang: java
+  io.micrometer:
+    micrometer-registry-datadog:
+      version: "0.12.0.RELEASE"
+      lang: java
+  io.netty:
+    netty-all:
+      version: "4.1.28.Final"
+      lang: java
+  com.beachape:
+    enumeratum:
+      version: "1.5.13"
+      lang: scala
+    enumeratum-macros:
+      version: "1.5.9"
+      lang: scala
+  org.mockito:
+    mockito-core:
+      version: "2.21.0"
+      lang: java
+
+
+replacements:
+  org.scala-lang:
+    scala-compiler:
+      lang: scala/unmangled
+      target: "@io_bazel_rules_scala_scala_compiler//:io_bazel_rules_scala_scala_compiler"
+    scala-library:
+      lang: scala/unmangled
+      target: "@io_bazel_rules_scala_scala_library//:io_bazel_rules_scala_scala_library"
+    scala-reflect:
+      lang: scala/unmangled
+      target: "@io_bazel_rules_scala_scala_reflect//:io_bazel_rules_scala_scala_reflect"
+
+  org.scala-lang.modules:
+    scala-parser-combinators:
+      lang: scala
+      target:
+        "@io_bazel_rules_scala_scala_parser_combinators//:io_bazel_rules_scala_scala_parser_combinators"
+    scala-xml:
+      lang: scala
+      target: "@io_bazel_rules_scala_scala_xml//:io_bazel_rules_scala_scala_xml"
