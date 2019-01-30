@@ -24,8 +24,8 @@ dependencies:
   com.typesafe.akka:
     akka:
       lang: scala
-      version: "2.5.12"
-      modules: [actor, actor-typed, slf4j, testkit, testkit-typed]
+      version: "2.5.19"
+      modules: [actor, actor-typed, slf4j, testkit, actor-testkit-typed]
   io.monix:
     monix:
       version: "3.0.0-RC1"

@@ -18,6 +18,23 @@ scala_import(
 
 
 scala_import(
+    name = "akka_actor_testkit_typed",
+    exports = [
+        "//3rdparty/jvm/org/scala_lang:scala_library",
+        ":akka_actor_typed",
+        ":akka_testkit"
+    ],
+    jars = [
+        "//external:jar/com/typesafe/akka/akka_actor_testkit_typed_2_12"
+    ],
+    visibility = [
+        "//visibility:public"
+    ]
+)
+
+
+
+scala_import(
     name = "akka_actor_typed",
     exports = [
         "//3rdparty/jvm/org/scala_lang:scala_library",
@@ -58,23 +75,6 @@ scala_import(
     ],
     jars = [
         "//external:jar/com/typesafe/akka/akka_testkit_2_12"
-    ],
-    visibility = [
-        "//visibility:public"
-    ]
-)
-
-
-
-scala_import(
-    name = "akka_testkit_typed",
-    exports = [
-        "//3rdparty/jvm/org/scala_lang:scala_library",
-        ":akka_actor_typed",
-        ":akka_testkit"
-    ],
-    jars = [
-        "//external:jar/com/typesafe/akka/akka_testkit_typed_2_12"
     ],
     visibility = [
         "//visibility:public"
