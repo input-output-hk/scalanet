@@ -57,13 +57,13 @@ class ConversationalNetworkSpec extends FlatSpec with BeforeAndAfterAll {
     networks(randomNetwork[String](), randomNetwork[String]()) { networks =>
       val alice = networks(0)
       val bob = networks(1)
-      val bobsTransportConfig = bob.peerConfig.networkConfig.tcpTransportConfig.get
+      val bobsTransportConfig = bob.peerConfig.transportConfig.tcpTransportConfig.get
 
       // by resetting the bind address, we guarantee that attempting to talk to it will break the test.
       val bobsNattedConfig =
         TcpTransportConfig(bindAddress = new InetSocketAddress(0), natAddress = aRandomAddress())
       val bobsNattedPeerInfo =
-        bob.peerConfig.modify(_.networkConfig.tcpTransportConfig).setTo(Option(bobsNattedConfig))
+        bob.peerConfig.modify(_.transportConfig.tcpTransportConfig).setTo(Option(bobsNattedConfig))
 
       val portForward = forwardPort(bobsNattedConfig.natAddress.getPort, bobsTransportConfig.bindAddress)
       val _ = Future {
@@ -127,17 +127,17 @@ class ConversationalNetworkSpec extends FlatSpec with BeforeAndAfterAll {
     }
 
   private case class NetworkFixture[T](
-      nodeId: NodeId,
-      peerConfig: PeerConfig,
-      networkDiscovery: NetworkDiscovery,
-      messageHandler: T => Unit,
-      transports: Transports,
-      network: ConversationalNetwork[T]
-  )
+                                        nodeId: NodeId,
+                                        peerConfig: PeerConfig,
+                                        networkDiscovery: NetworkDiscovery,
+                                        messageHandler: T => Unit,
+                                        transports: Transports,
+                                        network: ConversationalNetwork[T]
+                                      )
 
   private def randomNetwork[T: NioCodec: TypeTag](messageTtl: Int = FrameHeader.defaultTtl): NetworkFixture[T] = {
     val tcpAddress: InetSocketAddress = aRandomAddress()
-    val configuration = NetworkConfig(Some(TcpTransportConfig(tcpAddress)), messageTtl)
+    val configuration = TransportConfig(Some(TcpTransportConfig(tcpAddress)), messageTtl)
 
     val nodeId = NodeId(randomBytes(nodeIdBytes))
 

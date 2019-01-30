@@ -24,7 +24,7 @@ trait NetworkFixture {
 
   def randomBaseNetwork(bootstrap: Option[BaseNetwork]): BaseNetwork = {
 
-    val configuration = NetworkConfig(Some(TcpTransportConfig(aRandomAddress())))
+    val configuration = TransportConfig(Some(TcpTransportConfig(aRandomAddress())))
 
     val peerConfig = PeerConfig(NodeId(NetUtils.randomBytes(NodeId.nodeIdBytes)), configuration)
 
@@ -77,9 +77,9 @@ trait NetworkFixture {
   }
 
   private def discoveryManagerBehavior(
-      peerConfig: PeerConfig,
-      discoveryConfig: DiscoveryConfig
-  ): Behavior[DiscoveryRequest] = {
+                                        peerConfig: PeerConfig,
+                                        discoveryConfig: DiscoveryConfig
+                                      ): Behavior[DiscoveryRequest] = {
 
     val nodeInfo = peerConfig2NodeInfoHack(peerConfig)
 
@@ -109,7 +109,7 @@ trait NetworkFixture {
   }
 
   private def listenerFactory(discoveryConfig: DiscoveryConfig, codec: NioCodec[DiscoveryWireMessage])(
-      context: ActorContext[DiscoveryRequest]
+    context: ActorContext[DiscoveryRequest]
   ): ActorRef[DiscoveryListenerRequest] = {
 
     context.spawn(
@@ -121,9 +121,9 @@ trait NetworkFixture {
   // FIXME Get rid of NodeInfo
   private def peerConfig2NodeInfoHack(peerConfig: PeerConfig): NodeInfo = {
     val discoveryAddress =
-      new InetSocketAddress("localhost", peerConfig.networkConfig.tcpTransportConfig.get.bindAddress.getPort + 1)
+      new InetSocketAddress("localhost", peerConfig.transportConfig.tcpTransportConfig.get.bindAddress.getPort + 1)
 
-    val serverAddress = peerConfig.networkConfig.tcpTransportConfig.get.natAddress
+    val serverAddress = peerConfig.transportConfig.tcpTransportConfig.get.natAddress
 
     NodeInfo(peerConfig.nodeId.id, discoveryAddress, serverAddress, Capabilities(0))
   }
