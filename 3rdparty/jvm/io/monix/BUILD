@@ -8,7 +8,8 @@ scala_import(
         ":monix_execution",
         ":monix_java",
         ":monix_reactive",
-        ":monix_tail"
+        ":monix_tail",
+        ":monix_cats"
     ],
     jars = [
         "//external:jar/io/monix/monix_2_12"
@@ -101,4 +102,15 @@ scala_import(
     ]
 )
 
-
+scala_import(
+    name = "monix_cats",
+    exports = [
+        "//3rdparty/jvm/org/scala_lang:scala_library",
+    ],
+    jars = [
+        "//external:jar/io/monix/monix_cats_2_12"
+    ],
+    visibility = [
+        "//visibility:public"
+    ]
+)
