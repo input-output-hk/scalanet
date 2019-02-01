@@ -11,7 +11,7 @@ import scala.language.higherKinds
 sealed trait PeerGroup[A, F[_]] {
   def sendMessage(address: A, message: ByteBuffer): F[Unit]
   def shutdown(): F[Unit]
-  def messageStream() : MessageStream[ByteBuffer]
+  def messageStream(): MessageStream[ByteBuffer]
 }
 
 object PeerGroup {
@@ -20,4 +20,3 @@ object PeerGroup {
 
   abstract class TerminalPeerGroup[A, F[_]] extends PeerGroup[A, F]
 }
-

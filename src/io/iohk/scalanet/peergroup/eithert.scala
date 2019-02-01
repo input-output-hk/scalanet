@@ -21,7 +21,6 @@ object eithert {
 
   implicit def liftEitherT(implicit ec: ExecutionContext): Lift[ET] =
     Kleisli { task: Task[Unit] =>
-
       val errorMappedFuture: Future[Either[SendError, Unit]] =
         task.runAsync(Scheduler(ec)).map(_ => Right(())).recover { case t: Throwable => Left(SendError(t.getMessage)) }
 
