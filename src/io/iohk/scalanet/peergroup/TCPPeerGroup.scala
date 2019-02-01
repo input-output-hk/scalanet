@@ -18,7 +18,8 @@ import monix.reactive.observers.Subscriber
 import scala.collection.mutable
 import scala.language.higherKinds
 
-class TCPPeerGroup[F[_]](tcpPeerGroupConfig: TCPPeerGroupConfig)(implicit liftF: Lift[F]) extends TerminalPeerGroup[InetSocketAddress, F]() {
+class TCPPeerGroup[F[_]](tcpPeerGroupConfig: TCPPeerGroupConfig)(implicit liftF: Lift[F])
+    extends TerminalPeerGroup[InetSocketAddress, F]() {
 
   // TODO start listening
   println("TCPPeerGroup starting")
@@ -50,9 +51,6 @@ class TCPPeerGroup[F[_]](tcpPeerGroupConfig: TCPPeerGroupConfig)(implicit liftF:
 
   //log.debug(s"Bound to address $address")
 
-
-
-
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
     val send: Task[Unit] = Task {
       println(s"TCPPeerGroup, send to address $address, message $message")
@@ -70,16 +68,13 @@ class TCPPeerGroup[F[_]](tcpPeerGroupConfig: TCPPeerGroupConfig)(implicit liftF:
     })
   }
 
-
-
-
   private class NettyDecoder extends ChannelInboundHandlerAdapter {
 
     val subscriberSet = mutable.HashSet[Subscriber.Sync[ByteBuffer]]()
     val messageStream: MessageStream[ByteBuffer] = new MonixMessageStream[ByteBuffer](monixMessageStream)
 
     val monixMessageStream: Observable[ByteBuffer] =
-      Observable.create(overflowStrategy = OverflowStrategy.Unbounded)((subscriber:  Subscriber.Sync[ByteBuffer]) => {
+      Observable.create(overflowStrategy = OverflowStrategy.Unbounded)((subscriber: Subscriber.Sync[ByteBuffer]) => {
 
         subscriberSet.add(subscriber)
 
@@ -94,6 +89,5 @@ class TCPPeerGroup[F[_]](tcpPeerGroupConfig: TCPPeerGroupConfig)(implicit liftF:
 
   override val messageStream: MessageStream[ByteBuffer] = nettyDecoder.messageStream
 }
-
 
 case class TCPPeerGroupConfig(address: InetSocketAddress)

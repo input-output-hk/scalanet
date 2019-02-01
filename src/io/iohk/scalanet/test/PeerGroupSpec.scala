@@ -9,7 +9,6 @@ import org.scalatest.Matchers._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
-
 class PeerGroupSpec extends FlatSpec {
   behavior of "PeerGroup"
 
