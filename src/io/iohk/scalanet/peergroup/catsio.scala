@@ -14,5 +14,5 @@ object catsio {
   type UDPPeerGroup = io.iohk.scalanet.peergroup.UDPPeerGroup[IO]
 
   implicit def liftIO(implicit scheduler: Scheduler): Lift[IO] =
-    Kleisli(_.toIO)
+    Kleisli(task => task.toIO)
 }

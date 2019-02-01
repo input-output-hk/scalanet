@@ -4,14 +4,11 @@ import java.net.InetSocketAddress
 import java.net.InetSocketAddress.createUnresolved
 import java.nio.ByteBuffer
 
-import cats.data.EitherT
-import cats.effect.IO
-import monix.eval.Task
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
+
 
 class PeerGroupSpec extends FlatSpec {
   behavior of "PeerGroup"
@@ -21,6 +18,7 @@ class PeerGroupSpec extends FlatSpec {
 
   it should "enable implementation in terms of Future" in {
     """
+      |    import scala.concurrent.Future
       |    import io.iohk.scalanet.peergroup.future._
       |    val peerGroup = new UDPPeerGroup
       |    val future: Future[Unit] = peerGroup.sendMessage(address, message)
@@ -29,6 +27,8 @@ class PeerGroupSpec extends FlatSpec {
 
   it should "enable implementation in terms of EitherT" in {
     """
+      |    import cats.data.EitherT
+      |    import scala.concurrent.Future
       |    import io.iohk.scalanet.peergroup.eithert._
       |    val peerGroup = new UDPPeerGroup
       |    val eitherT: EitherT[Future, SendError, Unit] = peerGroup.sendMessage(address, message)
@@ -38,6 +38,7 @@ class PeerGroupSpec extends FlatSpec {
 
   it should "enable implementation in terms of Monix Task" in {
     """
+      |    import monix.eval.Task
       |    import io.iohk.scalanet.peergroup.monixtask._
       |    import monix.execution.Scheduler.Implicits.global
       |    val peerGroup = new UDPPeerGroup
@@ -47,6 +48,7 @@ class PeerGroupSpec extends FlatSpec {
 
   it should "enable implementation in terms of Cats IO" in {
     """
+      |    import cats.effect.IO
       |    import io.iohk.scalanet.peergroup.catsio._
       |    import monix.execution.Scheduler.Implicits.global
       |    val peerGroup = new UDPPeerGroup

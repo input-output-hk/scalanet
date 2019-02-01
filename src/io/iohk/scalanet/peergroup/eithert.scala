@@ -23,7 +23,7 @@ object eithert {
     Kleisli { task: Task[Unit] =>
 
       val errorMappedFuture: Future[Either[SendError, Unit]] =
-        task.runAsync(Scheduler(ec)).map(_ => Right(())).recover { case t => Left(SendError(t.getMessage)) }
+        task.runAsync(Scheduler(ec)).map(_ => Right(())).recover { case t: Throwable => Left(SendError(t.getMessage)) }
 
       EitherT(errorMappedFuture)
     }
