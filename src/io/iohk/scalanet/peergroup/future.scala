@@ -12,7 +12,7 @@ object future {
 
   type TerminalPeerGroup[A] = io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup[A, Future]
 
-  type UDPPeerGroup = io.iohk.scalanet.peergroup.PeerGroup.UDPPeerGroup[Future]
+  type UDPPeerGroup = io.iohk.scalanet.peergroup.UDPPeerGroup[Future]
 
   implicit def liftFuture(implicit ec: ExecutionContext): Lift[Future] =
     Kleisli(_.runAsync(Scheduler(ec)))
