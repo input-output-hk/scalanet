@@ -20,13 +20,12 @@ scala_toolchain(
        "utf-8",
       ],
     #unused_dependency_checker_mode = "off",
-    visibility = ["//visibility:public"]
+    visibility = ["//visibility:public"],
 )
 
 toolchain(
     name = "cef_scala_toolchain",
-    toolchain_type = "@io_bazel_rules_scala//scala:toolchain_type",
     toolchain = "cef_toolchain_impl",
-    visibility = ["//visibility:public"]
+    toolchain_type = "@io_bazel_rules_scala//scala:toolchain_type",
+    visibility = ["//visibility:public"],
 )
-
