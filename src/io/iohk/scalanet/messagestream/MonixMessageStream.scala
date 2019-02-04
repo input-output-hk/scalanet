@@ -5,7 +5,7 @@ import monix.reactive.Observable
 
 import scala.concurrent.duration.FiniteDuration
 
-private[network] class MonixMessageStream[T](val o: Observable[T]) extends MessageStream[T] {
+private[scalanet] class MonixMessageStream[T](val o: Observable[T]) extends MessageStream[T] {
 
   type S[A] = MonixMessageStream[A]
 
@@ -18,7 +18,7 @@ private[network] class MonixMessageStream[T](val o: Observable[T]) extends Messa
     new MonixMessageStream(o.filter(p))
 
   override def fold[U](zero: U)(f: (U, T) => U): CancellableFuture[U] =
-    CancellableFuture(o.foldLeftL(zero)(f).runAsync)
+    CancellableFuture(o.foldLeftL(zero)(f).runToFuture)
 
   override def foreach(f: T => Unit): CancellableFuture[Unit] =
     CancellableFuture(o.foreach(f))
@@ -33,7 +33,7 @@ private[network] class MonixMessageStream[T](val o: Observable[T]) extends Messa
 
   override def takeWhile(predicate: T => Boolean): MessageStream[T] = new MonixMessageStream[T](o.takeWhile(predicate))
 
-  override def head(): CancellableFuture[T] = CancellableFuture(o.headL.runAsync)
+  override def head(): CancellableFuture[T] = CancellableFuture(o.headL.runToFuture)
 }
 
 object MonixMessageStream {
