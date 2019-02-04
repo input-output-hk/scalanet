@@ -4,9 +4,9 @@ scala_library(
     name = "scalanet",
     deps = [
         "//3rdparty/jvm/io/monix",
-        "//3rdparty/jvm/org/typelevel:cats_core",
         "//3rdparty/jvm/io/netty:netty_all",
-    ]
+        "//3rdparty/jvm/org/typelevel:cats_core",
+    ],
 )
 
 scala_test(
@@ -14,7 +14,6 @@ scala_test(
     deps = [
         "scalanet",
         "//3rdparty/jvm/io/monix",
-        "//3rdparty/jvm/org/scalacheck",
         "//3rdparty/jvm/org/scalatest",
-        "//3rdparty/jvm/org/mockito:mockito_core"]
+    ],
 )
