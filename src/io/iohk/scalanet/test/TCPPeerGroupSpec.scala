@@ -1,4 +1,4 @@
-package io.iohk.scalanet.test
+package io.iohk.scalanet
 
 import org.scalatest.FlatSpec
 

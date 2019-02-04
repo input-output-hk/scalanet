@@ -71,7 +71,6 @@ class TCPPeerGroup[F[_]](tcpPeerGroupConfig: TCPPeerGroupConfig)(implicit liftF:
   private class NettyDecoder extends ChannelInboundHandlerAdapter {
 
     val subscriberSet = mutable.HashSet[Subscriber.Sync[ByteBuffer]]()
-    val messageStream: MessageStream[ByteBuffer] = new MonixMessageStream[ByteBuffer](monixMessageStream)
 
     val monixMessageStream: Observable[ByteBuffer] =
       Observable.create(overflowStrategy = OverflowStrategy.Unbounded)((subscriber: Subscriber.Sync[ByteBuffer]) => {
@@ -80,6 +79,8 @@ class TCPPeerGroup[F[_]](tcpPeerGroupConfig: TCPPeerGroupConfig)(implicit liftF:
 
         () => subscriberSet.remove(subscriber)
       })
+
+    val messageStream: MessageStream[ByteBuffer] = new MonixMessageStream[ByteBuffer](monixMessageStream)
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val remoteAddress = ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress]

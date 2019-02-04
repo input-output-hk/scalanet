@@ -1,10 +1,8 @@
-package io.iohk.scalanet.test
+package io.iohk.scalanet.peergroup
 
 import io.iohk.scalanet.peergroup.eithert._
-
 import monix.eval.Task
 import monix.execution.Scheduler
-
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures.convertScalaFuture
