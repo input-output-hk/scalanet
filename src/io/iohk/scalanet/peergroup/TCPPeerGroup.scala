@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 
 import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
-import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.{InitializationError, Lift, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
@@ -44,11 +44,10 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     .option[Integer](ChannelOption.SO_BACKLOG, 128)
     .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
     .bind(config.bindAddress)
-    .await()
+    .syncUninterruptibly()
 
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
     val send: Task[Unit] = Task {
-      println(s"TCPPeerGroup, send to address $address, message $message")
 
       val activationAdapter = new ChannelInboundHandlerAdapter() {
         override def channelActive(ctx: ChannelHandlerContext): Unit = {
@@ -98,4 +97,22 @@ object TCPPeerGroup {
 
   case class Config(bindAddress: InetSocketAddress)
 
+  def create[F[_]](config: Config)(implicit liftF: Lift[F]): Either[InitializationError, TCPPeerGroup[F]] =
+    try {
+      Right(new TCPPeerGroup[F](config))
+    } catch {
+      case t: Throwable =>
+        Left(InitializationError(initializationErrorMsg(config), t))
+    }
+
+  def createOrThrow[F[_]](config: Config)(implicit liftF: Lift[F]): TCPPeerGroup[F] =
+    try {
+      new TCPPeerGroup[F](config)
+    } catch {
+      case t: Throwable =>
+        throw new IllegalStateException(initializationErrorMsg(config), t)
+    }
+
+  private def initializationErrorMsg[F[_]](config: Config) =
+    s"Failed initialization of ${classOf[TCPPeerGroup[F]].getName} with config $config. Cause follows."
 }

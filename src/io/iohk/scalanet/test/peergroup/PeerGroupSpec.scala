@@ -13,14 +13,14 @@ class PeerGroupSpec extends FlatSpec {
 
   private val address: InetSocketAddress = createUnresolved("localhost", 8080)
   private val message: ByteBuffer = ByteBuffer.allocate(0)
-  private val config = UDPPeerGroup.Config(aRandomAddress())
+  private val config = TCPPeerGroup.Config(aRandomAddress())
 
   it should "enable implementation in terms of Future" in {
     """
       |    import scala.concurrent.Future
       |    import monix.execution.Scheduler.Implicits.global
       |    import io.iohk.scalanet.peergroup.future._
-      |    val peerGroup = new UDPPeerGroup(config)
+      |    val peerGroup = new TCPPeerGroup(config)
       |    val future: Future[Unit] = peerGroup.sendMessage(address, message)
       |    """.stripMargin should compile
   }
@@ -31,7 +31,7 @@ class PeerGroupSpec extends FlatSpec {
       |    import monix.execution.Scheduler.Implicits.global
       |    import scala.concurrent.Future
       |    import io.iohk.scalanet.peergroup.eithert._
-      |    val peerGroup = new UDPPeerGroup(config)
+      |    val peerGroup = new TCPPeerGroup(config)
       |    val eitherT: EitherT[Future, SendError, Unit] = peerGroup.sendMessage(address, message)
       |
     """.stripMargin should compile
@@ -42,7 +42,7 @@ class PeerGroupSpec extends FlatSpec {
       |    import monix.eval.Task
       |    import io.iohk.scalanet.peergroup.monixtask._
       |    import monix.execution.Scheduler.Implicits.global
-      |    val peerGroup = new UDPPeerGroup(config)
+      |    val peerGroup = new TCPPeerGroup(config)
       |    val task: Task[Unit] = peerGroup.sendMessage(address, message)
     """.stripMargin should compile
   }
@@ -52,7 +52,7 @@ class PeerGroupSpec extends FlatSpec {
       |    import cats.effect.IO
       |    import io.iohk.scalanet.peergroup.catsio._
       |    import monix.execution.Scheduler.Implicits.global
-      |    val peerGroup = new UDPPeerGroup(config)
+      |    val peerGroup = new TCPPeerGroup(config)
       |    val task: IO[Unit] = peerGroup.sendMessage(address, message)
       |    """.stripMargin should compile
   }

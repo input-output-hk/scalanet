@@ -1,15 +1,18 @@
 package io.iohk.scalanet.peergroup
 
+import java.net.BindException
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets.UTF_8
 
-import io.iohk.scalanet.NetUtils.{aRandomAddress, isListening, toArray}
+import io.iohk.scalanet.NetUtils
+import io.iohk.scalanet.NetUtils.{aRandomAddress, isListening, toArray, withAddressInUse}
 import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
 import io.iohk.scalanet.peergroup.future._
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.{BeforeAndAfterAll, FlatSpec}
+import org.scalatest.EitherValues._
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -38,6 +41,17 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     tcpPeerGroup.shutdown().futureValue
 
     isListening(tcpPeerGroup.config.bindAddress) shouldBe false
+  }
+
+  it should "support a throws create method" in withAddressInUse { address =>
+    NetUtils.isListening(address) shouldBe true
+    val exception = the[IllegalStateException] thrownBy TCPPeerGroup.createOrThrow(Config(address))
+    exception.getCause shouldBe a[BindException]
+  }
+
+  it should "support an Either create method" in withAddressInUse { address =>
+    NetUtils.isListening(address) shouldBe true
+    TCPPeerGroup.create(Config(address)).left.value.cause shouldBe a[BindException]
   }
 
   private def randomTCPPeerGroup() = new TCPPeerGroup(Config(aRandomAddress()))
