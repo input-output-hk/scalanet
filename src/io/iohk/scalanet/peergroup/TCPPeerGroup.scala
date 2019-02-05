@@ -20,7 +20,6 @@ import monix.reactive.observers.Subscriber
 import scala.collection.mutable
 import scala.language.higherKinds
 
-
 class TCPPeerGroup[F[_]](tcpPeerGroupConfig: TCPPeerGroupConfig)(implicit liftF: Lift[F])
     extends TerminalPeerGroup[InetSocketAddress, F]() {
 
