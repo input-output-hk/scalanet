@@ -13,6 +13,8 @@ object monixtask {
 
   type TCPPeerGroup = io.iohk.scalanet.peergroup.TCPPeerGroup[Task]
 
+  type UDPPeerGroup = io.iohk.scalanet.peergroup.UDPPeerGroup[Task]
+
   implicit def liftTask(implicit scheduler: Scheduler): Lift[Task] =
     Kleisli(identity)
 }

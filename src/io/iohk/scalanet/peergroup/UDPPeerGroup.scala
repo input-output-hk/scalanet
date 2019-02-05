@@ -32,7 +32,7 @@ class UDPPeerGroup[F[_]](val udpPeerGroupConfig: Config)(implicit liftF: Lift[F]
       }
     })
     .bind(udpPeerGroupConfig.bindAddress)
-    .await()
+    .syncUninterruptibly()
 
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
     liftF(Task(writeUdp(address, message)))
