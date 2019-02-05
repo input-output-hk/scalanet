@@ -11,7 +11,6 @@ object monixtask {
 
   type TerminalPeerGroup[A] = io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup[A, Task]
 
-  type UDPPeerGroup = io.iohk.scalanet.peergroup.UDPPeerGroup[Task]
 
   implicit def liftTask(implicit scheduler: Scheduler): Lift[Task] =
     Kleisli(identity)
