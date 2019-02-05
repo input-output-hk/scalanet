@@ -13,7 +13,7 @@ class PeerGroupSpec extends FlatSpec {
 
   private val address: InetSocketAddress = createUnresolved("localhost", 8080)
   private val message: ByteBuffer = ByteBuffer.allocate(0)
-  private val config = UDPPeerGroupConfig(aRandomAddress())
+  private val config = UDPPeerGroup.Config(aRandomAddress())
 
   it should "enable implementation in terms of Future" in {
     """
