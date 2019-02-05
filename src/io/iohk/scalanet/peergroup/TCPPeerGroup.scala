@@ -4,7 +4,8 @@ import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 
 import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
-import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.{InitializationError, Lift, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
 import io.netty.channel._
@@ -14,17 +15,11 @@ import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
 import io.netty.handler.codec.bytes.ByteArrayEncoder
 import monix.eval.Task
-import monix.reactive.{Observable, OverflowStrategy}
-import monix.reactive.observers.Subscriber
 
-import scala.collection.mutable
 import scala.language.higherKinds
 
-class TCPPeerGroup[F[_]](tcpPeerGroupConfig: TCPPeerGroupConfig)(implicit liftF: Lift[F])
+class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     extends TerminalPeerGroup[InetSocketAddress, F]() {
-
-  // TODO start listening
-  println("TCPPeerGroup starting")
 
   private val nettyDecoder = new NettyDecoder()
   private val workerGroup = new NioEventLoopGroup()
@@ -48,12 +43,11 @@ class TCPPeerGroup[F[_]](tcpPeerGroupConfig: TCPPeerGroupConfig)(implicit liftF:
     })
     .option[Integer](ChannelOption.SO_BACKLOG, 128)
     .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
-    .bind(tcpPeerGroupConfig.address)
-    .await()
+    .bind(config.bindAddress)
+    .syncUninterruptibly()
 
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
     val send: Task[Unit] = Task {
-      println(s"TCPPeerGroup, send to address $address, message $message")
 
       val activationAdapter = new ChannelInboundHandlerAdapter() {
         override def channelActive(ctx: ChannelHandlerContext): Unit = {
@@ -73,7 +67,6 @@ class TCPPeerGroup[F[_]](tcpPeerGroupConfig: TCPPeerGroupConfig)(implicit liftF:
           }
         })
         .connect(address)
-      // TODO send the message
       ()
     }
     liftF(send)
@@ -83,34 +76,43 @@ class TCPPeerGroup[F[_]](tcpPeerGroupConfig: TCPPeerGroupConfig)(implicit liftF:
     liftF(Task {
       serverBootstrap.channel().close()
       workerGroup.shutdownGracefully()
-      println(s"TCPPeerGroup, shutdown")
-      // TODO shutdown
       ()
     })
   }
 
+  private val subscribers = new Subscribers()
+
   private class NettyDecoder extends ChannelInboundHandlerAdapter {
-
-    val subscriberSet = mutable.HashSet[Subscriber.Sync[ByteBuffer]]()
-
-    val monixMessageStream: Observable[ByteBuffer] =
-      Observable.create(overflowStrategy = OverflowStrategy.Unbounded)((subscriber: Subscriber.Sync[ByteBuffer]) => {
-
-        subscriberSet.add(subscriber)
-
-        () => subscriberSet.remove(subscriber)
-      })
-    val messageStream: MessageStream[ByteBuffer] = new MonixMessageStream[ByteBuffer](monixMessageStream)
-
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      println("In Channnel Read")
       val remoteAddress = ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress]
       val byteBuffer = msg.asInstanceOf[ByteBuf]
-      subscriberSet.foreach(_.onNext(byteBuffer.nioBuffer()))
+      subscribers.notify(byteBuffer.nioBuffer())
     }
   }
 
-  override val messageStream: MessageStream[ByteBuffer] = nettyDecoder.messageStream
+  override val messageStream: MessageStream[ByteBuffer] = new MonixMessageStream(subscribers.monixMessageStream)
 }
 
-case class TCPPeerGroupConfig(address: InetSocketAddress)
+object TCPPeerGroup {
+
+  case class Config(bindAddress: InetSocketAddress)
+
+  def create[F[_]](config: Config)(implicit liftF: Lift[F]): Either[InitializationError, TCPPeerGroup[F]] =
+    try {
+      Right(new TCPPeerGroup[F](config))
+    } catch {
+      case t: Throwable =>
+        Left(InitializationError(initializationErrorMsg(config), t))
+    }
+
+  def createOrThrow[F[_]](config: Config)(implicit liftF: Lift[F]): TCPPeerGroup[F] =
+    try {
+      new TCPPeerGroup[F](config)
+    } catch {
+      case t: Throwable =>
+        throw new IllegalStateException(initializationErrorMsg(config), t)
+    }
+
+  private def initializationErrorMsg[F[_]](config: Config) =
+    s"Failed initialization of ${classOf[TCPPeerGroup[F]].getName} with config $config. Cause follows."
+}
