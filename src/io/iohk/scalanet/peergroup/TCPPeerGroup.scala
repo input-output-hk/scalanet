@@ -85,7 +85,6 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
 
   private class NettyDecoder extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      println("In Channnel Read")
       val remoteAddress = ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress]
       val byteBuffer = msg.asInstanceOf[ByteBuf]
       subscribers.notify(byteBuffer.nioBuffer())
