@@ -20,18 +20,17 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   behavior of "TCPPeerGroup"
 
   it should "send a message to a TCPPeerGroup" in
-  networks(randomNetwork(), randomNetwork()) { networks =>
+    networks(randomNetwork(), randomNetwork()) { networks =>
+      val alice = networks(0)
+      val bob = networks(1)
+      val message = bob.tcpPeerGroup.messageStream.head()
+      val messageFromAlice = ByteBuffer.wrap("Hi Bob!!!".getBytes)
 
-    val alice = networks(0)
-    val bob = networks(1)
-    val message = bob.tcpPeerGroup.messageStream.head()
-    val messageFromAlice = ByteBuffer.wrap("Hi Bob!!!".getBytes)
+      alice.tcpPeerGroup.sendMessage(bob.tcpAddress, messageFromAlice).futureValue
 
-    alice.tcpPeerGroup.sendMessage(bob.tcpAddress, messageFromAlice).futureValue
+      toArray(message.futureValue) shouldBe "Hi Bob!!!".getBytes
 
-    toArray(message.futureValue) shouldBe "Hi Bob!!!".getBytes
-
-  }
+    }
   it should "shutdown a TCPPeerGroup properly" in {
 
     val netWork = randomNetwork()
@@ -41,8 +40,11 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   }
 
-
-  private case class NetworkFixture(tcpPeerGroup: TCPPeerGroup[Future],tcpAddress:InetSocketAddress,tcpPeerGroupConfig:TCPPeerGroupConfig)
+  private case class NetworkFixture(
+      tcpPeerGroup: TCPPeerGroup[Future],
+      tcpAddress: InetSocketAddress,
+      tcpPeerGroupConfig: TCPPeerGroupConfig
+  )
 
   private def randomNetwork(): NetworkFixture = {
     val tcpAddress: InetSocketAddress = aRandomAddress()
@@ -51,7 +53,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     val tcpPeerGroup =
       new TCPPeerGroup(tcpPeerGroupConfig)
 
-    NetworkFixture(tcpPeerGroup ,tcpAddress,tcpPeerGroupConfig)
+    NetworkFixture(tcpPeerGroup, tcpAddress, tcpPeerGroupConfig)
   }
 
   private def networks(fixtures: NetworkFixture*)(testCode: Seq[NetworkFixture] => Any): Unit = {
@@ -76,8 +78,6 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     b.get(a)
     a
   }
-
-
 
   def isListening(address: InetSocketAddress): Boolean = {
     try {

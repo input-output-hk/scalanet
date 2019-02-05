@@ -11,7 +11,6 @@ object catsio {
 
   type TerminalPeerGroup[A] = io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup[A, IO]
 
-
   implicit def liftIO(implicit scheduler: Scheduler): Lift[IO] =
     Kleisli(task => task.toIO)
 }
