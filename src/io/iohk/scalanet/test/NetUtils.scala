@@ -48,10 +48,10 @@ object NetUtils {
   def isListening(address: InetSocketAddress): Boolean = {
     try {
       new Socket(address.getHostName, address.getPort).close()
-      false
+      true
     } catch {
       case _: Exception =>
-        true
+        false
     }
   }
 
