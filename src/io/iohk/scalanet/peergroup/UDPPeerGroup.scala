@@ -5,7 +5,7 @@ import java.nio.ByteBuffer
 import java.nio.channels.DatagramChannel
 
 import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
-import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.{InitializationError, Lift, TerminalPeerGroup}
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
@@ -66,5 +66,11 @@ class UDPPeerGroup[F[_]](val udpPeerGroupConfig: Config)(implicit liftF: Lift[F]
 object UDPPeerGroup {
 
   case class Config(bindAddress: InetSocketAddress)
+
+  def create[F[_]](config: Config)(implicit liftF: Lift[F]): Either[InitializationError, UDPPeerGroup[F]] =
+    PeerGroup.create(new UDPPeerGroup[F](config), config)
+
+  def createOrThrow[F[_]](config: Config)(implicit liftF: Lift[F]): UDPPeerGroup[F] =
+    PeerGroup.createOrThrow(new UDPPeerGroup[F](config), config)
 
 }
