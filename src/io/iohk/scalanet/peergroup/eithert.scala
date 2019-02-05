@@ -17,7 +17,6 @@ object eithert {
 
   type TerminalPeerGroup[A] = io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup[A, ET]
 
-  type UDPPeerGroup = io.iohk.scalanet.peergroup.UDPPeerGroup[ET]
 
   implicit def liftEitherT(implicit ec: ExecutionContext): Lift[ET] =
     Kleisli { task: Task[Unit] =>

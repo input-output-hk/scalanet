@@ -5,7 +5,7 @@ import monix.reactive.Observable
 
 import scala.concurrent.duration.FiniteDuration
 
-private[network] class MonixMessageStream[T](val o: Observable[T]) extends MessageStream[T] {
+private[scalanet] class MonixMessageStream[T](val o: Observable[T]) extends MessageStream[T] {
 
   type S[A] = MonixMessageStream[A]
 
