@@ -49,4 +49,14 @@ object NetUtils {
       socket.close()
     }
   }
+
+  def withUDPAddressInUse(testCode: InetSocketAddress => Any): Unit = {
+    val socket = new DatagramSocket()
+    val address = socket.getLocalSocketAddress.asInstanceOf[InetSocketAddress]
+    try {
+      testCode(address)
+    } finally {
+      socket.close()
+    }
+  }
 }

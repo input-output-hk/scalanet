@@ -1,15 +1,17 @@
 package io.iohk.scalanet.peergroup
 
+import java.net.BindException
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets.UTF_8
 
 import io.iohk.scalanet.NetUtils
-import io.iohk.scalanet.NetUtils.aRandomAddress
+import io.iohk.scalanet.NetUtils.{aRandomAddress, withUDPAddressInUse}
 import io.iohk.scalanet.peergroup.UDPPeerGroup.Config
-import org.scalatest.FlatSpec
-import org.scalatest.concurrent.ScalaFutures._
-import org.scalatest.Matchers._
 import io.iohk.scalanet.peergroup.future._
+import org.scalatest.EitherValues._
+import org.scalatest.FlatSpec
+import org.scalatest.Matchers._
+import org.scalatest.concurrent.ScalaFutures._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -37,6 +39,17 @@ class UDPPeerGroupSpec extends FlatSpec {
     pg1.shutdown().futureValue
 
     NetUtils.isListeningUDP(pg1.udpPeerGroupConfig.bindAddress) shouldBe false
+  }
+
+  it should "support a throws create method" in withUDPAddressInUse { address =>
+    NetUtils.isListeningUDP(address) shouldBe true
+    val exception = the[IllegalStateException] thrownBy UDPPeerGroup.createOrThrow(Config(address))
+    exception.getCause shouldBe a[BindException]
+  }
+
+  it should "support an Either create method" in withUDPAddressInUse { address =>
+    NetUtils.isListeningUDP(address) shouldBe true
+    UDPPeerGroup.create(Config(address)).left.value.cause shouldBe a[BindException]
   }
 
   private def randomUDPPeerGroup() = new UDPPeerGroup(Config(aRandomAddress()))
