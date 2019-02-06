@@ -12,6 +12,7 @@ sealed trait PeerGroup[A, F[_]] {
   def sendMessage(address: A, message: ByteBuffer): F[Unit]
   def shutdown(): F[Unit]
   def messageStream(): MessageStream[ByteBuffer]
+  val processAddress: A
 }
 
 object PeerGroup {

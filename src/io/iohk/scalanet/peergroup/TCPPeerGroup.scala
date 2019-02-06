@@ -90,11 +90,17 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
   }
 
   override val messageStream: MessageStream[ByteBuffer] = new MonixMessageStream(subscribers.monixMessageStream)
+
+  override val processAddress: InetSocketAddress = config.processAddress
 }
 
 object TCPPeerGroup {
 
-  case class Config(bindAddress: InetSocketAddress)
+  case class Config(bindAddress: InetSocketAddress, processAddress: InetSocketAddress)
+
+  object Config {
+    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
+  }
 
   def create[F[_]](config: Config)(implicit liftF: Lift[F]): Either[InitializationError, TCPPeerGroup[F]] =
     PeerGroup.create(new TCPPeerGroup[F](config), config)
