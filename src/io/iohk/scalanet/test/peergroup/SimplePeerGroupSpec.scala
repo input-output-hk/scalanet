@@ -1,6 +1,5 @@
 package io.iohk.scalanet.test.peergroup
 
-
 import io.iohk.scalanet.peergroup.SimplePeerGroup.Config
 import io.iohk.scalanet.peergroup.{PeerGroup, SimplePeerGroup}
 import org.scalatest.FlatSpec
@@ -10,20 +9,19 @@ import scala.concurrent.Future
 import org.scalatest.mockito.MockitoSugar._
 //import org.scalatest.Matchers._
 
-class SimplePeerGroupSpec extends FlatSpec{
+class SimplePeerGroupSpec extends FlatSpec {
 
-  it should "send a message to a self SimplePeerGroup" in{
+  it should "send a message to a self SimplePeerGroup" in {
 
-    val mockUnderLinePeerGroup = mock[PeerGroup[String,Future]]
+    val mockUnderLinePeerGroup = mock[PeerGroup[String, Future]]
 
-    val simplePeerGroup= createSimplePeerGroup(mockUnderLinePeerGroup)
-
+    val simplePeerGroup = createSimplePeerGroup(mockUnderLinePeerGroup)
 
   }
 
-  private def createSimplePeerGroup(underLinePeerGroup:PeerGroup[String,Future]) = {
-    val config:Config = Config()
-    new SimplePeerGroup(config,underLinePeerGroup)
+  private def createSimplePeerGroup(underLinePeerGroup: PeerGroup[String, Future]) = {
+    val config: Config = Config()
+    new SimplePeerGroup(config, underLinePeerGroup)
   }
 //
 //  private def withTwoRandomSPeerGroups(testCode: (TCPPeerGroup[Future], TCPPeerGroup[Future]) => Any): Unit = {
