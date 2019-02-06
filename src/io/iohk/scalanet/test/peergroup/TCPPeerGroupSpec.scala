@@ -24,7 +24,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   it should "send a message to a TCPPeerGroup" in
     withTwoRandomTCPPeerGroups { (alice, bob) =>
-      val message = NetUtils.randomBytes(1024*1024*10)
+      val message = NetUtils.randomBytes(1024 * 1024 * 10)
       val messageReceivedF = bob.messageStream.head()
 
       alice.sendMessage(bob.config.bindAddress, ByteBuffer.wrap(message))
@@ -32,7 +32,6 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
       toArray(messageReceived) shouldBe message
     }
-
 
   it should "shutdown a TCPPeerGroup properly" in {
     val tcpPeerGroup = randomTCPPeerGroup()
