@@ -36,9 +36,8 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
       override def initChannel(ch: SocketChannel): Unit = {
 
         ch.pipeline()
-          .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(1048576, 0, 4, 0, 4))
+          .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
           .addLast(nettyDecoder)
-
       }
     })
     .option[Integer](ChannelOption.SO_BACKLOG, 128)

@@ -3,6 +3,8 @@ package io.iohk.scalanet
 import java.net._
 import java.nio.ByteBuffer
 
+import scala.util.Random
+
 object NetUtils {
 
   def aRandomAddress(): InetSocketAddress = {
@@ -49,4 +51,11 @@ object NetUtils {
       socket.close()
     }
   }
+
+  def randomBytes(n: Int): Array[Byte] = {
+    val a = new Array[Byte](n)
+    Random.nextBytes(a)
+    a
+  }
+
 }
