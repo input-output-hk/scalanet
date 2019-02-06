@@ -20,6 +20,8 @@ object PeerGroup {
 
   abstract class TerminalPeerGroup[A, F[_]] extends PeerGroup[A, F]
 
+  abstract class NonTerminalPeerGroup[A, F[_], AA](underlyingPeerGroup: PeerGroup[AA, F]) extends PeerGroup[A,F]
+
   case class InitializationError(message: String, cause: Throwable)
 
   def create[PG](pg: => PG, config: Any): Either[InitializationError, PG] =

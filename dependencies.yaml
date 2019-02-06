@@ -32,6 +32,10 @@ dependencies:
     cats-core:
       verision: "1.6.0"
       lang: scala
+  org.mockito:
+    mockito-core:
+      version: "2.24.0"
+      lang: java
 
 replacements:
   org.scala-lang:
