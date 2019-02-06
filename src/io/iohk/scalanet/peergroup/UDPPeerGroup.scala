@@ -16,7 +16,7 @@ import monix.eval.Task
 import scala.language.higherKinds
 import UDPPeerGroup._
 
-class UDPPeerGroup[F[_]](val udpPeerGroupConfig: Config)(implicit liftF: Lift[F])
+class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     extends TerminalPeerGroup[InetSocketAddress, F]() {
 
   private val workerGroup = new NioEventLoopGroup()
@@ -31,7 +31,7 @@ class UDPPeerGroup[F[_]](val udpPeerGroupConfig: Config)(implicit liftF: Lift[F]
         ch.pipeline.addLast(new ServerInboundHandler)
       }
     })
-    .bind(udpPeerGroupConfig.bindAddress)
+    .bind(config.bindAddress)
     .syncUninterruptibly()
 
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
@@ -61,11 +61,17 @@ class UDPPeerGroup[F[_]](val udpPeerGroupConfig: Config)(implicit liftF: Lift[F]
       udp.close()
     }
   }
+
+  override val processAddress: InetSocketAddress = config.processAddress
 }
 
 object UDPPeerGroup {
 
-  case class Config(bindAddress: InetSocketAddress)
+  case class Config(bindAddress: InetSocketAddress, processAddress: InetSocketAddress)
+
+  object Config {
+    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
+  }
 
   def create[F[_]](config: Config)(implicit liftF: Lift[F]): Either[InitializationError, UDPPeerGroup[F]] =
     PeerGroup.create(new UDPPeerGroup[F](config), config)

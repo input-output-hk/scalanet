@@ -27,18 +27,18 @@ class UDPPeerGroupSpec extends FlatSpec {
     val value: Future[ByteBuffer] = pg2.messageStream.head()
     val b: Array[Byte] = "Hello".getBytes(UTF_8)
 
-    pg1.sendMessage(pg2.udpPeerGroupConfig.bindAddress, ByteBuffer.wrap(b))
+    pg1.sendMessage(pg2.config.bindAddress, ByteBuffer.wrap(b))
 
     NetUtils.toArray(value.futureValue) shouldBe b
   }
 
   it should "shutdown cleanly" in {
     val pg1 = randomUDPPeerGroup()
-    NetUtils.isListeningUDP(pg1.udpPeerGroupConfig.bindAddress) shouldBe true
+    NetUtils.isListeningUDP(pg1.config.bindAddress) shouldBe true
 
     pg1.shutdown().futureValue
 
-    NetUtils.isListeningUDP(pg1.udpPeerGroupConfig.bindAddress) shouldBe false
+    NetUtils.isListeningUDP(pg1.config.bindAddress) shouldBe false
   }
 
   it should "support a throws create method" in withUDPAddressInUse { address =>
