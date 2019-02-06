@@ -1,12 +1,13 @@
-package io.iohk.scalanet.test.peergroup
+package io.iohk.scalanet.peergroup
 
 import io.iohk.scalanet.peergroup.SimplePeerGroup.Config
-import io.iohk.scalanet.peergroup.{PeerGroup, SimplePeerGroup}
+//import io.iohk.scalanet.peergroup.{PeerGroup, SimplePeerGroup}
 import org.scalatest.FlatSpec
 import io.iohk.scalanet.peergroup.future._
 import monix.execution.Scheduler.Implicits.global
 import scala.concurrent.Future
 import org.scalatest.mockito.MockitoSugar._
+//import org.mockito
 //import org.scalatest.Matchers._
 
 class SimplePeerGroupSpec extends FlatSpec {

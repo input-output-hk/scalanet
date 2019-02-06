@@ -13,6 +13,7 @@ scala_test(
     name = "tests",
     deps = [
         "scalanet",
+        "//3rdparty/jvm/org/mockito:mockito_core",
         "//3rdparty/jvm/io/monix",
         "//3rdparty/jvm/org/scalatest",
     ],
