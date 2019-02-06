@@ -2,7 +2,6 @@ package io.iohk.scalanet.peergroup
 
 import java.net.BindException
 import java.nio.ByteBuffer
-import java.nio.charset.StandardCharsets.UTF_8
 
 import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils.{aRandomAddress, isListening, toArray, withAddressInUse}
@@ -25,7 +24,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   it should "send a message to a TCPPeerGroup" in
     withTwoRandomTCPPeerGroups { (alice, bob) =>
-      val message = "Hi Bob!!!".getBytes(UTF_8)
+      val message = NetUtils.randomBytes(1024 * 1024 * 10)
       val messageReceivedF = bob.messageStream.head()
 
       alice.sendMessage(bob.config.bindAddress, ByteBuffer.wrap(message))
