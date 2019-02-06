@@ -18,7 +18,7 @@ object PeerGroup {
 
   type Lift[F[_]] = Kleisli[F, Task[Unit], Unit]
 
-  abstract class TerminalPeerGroup[A, F[_]] extends PeerGroup[A, F]
+  trait TerminalPeerGroup[A, F[_]] extends PeerGroup[A, F]
 
   case class InitializationError(message: String, cause: Throwable)
 
