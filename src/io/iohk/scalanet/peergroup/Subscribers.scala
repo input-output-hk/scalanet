@@ -10,7 +10,7 @@ import scala.collection.mutable
 import scala.collection.JavaConverters._
 
 private[scalanet] class Subscribers {
-  val subscriberSet: mutable.Set[Subscriber.Sync[ByteBuffer]] =
+  private val subscriberSet: mutable.Set[Subscriber.Sync[ByteBuffer]] =
     new CopyOnWriteArraySet[Subscriber.Sync[ByteBuffer]]().asScala
 
   val monixMessageStream: Observable[ByteBuffer] =

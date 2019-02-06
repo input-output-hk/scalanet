@@ -18,7 +18,7 @@ object PeerGroup {
 
   type Lift[F[_]] = Kleisli[F, Task[Unit], Unit]
 
-  abstract class TerminalPeerGroup[A, F[_]] extends PeerGroup[A, F]
+  trait TerminalPeerGroup[A, F[_]] extends PeerGroup[A, F]
 
   abstract class NonTerminalPeerGroup[A, F[_], AA](underlyingPeerGroup: PeerGroup[AA, F]) extends PeerGroup[A, F]
 
