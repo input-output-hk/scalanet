@@ -11,11 +11,11 @@ import scala.collection.mutable
 import scala.language.higherKinds
 import scala.collection.JavaConverters._
 
-class SimplePeerGroup[A, F[_], AA](val config: Config[A,AA], underLinePeerGroup: PeerGroup[AA, F])(implicit liftF: Lift[F])
-    extends NonTerminalPeerGroup[A, F, AA](underLinePeerGroup) {
+class SimplePeerGroup[A, F[_], AA](val config: Config[A, AA], underLinePeerGroup: PeerGroup[AA, F])(
+    implicit liftF: Lift[F]
+) extends NonTerminalPeerGroup[A, F, AA](underLinePeerGroup) {
 
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
-
 
   // TODO if no known peers, create a default routing table with just me.
   // TODO otherwise, enroll with one or more known peers (and obtain/install their routing table here).
@@ -24,8 +24,8 @@ class SimplePeerGroup[A, F[_], AA](val config: Config[A,AA], underLinePeerGroup:
     // TODO if necessary frame the buffer with peer group specific fields
     // Lookup A in the routing table to obtain an AA for the underlying group.
     // Call sendMessage on the underlyingPeerGroup
-    val underLineAddress =  routingTable(address)
-    underLinePeerGroup.sendMessage(underLineAddress,message)
+    val underLineAddress = routingTable(address)
+    underLinePeerGroup.sendMessage(underLineAddress, message)
 
   }
 
@@ -46,5 +46,5 @@ class SimplePeerGroup[A, F[_], AA](val config: Config[A,AA], underLinePeerGroup:
 }
 
 object SimplePeerGroup {
-  case class Config[A,AA](processAddress: A , peers:Map[A,AA])
+  case class Config[A, AA](processAddress: A, peers: Map[A, AA])
 }
