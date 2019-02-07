@@ -27,13 +27,11 @@ class SimplePeerGroupSpec extends FlatSpec {
     val stubbedCancelableMessageF = CancellableFuture[ByteBuffer](CancelableFuture.successful(message))
     when(messageStream.head()).thenReturn(stubbedCancelableMessageF)
 
-    val simplePeerGroup = createSimplePeerGroup(underlyingPeerGroup,Map.empty[String,String])
+    val simplePeerGroup = createSimplePeerGroup(underlyingPeerGroup, Map.empty[String, String])
     val nodeAddress = "A"
-
 
     val messageReceivedF = simplePeerGroup.messageStream.head()
     simplePeerGroup.sendMessage(nodeAddress, message)
-
 
     messageReceivedF.futureValue shouldBe message
   }
@@ -50,30 +48,30 @@ class SimplePeerGroupSpec extends FlatSpec {
     val nodeAddressB = "B"
     val undelyingAddressB = "underlyingB"
 
-    val peerConfigs =  Map[String,String](nodeAddressB -> undelyingAddressB)
+    val peerConfigs = Map[String, String](nodeAddressB -> undelyingAddressB)
     val simplePeerGroup = createSimplePeerGroup(underlyingPeerGroup, peerConfigs)
-
 
     val messageReceivedF = simplePeerGroup.messageStream.head()
     simplePeerGroup.sendMessage(nodeAddressB, message)
 
-
     messageReceivedF.futureValue shouldBe message
   }
-
 
   it should "shutdown a TCPPeerGroup properly" in {
     val underlyingPeerGroup = mock[PeerGroup[String, Future]]
     val nodeAddressB = "B"
     val undelyingAddressB = "underlyingB"
     when(underlyingPeerGroup.processAddress).thenReturn("underlying")
-    val peerConfigs =  Map[String,String](nodeAddressB -> undelyingAddressB)
+    val peerConfigs = Map[String, String](nodeAddressB -> undelyingAddressB)
     val simplePeerGroup = createSimplePeerGroup(underlyingPeerGroup, peerConfigs)
     when(underlyingPeerGroup.shutdown()).thenReturn(Future(()))
     simplePeerGroup.shutdown().futureValue shouldBe (())
   }
 
-  private def createSimplePeerGroup(underLinePeerGroup: PeerGroup[String, Future],peerConfigs:Map[String,String]): SimplePeerGroup[String, Future, String] = {
-    new SimplePeerGroup(Config("A",peerConfigs), underLinePeerGroup).init()
+  private def createSimplePeerGroup(
+      underLinePeerGroup: PeerGroup[String, Future],
+      peerConfigs: Map[String, String]
+  ): SimplePeerGroup[String, Future, String] = {
+    new SimplePeerGroup(Config("A", peerConfigs), underLinePeerGroup).init()
   }
 }
