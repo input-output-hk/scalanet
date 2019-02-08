@@ -3,6 +3,7 @@ load("@io_bazel_rules_scala//scala:scala_import.bzl", "scala_import")
 scala_import(
     name = "cats_core",
     exports = [
+        "//3rdparty/jvm/org/scala_lang/modules:scala_collection_compat",
         "//3rdparty/jvm/org/scala_lang:scala_library",
         ":cats_kernel",
         ":cats_macros",
@@ -12,7 +13,7 @@ scala_import(
         "//external:jar/org/typelevel/cats_core_2_12"
     ],
     visibility = [
-        "//3rdparty/jvm:__subpackages__"
+        "//visibility:public"
     ]
 )
 
@@ -37,6 +38,7 @@ scala_import(
 scala_import(
     name = "cats_kernel",
     exports = [
+        "//3rdparty/jvm/org/scala_lang/modules:scala_collection_compat",
         "//3rdparty/jvm/org/scala_lang:scala_library"
     ],
     jars = [
@@ -52,6 +54,7 @@ scala_import(
 scala_import(
     name = "cats_macros",
     exports = [
+        "//3rdparty/jvm/org/scala_lang/modules:scala_collection_compat",
         "//3rdparty/jvm/org/scala_lang:scala_library",
         ":machinist"
     ],
@@ -73,21 +76,6 @@ scala_import(
     ],
     jars = [
         "//external:jar/org/typelevel/machinist_2_12"
-    ],
-    visibility = [
-        "//3rdparty/jvm:__subpackages__"
-    ]
-)
-
-
-
-scala_import(
-    name = "macro_compat",
-    exports = [
-        "//3rdparty/jvm/org/scala_lang:scala_library"
-    ],
-    jars = [
-        "//external:jar/org/typelevel/macro_compat_2_12"
     ],
     visibility = [
         "//3rdparty/jvm:__subpackages__"
