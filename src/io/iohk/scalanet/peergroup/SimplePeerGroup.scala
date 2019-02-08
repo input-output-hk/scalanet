@@ -40,11 +40,11 @@ class SimplePeerGroup[A, F[_], AA](val config: Config[A, AA], underLinePeerGroup
 
   def init(): SimplePeerGroup[A, F, AA] = {
     routingTable += processAddress -> underLinePeerGroup.processAddress
-    routingTable ++= config.peers
+    routingTable ++= config.knownPeers
     this
   }
 }
 
 object SimplePeerGroup {
-  case class Config[A, AA](processAddress: A, peers: Map[A, AA])
+  case class Config[A, AA](processAddress: A, knownPeers: Map[A, AA])
 }
