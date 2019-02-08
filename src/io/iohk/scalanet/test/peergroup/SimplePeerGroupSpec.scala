@@ -48,8 +48,8 @@ class SimplePeerGroupSpec extends FlatSpec {
     val nodeAddressB = "B"
     val undelyingAddressB = "underlyingB"
 
-    val peerConfigs = Map[String, String](nodeAddressB -> undelyingAddressB)
-    val simplePeerGroup = createSimplePeerGroup(underlyingPeerGroup, peerConfigs)
+    val knownPeers = Map[String, String](nodeAddressB -> undelyingAddressB)
+    val simplePeerGroup = createSimplePeerGroup(underlyingPeerGroup, knownPeers)
 
     val messageReceivedF = simplePeerGroup.messageStream.head()
     simplePeerGroup.sendMessage(nodeAddressB, message)
@@ -62,16 +62,16 @@ class SimplePeerGroupSpec extends FlatSpec {
     val nodeAddressB = "B"
     val undelyingAddressB = "underlyingB"
     when(underlyingPeerGroup.processAddress).thenReturn("underlying")
-    val peerConfigs = Map[String, String](nodeAddressB -> undelyingAddressB)
-    val simplePeerGroup = createSimplePeerGroup(underlyingPeerGroup, peerConfigs)
+    val knownPeers = Map[String, String](nodeAddressB -> undelyingAddressB)
+    val simplePeerGroup = createSimplePeerGroup(underlyingPeerGroup, knownPeers)
     when(underlyingPeerGroup.shutdown()).thenReturn(Future(()))
     simplePeerGroup.shutdown().futureValue shouldBe (())
   }
 
   private def createSimplePeerGroup(
       underLinePeerGroup: PeerGroup[String, Future],
-      peerConfigs: Map[String, String]
+      knownPeers: Map[String, String]
   ): SimplePeerGroup[String, Future, String] = {
-    new SimplePeerGroup(Config("A", peerConfigs), underLinePeerGroup).init()
+    new SimplePeerGroup(Config("A", knownPeers), underLinePeerGroup).init()
   }
 }
