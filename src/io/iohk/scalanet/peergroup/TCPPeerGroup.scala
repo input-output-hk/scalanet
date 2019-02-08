@@ -22,7 +22,10 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     extends TerminalPeerGroup[InetSocketAddress, F]() {
 
   private val nettyDecoder = new NettyDecoder()
+
   private val workerGroup = new NioEventLoopGroup()
+
+  private val subscribers = new Subscribers()
 
   private val clientBootstrap = new Bootstrap()
     .group(workerGroup)
@@ -79,17 +82,16 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     })
   }
 
-  private val subscribers = new Subscribers()
+  override val messageStream: MessageStream[ByteBuffer] = new MonixMessageStream(subscribers.monixMessageStream)
 
   private class NettyDecoder extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      val remoteAddress = ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress]
+      // TODO message stream will need to expose the address.
+//      val remoteAddress = ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress]
       val byteBuffer = msg.asInstanceOf[ByteBuf]
       subscribers.notify(byteBuffer.nioBuffer())
     }
   }
-
-  override val messageStream: MessageStream[ByteBuffer] = new MonixMessageStream(subscribers.monixMessageStream)
 }
 
 object TCPPeerGroup {
