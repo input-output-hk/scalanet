@@ -13,59 +13,25 @@ options:
 
 dependencies:
 
-  com.github.pureconfig:
-    pureconfig:
-      lang: scala
-      version: "0.10.1"
-  com.typesafe:
-    config:
-      lang: java
-      version: "1.3.3"
-  com.typesafe.akka:
-    akka:
-      lang: scala
-      version: "2.5.19"
-      modules: [actor, actor-typed, slf4j, testkit, actor-testkit-typed]
   io.monix:
     monix:
-      version: "3.0.0-RC1"
+      version: "3.0.0-RC2"
+      lang: scala
+    monix-cats:
+      version: "2.3.3"
       lang: scala
   org.scalatest:
     scalatest:
       version: "3.0.5"
       lang: scala
-  org.scalacheck:
-    scalacheck:
-      version: "1.14.0"
-      lang: scala
-  com.softwaremill.quicklens:
-    quicklens:
-      version: "1.4.11"
-      lang: scala
-  org.bouncycastle:
-    bcprov-jdk15on:
-      version: "1.59"
-      lang: java
-  io.micrometer:
-    micrometer-registry-datadog:
-      version: "0.12.0.RELEASE"
-      lang: java
   io.netty:
     netty-all:
       version: "4.1.28.Final"
       lang: java
-  com.beachape:
-    enumeratum:
-      version: "1.5.13"
+  org.typelevel:
+    cats-core:
+      verision: "1.6.0"
       lang: scala
-    enumeratum-macros:
-      version: "1.5.9"
-      lang: scala
-  org.mockito:
-    mockito-core:
-      version: "2.21.0"
-      lang: java
-
 
 replacements:
   org.scala-lang:

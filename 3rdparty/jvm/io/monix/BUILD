@@ -4,6 +4,7 @@ scala_import(
     name = "monix",
     exports = [
         "//3rdparty/jvm/org/scala_lang:scala_library",
+        ":monix_catnap",
         ":monix_eval",
         ":monix_execution",
         ":monix_java",
@@ -21,9 +22,43 @@ scala_import(
 
 
 scala_import(
+    name = "monix_catnap",
+    exports = [
+        "//3rdparty/jvm/org/scala_lang:scala_library",
+        ":monix_execution"
+    ],
+    jars = [
+        "//external:jar/io/monix/monix_catnap_2_12"
+    ],
+    visibility = [
+        "//3rdparty/jvm:__subpackages__"
+    ]
+)
+
+
+
+scala_import(
+    name = "monix_cats",
+    exports = [
+        "//3rdparty/jvm/org/scala_lang:scala_library",
+        "//3rdparty/jvm/org/typelevel:cats_core",
+        ":monix_types"
+    ],
+    jars = [
+        "//external:jar/io/monix/monix_cats_2_12"
+    ],
+    visibility = [
+        "//visibility:public"
+    ]
+)
+
+
+
+scala_import(
     name = "monix_eval",
     exports = [
         "//3rdparty/jvm/org/scala_lang:scala_library",
+        ":monix_catnap",
         ":monix_execution"
     ],
     jars = [
@@ -39,6 +74,7 @@ scala_import(
 scala_import(
     name = "monix_execution",
     exports = [
+        "//3rdparty/jvm/org/jctools:jctools_core",
         "//3rdparty/jvm/org/reactivestreams:reactive_streams",
         "//3rdparty/jvm/org/scala_lang:scala_library",
         "//3rdparty/jvm/org/typelevel:cats_effect"
@@ -71,7 +107,6 @@ scala_import(
 scala_import(
     name = "monix_reactive",
     exports = [
-        "//3rdparty/jvm/org/jctools:jctools_core",
         "//3rdparty/jvm/org/scala_lang:scala_library",
         ":monix_eval",
         ":monix_execution"
@@ -90,11 +125,25 @@ scala_import(
     name = "monix_tail",
     exports = [
         "//3rdparty/jvm/org/scala_lang:scala_library",
-        ":monix_eval",
         ":monix_execution"
     ],
     jars = [
         "//external:jar/io/monix/monix_tail_2_12"
+    ],
+    visibility = [
+        "//3rdparty/jvm:__subpackages__"
+    ]
+)
+
+
+
+scala_import(
+    name = "monix_types",
+    exports = [
+        "//3rdparty/jvm/org/scala_lang:scala_library"
+    ],
+    jars = [
+        "//external:jar/io/monix/monix_types_2_12"
     ],
     visibility = [
         "//3rdparty/jvm:__subpackages__"
