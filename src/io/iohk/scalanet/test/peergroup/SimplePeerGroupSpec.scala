@@ -3,12 +3,11 @@ package io.iohk.scalanet.peergroup
 import java.nio.ByteBuffer
 
 import io.iohk.scalanet.NetUtils.randomBytes
-import io.iohk.scalanet.messagestream.{CancellableFuture, MessageStream}
+import io.iohk.scalanet.messagestream.MessageStream
 import io.iohk.scalanet.peergroup.SimplePeerGroup.Config
 import io.iohk.scalanet.peergroup.future._
-import monix.execution.CancelableFuture
 import monix.execution.Scheduler.Implicits.global
-import org.mockito.Mockito.when
+import org.mockito.Mockito.{when,verify}
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures._
@@ -24,16 +23,14 @@ class SimplePeerGroupSpec extends FlatSpec {
     val messageStream = mock[MessageStream[ByteBuffer]]
     when(underlyingPeerGroup.messageStream()).thenReturn(messageStream)
     val message = ByteBuffer.wrap(randomBytes(1024))
-    val stubbedCancelableMessageF = CancellableFuture[ByteBuffer](CancelableFuture.successful(message))
-    when(messageStream.head()).thenReturn(stubbedCancelableMessageF)
 
     val simplePeerGroup = createSimplePeerGroup(underlyingPeerGroup, Map.empty[String, String])
     val nodeAddress = "A"
+    when(underlyingPeerGroup.sendMessage(nodeAddress,message)).thenReturn(Future(()))
 
-    val messageReceivedF = simplePeerGroup.messageStream.head()
     simplePeerGroup.sendMessage(nodeAddress, message)
+    verify(underlyingPeerGroup).sendMessage("underlying",message)
 
-    messageReceivedF.futureValue shouldBe message
   }
 
   it should "send a message to a other peer in SimplePeerGroup" in {
@@ -42,19 +39,17 @@ class SimplePeerGroupSpec extends FlatSpec {
     val messageStream = mock[MessageStream[ByteBuffer]]
     when(underlyingPeerGroup.messageStream()).thenReturn(messageStream)
     val message = ByteBuffer.wrap(randomBytes(1024))
-    val stubbedCancelableMessageF = CancellableFuture[ByteBuffer](CancelableFuture.successful(message))
-    when(messageStream.head()).thenReturn(stubbedCancelableMessageF)
 
     val nodeAddressB = "B"
     val undelyingAddressB = "underlyingB"
+    when(underlyingPeerGroup.sendMessage(nodeAddressB,message)).thenReturn(Future(()))
 
     val knownPeers = Map[String, String](nodeAddressB -> undelyingAddressB)
     val simplePeerGroup = createSimplePeerGroup(underlyingPeerGroup, knownPeers)
 
-    val messageReceivedF = simplePeerGroup.messageStream.head()
     simplePeerGroup.sendMessage(nodeAddressB, message)
+    verify(underlyingPeerGroup).sendMessage("underlyingB",message)
 
-    messageReceivedF.futureValue shouldBe message
   }
 
   it should "shutdown a TCPPeerGroup properly" in {
