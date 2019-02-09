@@ -7,7 +7,7 @@ import io.iohk.scalanet.messagestream.MessageStream
 import io.iohk.scalanet.peergroup.SimplePeerGroup.Config
 import io.iohk.scalanet.peergroup.future._
 import monix.execution.Scheduler.Implicits.global
-import org.mockito.Mockito.{when,verify}
+import org.mockito.Mockito.{when, verify}
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures._
@@ -26,10 +26,10 @@ class SimplePeerGroupSpec extends FlatSpec {
 
     val simplePeerGroup = createSimplePeerGroup(underlyingPeerGroup, Map.empty[String, String])
     val nodeAddress = "A"
-    when(underlyingPeerGroup.sendMessage(nodeAddress,message)).thenReturn(Future(()))
+    when(underlyingPeerGroup.sendMessage(nodeAddress, message)).thenReturn(Future(()))
 
     simplePeerGroup.sendMessage(nodeAddress, message)
-    verify(underlyingPeerGroup).sendMessage("underlying",message)
+    verify(underlyingPeerGroup).sendMessage("underlying", message)
 
   }
 
@@ -42,13 +42,13 @@ class SimplePeerGroupSpec extends FlatSpec {
 
     val nodeAddressB = "B"
     val undelyingAddressB = "underlyingB"
-    when(underlyingPeerGroup.sendMessage(nodeAddressB,message)).thenReturn(Future(()))
+    when(underlyingPeerGroup.sendMessage(nodeAddressB, message)).thenReturn(Future(()))
 
     val knownPeers = Map[String, String](nodeAddressB -> undelyingAddressB)
     val simplePeerGroup = createSimplePeerGroup(underlyingPeerGroup, knownPeers)
 
     simplePeerGroup.sendMessage(nodeAddressB, message)
-    verify(underlyingPeerGroup).sendMessage("underlyingB",message)
+    verify(underlyingPeerGroup).sendMessage("underlyingB", message)
 
   }
 
