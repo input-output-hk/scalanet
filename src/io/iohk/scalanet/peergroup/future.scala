@@ -14,6 +14,8 @@ object future {
 
   type TCPPeerGroup = io.iohk.scalanet.peergroup.TCPPeerGroup[Future]
 
+  type UDPPeerGroup = io.iohk.scalanet.peergroup.UDPPeerGroup[Future]
+
   implicit def liftFuture(implicit ec: ExecutionContext): Lift[Future] =
     Kleisli(_.runToFuture(Scheduler(ec)))
 }

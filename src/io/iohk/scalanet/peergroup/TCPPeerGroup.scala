@@ -99,21 +99,8 @@ object TCPPeerGroup {
   case class Config(bindAddress: InetSocketAddress)
 
   def create[F[_]](config: Config)(implicit liftF: Lift[F]): Either[InitializationError, TCPPeerGroup[F]] =
-    try {
-      Right(new TCPPeerGroup[F](config))
-    } catch {
-      case t: Throwable =>
-        Left(InitializationError(initializationErrorMsg(config), t))
-    }
+    PeerGroup.create(new TCPPeerGroup[F](config), config)
 
   def createOrThrow[F[_]](config: Config)(implicit liftF: Lift[F]): TCPPeerGroup[F] =
-    try {
-      new TCPPeerGroup[F](config)
-    } catch {
-      case t: Throwable =>
-        throw new IllegalStateException(initializationErrorMsg(config), t)
-    }
-
-  private def initializationErrorMsg[F[_]](config: Config) =
-    s"Failed initialization of ${classOf[TCPPeerGroup[F]].getName} with config $config. Cause follows."
+    PeerGroup.createOrThrow(new TCPPeerGroup[F](config), config)
 }

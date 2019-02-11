@@ -19,6 +19,8 @@ object eithert {
 
   type TCPPeerGroup = io.iohk.scalanet.peergroup.TCPPeerGroup[ET]
 
+  type UDPPeerGroup = io.iohk.scalanet.peergroup.UDPPeerGroup[ET]
+
   implicit def liftEitherT(implicit ec: ExecutionContext): Lift[ET] =
     Kleisli { task: Task[Unit] =>
       val errorMappedFuture: Future[Either[SendError, Unit]] =
