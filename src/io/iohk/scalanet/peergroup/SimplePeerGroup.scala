@@ -18,7 +18,7 @@ import io.iohk.decco._
 
 class SimplePeerGroup[A, F[_], AA](val config: Config[A, AA], underLinePeerGroup: PeerGroup[AA, F])(
     implicit liftF: Lift[F]
-) extends NonTerminalPeerGroup[A, F, AA](underLinePeerGroup){
+) extends NonTerminalPeerGroup[A, F, AA](underLinePeerGroup) {
 
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
 
@@ -40,20 +40,16 @@ class SimplePeerGroup[A, F[_], AA](val config: Config[A, AA], underLinePeerGroup
   // TODO process messages from underlying (remove any fields added by this group to get the user data)
   // TODO add the user message to this stream
   override val messageStream: MessageStream[ByteBuffer] = {
-    underLinePeerGroup.messageStream().map {
-    b => b
-  //    case me: EnrolMe[String,InetSocketAddress](a,aa) => _ //update the routing table
+    underLinePeerGroup.messageStream().map { b =>
+      b
+    //    case me: EnrolMe[String,InetSocketAddress](a,aa) => _ //update the routing table
 //      toEnrolMe(_) match {
-      ////        case Right(r) => routingTable += (r.myAddress -> r.myUnderlyingAddress)
-      ////        case Left(x) => heapCodec[DecodeFailure].encode(x)
-      ////      }
-
+    ////        case Right(r) => routingTable += (r.myAddress -> r.myUnderlyingAddress)
+    ////        case Left(x) => heapCodec[DecodeFailure].encode(x)
+    ////      }
 
     }
   }
-
-
-
 
   override val processAddress: A = config.processAddress
 
@@ -69,14 +65,11 @@ class SimplePeerGroup[A, F[_], AA](val config: Config[A, AA], underLinePeerGroup
 
 object SimplePeerGroup {
 
-
   trait PeerMessage[A, AA]
 
   case class EnrolMe[A, AA](myAddress: A, myUnderlyingAddress: AA) extends PeerMessage[A, AA]
 
-  case class Config[A, AA](processAddress: A, knownPeers: Map[A,AA])
-
-
+  case class Config[A, AA](processAddress: A, knownPeers: Map[A, AA])
 
   object EnrolMe {
 //    implicit def toByteBuffer[A,AA](implicit enrolMe: EnrolMe[A,AA]): ByteBuffer =
@@ -85,24 +78,21 @@ object SimplePeerGroup {
 //    implicit def toEnrolMe[A,AA](implicit byteBuffer: ByteBuffer): Either[DecodeFailure, EnrolMe[A, AA]] =
 //      heapCodec[EnrolMe[A,AA]].decode(byteBuffer)
 
-
     implicit def toByteBuffer(implicit enrolMe: EnrolMe[String, InetSocketAddress]): ByteBuffer =
-      heapCodec[EnrolMe[String,InetSocketAddress]].encode(enrolMe)
+      heapCodec[EnrolMe[String, InetSocketAddress]].encode(enrolMe)
     implicit def toEnrolMe(implicit byteBuffer: ByteBuffer): Either[DecodeFailure, EnrolMe[String, InetSocketAddress]] =
-      heapCodec[EnrolMe[String,InetSocketAddress]].decode(byteBuffer)
+      heapCodec[EnrolMe[String, InetSocketAddress]].decode(byteBuffer)
 
   }
 
-
-  case class Enrolled[A,AA](address: A,underlyingAddress:AA) extends PeerMessage[A,AA]
+  case class Enrolled[A, AA](address: A, underlyingAddress: AA) extends PeerMessage[A, AA]
 
   object Enrolled {
-    implicit def toByteBuffer( implicit enrolled: Enrolled[String,InetSocketAddress])=heapCodec[Enrolled[String,InetSocketAddress]].encode(enrolled)
-    implicit def toEnrolled( implicit bf: ByteBuffer)=heapCodec[Enrolled[String,InetSocketAddress]].decode(bf)
+    implicit def toByteBuffer(implicit enrolled: Enrolled[String, InetSocketAddress]) =
+      heapCodec[Enrolled[String, InetSocketAddress]].encode(enrolled)
+    implicit def toEnrolled(implicit bf: ByteBuffer) = heapCodec[Enrolled[String, InetSocketAddress]].decode(bf)
 
   }
-
-
 
 }
 
@@ -118,8 +108,6 @@ object SimplePeerGroup {
 //
 //  override def toString: String = s"MessageSpec($messageName)"
 //}
-
-
 //object PeersSpec extends MessageSpec[KnownPeers] {
 //  private val AddressLength = 4
 //  private val PortLength    = 4
@@ -159,4 +147,3 @@ object SimplePeerGroup {
 //    }
 //  }
 //}
-
