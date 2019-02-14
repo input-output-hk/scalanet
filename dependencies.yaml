@@ -13,6 +13,10 @@ options:
 
 dependencies:
 
+  com.chuusai:
+    shapeless:
+      lang: scala
+      version: "2.3.3"
   io.monix:
     monix:
       version: "3.0.0-RC2"
@@ -36,6 +40,10 @@ dependencies:
     mockito-core:
       version: "2.24.0"
       lang: java
+  com.typesafe.play:
+    play-json:
+      version: "2.6.10"
+      lang: scala
 
 replacements:
   org.scala-lang:

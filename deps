@@ -3,7 +3,7 @@
 ROOT=`pwd`
 
 
-BAZEL_DEPS="/tmp/$(echo "$PWD" | sha256sum | awk '{ print $1 }')/.bazel-deps/"
+BAZEL_DEPS="/tmp/$(echo "$PWD" | shasum | awk '{ print $1 }')/.bazel-deps/"
 
 if [ -e $BAZEL_DEPS ]; then
     if [ ! -d $BAZEL_DEPS ]; then
@@ -16,7 +16,7 @@ if [ -e $BAZEL_DEPS ]; then
 else
     git clone https://github.com/johnynek/bazel-deps.git "$BAZEL_DEPS"
     cd "$BAZEL_DEPS"
-    git checkout 1af8921d52f053fad575f26762533a3823b4a847
+    git checkout 3fdaaa6de3ed8cf010a6b1713a04d55c4abb2592
 fi
 
 bazel run //:parse -- generate -r $ROOT -s 3rdparty/workspace.bzl -d dependencies.yaml
