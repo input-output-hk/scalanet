@@ -3,6 +3,11 @@ package io.iohk.scalanet
 import java.net._
 import java.nio.ByteBuffer
 
+import io.iohk.scalanet.peergroup.PeerGroup.Lift
+import io.iohk.scalanet.peergroup.TCPPeerGroup
+import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
+
+import scala.concurrent.Future
 import scala.util.Random
 
 object NetUtils {
@@ -66,6 +71,21 @@ object NetUtils {
     val a = new Array[Byte](n)
     Random.nextBytes(a)
     a
+  }
+
+  def randomTCPPeerGroup(implicit liftF: Lift[Future]) = new TCPPeerGroup(Config(aRandomAddress()))
+
+  def withTwoRandomTCPPeerGroups(
+      testCode: (TCPPeerGroup[Future], TCPPeerGroup[Future]) => Any
+  )(implicit liftF: Lift[Future]): Unit = {
+    val pg1 = randomTCPPeerGroup(liftF)
+    val pg2 = randomTCPPeerGroup(liftF)
+    try {
+      testCode(pg1, pg2)
+    } finally {
+      pg1.shutdown()
+      pg2.shutdown()
+    }
   }
 
 }
