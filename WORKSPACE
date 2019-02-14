@@ -29,7 +29,7 @@ load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 git_repository(
     name = "codecs",
     remote = "https://github.com/input-output-hk/decco.git",
-    branch = "develop"
+    commit = "540a48141ed62d989a9f69dad91a57c10448aa67"
 )
 
 git_repository(

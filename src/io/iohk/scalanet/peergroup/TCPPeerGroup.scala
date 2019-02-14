@@ -15,7 +15,6 @@ import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
 import io.netty.handler.codec.bytes.ByteArrayEncoder
 import monix.eval.Task
-
 import scala.language.higherKinds
 
 class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
@@ -54,6 +53,7 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
             .writeAndFlush(Unpooled.wrappedBuffer(message))
             .addListener((_: ChannelFuture) => ctx.channel().close())
         }
+
       }
 
       clientBootstrap
@@ -83,7 +83,6 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
 
   private class NettyDecoder extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      val remoteAddress = ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress]
       val byteBuffer = msg.asInstanceOf[ByteBuf]
       subscribers.notify(byteBuffer.nioBuffer())
     }
