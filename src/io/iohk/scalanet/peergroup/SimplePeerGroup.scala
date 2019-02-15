@@ -15,8 +15,8 @@ import scala.language.higherKinds
 import scala.collection.JavaConverters._
 import io.iohk.decco.auto._
 import io.iohk.decco._
-
 import SimplePeerGroup._
+import monix.eval.Task
 
 class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
     val config: Config[A, AA],
@@ -43,11 +43,11 @@ class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
           routingTable += address -> underlyingAddress
           underLyingPeerGroup
             .sendMessage(underlyingAddress, msgCodec.encode(Enroled(address, underlyingAddress, routingTable.toList)))
-          println(s"GOT AN ENROLL ME MESSAGE $address, $underlyingAddress")
+          println(s"$processAddress: GOT AN ENROLL ME MESSAGE $address, $underlyingAddress")
         case Enroled(address, underlyingAddress, newRoutingTable) =>
           routingTable.clear()
           routingTable ++= newRoutingTable
-          println(s"$address, enrolled and installed new routing table $newRoutingTable")
+          println(s"$processAddress: enrolled and installed new routing table $newRoutingTable")
       }
     })
   }
@@ -56,11 +56,9 @@ class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
     Map(msgPartialCodec.typeCode -> handle)
 
   messageStream.foreach { b =>
-    println(s"GOT A MESSAGE. DECODING IT." + b.toString)
+    println(s"${processAddress}: GOT A MESSAGE. DECODING IT." + b.toString)
     Codec.decodeFrame(decoderWrappers, 0, b)
   }
-
-  init()
 
   // TODO if no known peers, create a default routing table with just me.
   // TODO otherwise, enroll with one or more known peers (and obtain/install their routing table here).
@@ -81,17 +79,20 @@ class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
   // TODO add the user message to this stream
   // Codec[String], Codec[Int], Codec[PeerGroupMessage]
 
-  def init(): SimplePeerGroup[A, F, AA] = {
+  override def initialize(): F[Unit] = {
     routingTable += processAddress -> underLyingPeerGroup.processAddress
-    config.knownPeers.headOption.foreach({
+
+    val enrolmentF: Option[F[Unit]] = config.knownPeers.headOption.map({
       case (knownPeerAddress, knownPeerAddressUnderlying) =>
         routingTable += knownPeerAddress -> knownPeerAddressUnderlying
+
         underLyingPeerGroup.sendMessage(
           knownPeerAddressUnderlying,
           msgCodec.encode(EnrolMe(config.processAddress, underLyingPeerGroup.processAddress))
         )
     })
-    this
+
+    enrolmentF.getOrElse(liftF(Task.unit))
   }
 }
 

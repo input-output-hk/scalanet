@@ -8,6 +8,7 @@ import io.iohk.scalanet.peergroup.PeerGroup.{InitializationError, Lift, Terminal
 import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
+import io.netty.channel.ChannelHandler.Sharable
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
@@ -15,6 +16,7 @@ import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
 import io.netty.handler.codec.bytes.ByteArrayEncoder
 import monix.eval.Task
+
 import scala.language.higherKinds
 
 class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
@@ -81,6 +83,7 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
 
   private val subscribers = new Subscribers()
 
+  @Sharable
   private class NettyDecoder extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val byteBuffer = msg.asInstanceOf[ByteBuf]
