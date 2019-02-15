@@ -3,6 +3,8 @@ package io.iohk.scalanet.peergroup
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 
+import io.iohk.decco.PartialCodec.{DecodeResult, Failure}
+import io.iohk.decco.{Codec, PartialCodec}
 import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
 import io.iohk.scalanet.peergroup.PeerGroup.{InitializationError, Lift, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
@@ -46,6 +48,42 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     .bind(config.bindAddress)
     .syncUninterruptibly()
 
+
+  override def createMessageChannel[MessageType: PartialCodec](): MessageChannel[InetSocketAddress, MessageType, F] = {
+    new MessageChannel[InetSocketAddress, MessageType, F] {
+
+      private val ev = PartialCodec[MessageType]
+      private val codec = Codec.heapCodec
+
+      private val subscribers = new Subscribers[MessageType]()
+
+      private val handle: (Int, ByteBuffer) => Unit = (nextIndex, byteBuffer) => {
+        val messageE: Either[Failure, DecodeResult[MessageType]] = ev.decode(nextIndex, byteBuffer)
+        messageE match {
+          case Left(Failure) =>
+            println(s"OH DEAR, DECODING FAILED")
+          case Right(decodeResult) =>
+            println(s"${config.processAddress}: Got a successful decode $decodeResult. Notifying subscribers")
+            subscribers.notify(decodeResult.decoded)
+        }
+      }
+
+      private val decoderWrappers: Map[String, (Int, ByteBuffer) => Unit] =
+        Map(ev.typeCode -> handle)
+
+      messageStream.foreach { b =>
+        println(s"$processAddress: GOT A MESSAGE. DECODING IT." + b.toString)
+        Codec.decodeFrame(decoderWrappers, 0, b)
+      }
+
+      override val inboundMessages = new MonixMessageStream(subscribers.monixMessageStream)
+
+      override def sendMessage(address: InetSocketAddress, message: MessageType): F[Unit] = {
+        TCPPeerGroup.this.sendMessage(address, codec.encode(message))
+      }
+    }
+  }
+
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
     val send: Task[Unit] = Task {
 
@@ -81,7 +119,7 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     })
   }
 
-  private val subscribers = new Subscribers()
+  private val subscribers = new Subscribers[ByteBuffer]()
 
   @Sharable
   private class NettyDecoder extends ChannelInboundHandlerAdapter {

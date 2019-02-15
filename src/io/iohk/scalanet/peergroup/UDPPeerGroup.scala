@@ -21,7 +21,7 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
 
   private val workerGroup = new NioEventLoopGroup()
 
-  private val subscribers = new Subscribers()
+  private val subscribers = new Subscribers[ByteBuffer]()
 
   private val server = new Bootstrap()
     .group(workerGroup)

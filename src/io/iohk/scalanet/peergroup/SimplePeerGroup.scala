@@ -5,7 +5,6 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.decco.Codec.heapCodec
-import io.iohk.decco.PartialCodec.{DecodeResult, Failure}
 import io.iohk.scalanet.messagestream.MessageStream
 import io.iohk.scalanet.peergroup.PeerGroup.{Lift, NonTerminalPeerGroup}
 import io.iohk.scalanet.peergroup.SimplePeerGroup.Config
@@ -19,11 +18,11 @@ import SimplePeerGroup._
 import monix.eval.Task
 
 class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
-    val config: Config[A, AA],
-    underLyingPeerGroup: PeerGroup[AA, F]
-)(
-    implicit liftF: Lift[F]
-) extends NonTerminalPeerGroup[A, F, AA](underLyingPeerGroup) {
+                                                                val config: Config[A, AA],
+                                                                underLyingPeerGroup: PeerGroup[AA, F]
+                                                              )(
+                                                                implicit liftF: Lift[F]
+                                                              ) extends NonTerminalPeerGroup[A, F, AA](underLyingPeerGroup) {
 
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
 
@@ -33,32 +32,46 @@ class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
   override val processAddress: A = config.processAddress
   override val messageStream: MessageStream[ByteBuffer] = underLyingPeerGroup.messageStream()
 
-  private val handle: (Int, ByteBuffer) => Unit = (nextIndex, byteBuffer) => {
-    val messageE: Either[Failure, DecodeResult[PeerMessage[A, AA]]] = msgPartialCodec.decode(nextIndex, byteBuffer)
+  private val controlChannel = underLyingPeerGroup.createMessageChannel[PeerMessage[A, AA]]()
 
-    messageE.map(result => {
-      val peerMessage = result.decoded
-      peerMessage match {
-        case EnrolMe(address, underlyingAddress) =>
-          routingTable += address -> underlyingAddress
-          underLyingPeerGroup
-            .sendMessage(underlyingAddress, msgCodec.encode(Enroled(address, underlyingAddress, routingTable.toList)))
-          println(s"$processAddress: GOT AN ENROLL ME MESSAGE $address, $underlyingAddress")
-        case Enroled(address, underlyingAddress, newRoutingTable) =>
-          routingTable.clear()
-          routingTable ++= newRoutingTable
-          println(s"$processAddress: enrolled and installed new routing table $newRoutingTable")
-      }
-    })
+  controlChannel.inboundMessages.foreach {
+    case EnrolMe(address, underlyingAddress) =>
+      routingTable += address -> underlyingAddress
+      controlChannel
+        .sendMessage(underlyingAddress, Enroled(address, underlyingAddress, routingTable.toList))
+      println(s"$processAddress: GOT AN ENROLL ME MESSAGE $address, $underlyingAddress")
+    case Enroled(address, underlyingAddress, newRoutingTable) =>
+      routingTable.clear()
+      routingTable ++= newRoutingTable
+      println(s"$processAddress: enrolled and installed new routing table $newRoutingTable")
   }
 
-  private val decoderWrappers: Map[String, (Int, ByteBuffer) => Unit] =
-    Map(msgPartialCodec.typeCode -> handle)
+//  private val handle: (Int, ByteBuffer) => Unit = (nextIndex, byteBuffer) => {
+//    val messageE: Either[Failure, DecodeResult[PeerMessage[A, AA]]] = msgPartialCodec.decode(nextIndex, byteBuffer)
+//
+//    messageE.map(result => {
+//      val peerMessage = result.decoded
+//      peerMessage match {
+//        case EnrolMe(address, underlyingAddress) =>
+//          routingTable += address -> underlyingAddress
+//          underLyingPeerGroup
+//            .sendMessage(underlyingAddress, msgCodec.encode(Enroled(address, underlyingAddress, routingTable.toList)))
+//          println(s"$processAddress: GOT AN ENROLL ME MESSAGE $address, $underlyingAddress")
+//        case Enroled(address, underlyingAddress, newRoutingTable) =>
+//          routingTable.clear()
+//          routingTable ++= newRoutingTable
+//          println(s"$processAddress: enrolled and installed new routing table $newRoutingTable")
+//      }
+//    })
+//  }
 
-  messageStream.foreach { b =>
-    println(s"${processAddress}: GOT A MESSAGE. DECODING IT." + b.toString)
-    Codec.decodeFrame(decoderWrappers, 0, b)
-  }
+//  private val decoderWrappers: Map[String, (Int, ByteBuffer) => Unit] =
+//    Map(msgPartialCodec.typeCode -> handle)
+
+//  messageStream.foreach { b =>
+//    println(s"${processAddress}: GOT A MESSAGE. DECODING IT." + b.toString)
+//    Codec.decodeFrame(decoderWrappers, 0, b)
+//  }
 
   // TODO if no known peers, create a default routing table with just me.
   // TODO otherwise, enroll with one or more known peers (and obtain/install their routing table here).
