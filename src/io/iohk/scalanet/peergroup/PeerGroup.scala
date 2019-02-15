@@ -9,6 +9,7 @@ import monix.eval.Task
 import scala.language.higherKinds
 
 sealed trait PeerGroup[A, F[_]] {
+  def initialize(): F[Unit] = ???
   def sendMessage(address: A, message: ByteBuffer): F[Unit]
   def shutdown(): F[Unit]
   def messageStream(): MessageStream[ByteBuffer]
