@@ -27,14 +27,11 @@ class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
 
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
 
-
   private val msgPartialCodec: PartialCodec[PeerMessage[A, AA]] = PartialCodec[PeerMessage[A, AA]]
   private val msgCodec = Codec.heapCodec(msgPartialCodec)
 
   override val processAddress: A = config.processAddress
   override val messageStream: MessageStream[ByteBuffer] = underLyingPeerGroup.messageStream()
-
-
 
   private val handle: (Int, ByteBuffer) => Unit = (nextIndex, byteBuffer) => {
     val messageE: Either[Failure, DecodeResult[PeerMessage[A, AA]]] = msgPartialCodec.decode(nextIndex, byteBuffer)
@@ -59,7 +56,7 @@ class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
     Map(msgPartialCodec.typeCode -> handle)
 
   messageStream.foreach { b =>
-    println(s"GOT A MESSAGE. DECODING IT." +b.toString)
+    println(s"GOT A MESSAGE. DECODING IT." + b.toString)
     Codec.decodeFrame(decoderWrappers, 0, b)
   }
 

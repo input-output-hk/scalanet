@@ -31,23 +31,23 @@ class SimplePeerGroupSpec extends FlatSpec {
 //    Thread.sleep(5000)
 //  }
 
-  it should "send a message to it self" in withTwoRandomTCPPeerGroups {(a,b) =>
+  it should "send a message to it self" in withTwoRandomTCPPeerGroups { (a, b) =>
     val bob = new SimplePeerGroup(SimplePeerGroup.Config("Bob", Map.empty[String, InetSocketAddress]), a)
 
-   // val alice = new SimplePeerGroup(SimplePeerGroup.Config("Alice", Map("Bob" -> a.processAddress)), b)
+    // val alice = new SimplePeerGroup(SimplePeerGroup.Config("Alice", Map("Bob" -> a.processAddress)), b)
     val message = "HI!! Bob"
     val codec = heapCodec[String]
     val bytes: ByteBuffer = codec.encode(message)
     val messageReceivedF = bob.messageStream.head()
 
-     bob.sendMessage("Bob",bytes)
-    val messageReceived =codec.decode(messageReceivedF.futureValue)
+    bob.sendMessage("Bob", bytes)
+    val messageReceived = codec.decode(messageReceivedF.futureValue)
 
     messageReceived.right.value shouldBe message
 
   }
 
-  it should "send a message to a other peer of SimplePeerGroup" in withTwoRandomTCPPeerGroups {(a,b) =>
+  it should "send a message to a other peer of SimplePeerGroup" in withTwoRandomTCPPeerGroups { (a, b) =>
     val bob = new SimplePeerGroup(SimplePeerGroup.Config("Bob", Map.empty[String, InetSocketAddress]), a)
 
     val alice = new SimplePeerGroup(SimplePeerGroup.Config("Alice", Map("Bob" -> a.processAddress)), b)
@@ -56,9 +56,9 @@ class SimplePeerGroupSpec extends FlatSpec {
     val bytes: ByteBuffer = codec.encode(message)
     val messageReceivedF = bob.messageStream.head()
 
-    alice.sendMessage("Bob",bytes)
+    alice.sendMessage("Bob", bytes)
 
-    val messageReceived =codec.decode(messageReceivedF.futureValue)
+    val messageReceived = codec.decode(messageReceivedF.futureValue)
 
     messageReceived.right.value shouldBe message
 
