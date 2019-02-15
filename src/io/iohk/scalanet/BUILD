@@ -21,6 +21,7 @@ scala_test(
         "//3rdparty/jvm/io/monix",
         "//3rdparty/jvm/org/scalatest",
         "//3rdparty/jvm/com/typesafe/play:play_json",
+        "//3rdparty/jvm/org/scalacheck",
         "@codecs//src/io/iohk/decco"
     ],
 )

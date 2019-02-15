@@ -1,5 +1,5 @@
 options:
-  buildHeader: 
+  buildHeader:
     - "load(\"@io_bazel_rules_scala//scala:scala.bzl\", \"scala_library\")\nload(\"@io_bazel_rules_scala//scala:scala_import.bzl\", \"scala_import\")"
   languages: [ "java", "scala:2.12.7" ]
   resolverType: "coursier"
@@ -43,6 +43,10 @@ dependencies:
   com.typesafe.play:
     play-json:
       version: "2.6.10"
+      lang: scala
+  org.scalacheck:
+    scalacheck:
+      version: "1.14.0"
       lang: scala
 
 replacements:

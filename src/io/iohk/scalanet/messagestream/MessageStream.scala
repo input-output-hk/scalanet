@@ -16,4 +16,5 @@ trait MessageStream[T] {
   def take(n: Long): MessageStream[T]
   def takeWhile(predicate: T => Boolean): MessageStream[T]
   def head(): CancellableFuture[T]
+  def drop(n: Int): MessageStream[T]
 }
