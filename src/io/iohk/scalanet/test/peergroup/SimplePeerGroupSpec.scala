@@ -39,21 +39,26 @@ class SimplePeerGroupSpec extends FlatSpec {
     messageReceived.right.value shouldBe message
   }
 
-  it should "send a message to another peer of SimplePeerGroup" in withTwoSimplePeerGroups("Alice", "Bob") { (alice, bob) =>
-    val message = "HI!! Bob"
-    val codec = heapCodec[String]
-    val bytes: ByteBuffer = codec.encode(message)
-    val messageReceivedF = bob.messageStream.drop(1).head()
+  it should "send a message to another peer of SimplePeerGroup" in withTwoSimplePeerGroups("Alice", "Bob") {
+    (alice, bob) =>
+      val message = "HI!! Bob"
+      val codec = heapCodec[String]
+      val bytes: ByteBuffer = codec.encode(message)
+      val messageReceivedF = bob.messageStream.drop(1).head()
 
-    alice.sendMessage("Bob", bytes).futureValue
+      alice.sendMessage("Bob", bytes).futureValue
 
-    val messageReceived = codec.decode(messageReceivedF.futureValue)
+      val messageReceived = codec.decode(messageReceivedF.futureValue)
 
-    messageReceived.right.value shouldBe message
+      messageReceived.right.value shouldBe message
   }
 
-  private def withTwoSimplePeerGroups(a: String, b: String)(testCode: (SimplePeerGroup[String, Future, InetSocketAddress],
-    SimplePeerGroup[String, Future, InetSocketAddress]) => Any): Unit = {
+  private def withTwoSimplePeerGroups(a: String, b: String)(
+      testCode: (
+          SimplePeerGroup[String, Future, InetSocketAddress],
+          SimplePeerGroup[String, Future, InetSocketAddress]
+      ) => Any
+  ): Unit = {
 
     val pga = randomTCPPeerGroup
     val pgb = randomTCPPeerGroup
