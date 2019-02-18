@@ -44,7 +44,6 @@ class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
       println(s"$processAddress: enrolled and installed new routing table $newRoutingTable")
   }
 
-
   // TODO if no known peers, create a default routing table with just me.
   // TODO otherwise, enroll with one or more known peers (and obtain/install their routing table here).
 
