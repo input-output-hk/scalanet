@@ -1,86 +1,100 @@
-# scalanet
-A scala libaray for network
-
+# CI status
 [![CircleCI](https://circleci.com/gh/input-output-hk/scalanet.svg?style=svg&circle-token=de4aa64767f761c1f85c706500a5aca50074a244)](https://circleci.com/gh/input-output-hk/scalanet)
 
-## Branches
+# scalanet
+
+### Summary
+
+Scalanet is an asynchronous, strongly typed, resource-managed, Scala networking library, with support for a variety of network technologies.
+What does all that mean?
+ * Resource managed. Scalanet makes it as easy as possible to send and receive messages without having to open or close connections.
+ * Asynchronous. Scalanet is non-blocking. In this regard, it is like netty, however, unlike netty, Scalanet uses *reactive*
+ programming idioms. 
+ * Scala. It is written in Scala.
+ * Strongly typed. The library can translate binary data to and from case classes through the use of our codec library, [decco](https://github.com/input-output-hk/decco.git).
+ If you have used libraries like [circe](https://github.com/circe/circe) or other libraries that derive typeclasses with shapeless, decco works
+ in the same way.
+ * Technology support. Out of the box, Scalanet supports TCP, UDP and ... (TODO keep this list updated) but through an abstraction
+ called the _Peer Group_, allows for the addition of other transports or more complex p2p overlays (kademlia, ethereum, etc).
+ The _Peer Group_ provides a consistent interface whatever your networking approach.   
+
+It is well suited to peer-to-peer apps but supports client-server too.
+
+### Peer groups
+As mentioned, the foundation of Scalanet is the notion of a _Peer Group_. From a practical standpoint, a peer group 
+allows an application to use a variety of network technologies with a consistent interface. More abstractly, it defines 
+* an address space and 
+* a context in which communication can happen.
+* TODO: quality of service
+
+A Peer Group could be something like scalanet's `UDPPeerGroup` where the addresses are IP:port combos and the set of 
+peers allowed to communicate is basically anybody on the IP network in question (the internet, an office network, etc).
+Equally, a Peer Group could be something like an Ethereum network where addresses are public keys and the peers
+are anybody who talks the RLPx protocol. Equally, a peer group could be an integration test with the address space {Alice, Bob, Charlie}
+and the peers are all in the same JVM. Scalanet will not limit you in this regard. 
+
+Peer groups can implement arbitrary enrolment and encryption schemes, so are suitable for implementing secure messaging overlays.
+Typically, on the internet, limiting the context of communication (aka _zoning_) is performed by firewalls. The idea
+is so ubiquitous that it may not have struck you that this is a hack. Peer groups are designed to support more elegant
+solutions, generally using cryptography instead of firewall provisioning.
+ 
+### Structure of the library
+Here is a picture of the structure of the library for a few sample applications:
+![](doc-resources/sample-configurations.png)
+
+### Getting started
+The easiest way to get started is to send and receive data over TCP, using the library just like netty. Have a look at
+the [TCPPeerGroupSpec](src/io/iohk/scalanet/test/peergroup/TCPPeerGroupSpec.scala) test case or the following code. 
+
+```scala
+// import some peer group classes
+import io.iohk.scalanet.peergroup._
+
+// message sending can be controlled using either
+// monix, cat-effect, cats EitherT or scala Futures
+// depending on your taste.
+import io.iohk.scalanet.peergroup.future._
+import scala.concurrent.Future
+
+import java.net.InetSocketAddress
+import java.nio.ByteBuffer
+
+val config = TCPPeerGroup.Config(new InetSocketAddress(???))
+
+val tcp = TCPPeerGroup.createOrThrow(config)
+
+// send a message
+val messageF: Future[Unit] = tcp.sendMessage(new InetSocketAddress("example.com", 80), ByteBuffer.wrap("Hello!".getBytes))
+
+// receive messages
+tcp.messageStream.foreach((b: ByteBuffer) => ())
+ 
+``` 
+
+# Contributing
+
+### Branches
 
 Two main branches are maintained: `develop` and `master`. 
-`master` contains the latest version of the code that was tested end-to-end. 
-`develop` contains the latest version of the code that runs all the tests (unit and integration tests). 
+`master` contains the latest stable version of the library. 
+`develop` is the place you want to merge to if submitting PRs.
 
+### Building the codebase
 
-## Working with the codebase
+To build the codebase, we use [bazel](https://bazel.build/). Assuming you have bazel installed correctly, you can build
+the codebase with
+```bash
+bazel test //...
+```
 
-To build the codebase, we use [bazel](https://bazel.build/).
-
-In order to keep the code format consistent, we use scalafmt and git hooks, follow these steps to configure it accordingly (otherwise, your changes are going to be rejected by CircleCI):
+### Formatting the codebase
+In order to keep the code format consistent, we use scalafmt.
+ 
+The CI build will fail if code is not formatted, but the project contains a githook that means you do not have to think
+about. To set this up:
 - Install [coursier](https://github.com/coursier/coursier#command-line), the `coursier` command must work.
 - `./install-scalafmt.sh` (might require sudo).
 - `cp pre-commit .git/hooks/pre-commit`
 
-### A note on bazel
-
-Bazel distributes the codebase in two types of entities:
- - **package**: a folder containing a `BUILD` file. A package is a collection of files and *rules*
- - **rule**: a rule is something that can be built. A rule is a pure function (in the more 'functional programming' sense) that given some inputs (tipically source files and some kind of compiler(s)) produces an output (an executable, a library, the result of running some tests...). It's important to note that rules are **pure**, that is, given some concrete inputs the whole thing can be replaced with what bazel would build. That is, bazel caches what it produces and if nothing in the input changes it's always going to use the cached version. And that's why tests in bazel must be _idempotent_.
-
-Note: The BUILD file lists the rules of a package (usually one library and/or binary, and a test suite). If you want to see what a package can build, just look at the BUILD file.
-
-Note 2: Bazel is designed from the grown-up for absolutelly reproducible builds, that is: once you have built something you should **_NEVER_** want/need to clean. You can clean (with `bazel clean`, or it's extreme version `bazel clean --expunge`), but you shouldn't.
-
-### Using Bazel from the terminal
-
-I'm going to explain different things that can be done, using this sample situation: we have a build file in `src/io/iohk/cef/codecs/BUILD`, with two rules, an scala library named `codecs` and a set of tests named `tests`. Where the `main` folder is a subfolder of the `workspace`. The workspace is the folder containing the `WORKSPACE` file.
-
-All rules in bazel have a label (similar to a full name in Java/Scala). This labels when writen in full are something like this:
-
-```
-//<package_name>:<rule_name>
-```
-
-Where `package_name` is the path containing the `BUILD` file. In our example the package_name of our package is `src/io/iohk/cef/codecs`. So the label for the `codecs` rule is `//src/io/iohk/cef/codecs:codecs`. And the label for the `tests` rule is `//src/io/iohk/cef/codecs:tests`.
-
-If the last bit of `package_name` (that is `codecs` in our example) is the same than the rule name, the rule name can be omited. That is, we can label our two packages `//src/io/iohk/cef/codecs` and `//src/io/iohk/cef/codecs:tests` which is quite clean.
-
-There are three relevant command in bazel `build`, `run` and `test`. Usually run this way:
-
-```bash
-bazel <command> <label> [<label>...]
-```
-
-For example, to build `crypto` you need to run this:
-
-```bash
-bazel build //src/io/iohk/network
-```
-
-Or, to run it's associated tests (that is the rule `tests`)
-
-```bash
-bazel test //src/io/iohk/network
-```
-
-Note that, by default only shows a summary of the test results, but not the whole thing. If you want the whole thing, you need this:
-
-```bash
-bazel test //src/io/iohk/network --test_output=all
-```
-
-Or, if you are only interested on the tests that fail:
-
-```bash
-bazel test //src/io/iohk/network --test_output=errors
-```
-
-But the other two accept as many as you need. Or even better, you can use the `...` wildcard. This will run all the tests below `main` (recursively):
-
-```bash
-bazel test //src/...
-```
-
-Or this will build and test everything:
-
-```bash
-bazel test //...
-```
+### Reporting problems
+You can also create issues in github at https://github.com/input-output-hk/scalanet/issues.
