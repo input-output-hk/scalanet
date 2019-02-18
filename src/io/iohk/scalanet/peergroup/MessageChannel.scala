@@ -26,7 +26,10 @@ abstract class MessageChannel[A, MessageType: PartialCodec, F[_]] {
   def sendMessage(address: A, message: MessageType): F[Unit]
 }
 
-class TerminalGroupMessageChannel[A, MessageType: PartialCodec, F[_]](terminalPeerGroup: TerminalPeerGroup[InetSocketAddress,F], messageStream: MessageStream[ByteBuffer]) extends MessageChannel[InetSocketAddress,MessageType,F]{
+class TerminalGroupMessageChannel[A, MessageType: PartialCodec, F[_]](
+    terminalPeerGroup: TerminalPeerGroup[InetSocketAddress, F],
+    messageStream: MessageStream[ByteBuffer]
+) extends MessageChannel[InetSocketAddress, MessageType, F] {
   private val ev = PartialCodec[MessageType]
   private val codec = Codec.heapCodec
 
