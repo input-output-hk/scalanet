@@ -48,7 +48,6 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     .bind(config.bindAddress)
     .syncUninterruptibly()
 
-
   override def createMessageChannel[MessageType: PartialCodec](): MessageChannel[InetSocketAddress, MessageType, F] = {
     new MessageChannel[InetSocketAddress, MessageType, F] {
 
