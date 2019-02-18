@@ -65,7 +65,7 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
 
   override val processAddress: InetSocketAddress = config.processAddress
   override def createMessageChannel[MessageType: PartialCodec](): MessageChannel[InetSocketAddress, MessageType, F] =
-    new TerminalGroupMessageChannel(this, messageStream)
+    new TerminalGroupMessageChannel(this)
 }
 
 object UDPPeerGroup {
