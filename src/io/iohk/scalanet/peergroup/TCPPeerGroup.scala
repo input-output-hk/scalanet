@@ -96,7 +96,8 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     }
   }
 
-  override val messageStream: MessageStream[ByteBuffer] = new MonixMessageStream(subscribers.monixMessageStream).map(_.duplicate())
+  override val messageStream: MessageStream[ByteBuffer] =
+    new MonixMessageStream(subscribers.monixMessageStream).map(_.duplicate())
 
   override val processAddress: InetSocketAddress = config.processAddress
 }
