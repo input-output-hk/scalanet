@@ -45,7 +45,8 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     liftF(Task(server.channel().close().await()))
   }
 
-  override val messageStream: MessageStream[ByteBuffer] = new MonixMessageStream(subscribers.monixMessageStream).map(_.duplicate())
+  override val messageStream: MessageStream[ByteBuffer] =
+    new MonixMessageStream(subscribers.monixMessageStream).map(_.duplicate())
 
   private class ServerInboundHandler extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
