@@ -1,10 +1,8 @@
 package io.iohk.scalanet.peergroup
 
-import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.decco.Codec.heapCodec
 import io.iohk.scalanet.messagestream.MessageStream
 import io.iohk.scalanet.peergroup.PeerGroup.{Lift, NonTerminalPeerGroup}
 import io.iohk.scalanet.peergroup.SimplePeerGroup.Config
@@ -46,32 +44,6 @@ class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
       println(s"$processAddress: enrolled and installed new routing table $newRoutingTable")
   }
 
-//  private val handle: (Int, ByteBuffer) => Unit = (nextIndex, byteBuffer) => {
-//    val messageE: Either[Failure, DecodeResult[PeerMessage[A, AA]]] = msgPartialCodec.decode(nextIndex, byteBuffer)
-//
-//    messageE.map(result => {
-//      val peerMessage = result.decoded
-//      peerMessage match {
-//        case EnrolMe(address, underlyingAddress) =>
-//          routingTable += address -> underlyingAddress
-//          underLyingPeerGroup
-//            .sendMessage(underlyingAddress, msgCodec.encode(Enroled(address, underlyingAddress, routingTable.toList)))
-//          println(s"$processAddress: GOT AN ENROLL ME MESSAGE $address, $underlyingAddress")
-//        case Enroled(address, underlyingAddress, newRoutingTable) =>
-//          routingTable.clear()
-//          routingTable ++= newRoutingTable
-//          println(s"$processAddress: enrolled and installed new routing table $newRoutingTable")
-//      }
-//    })
-//  }
-
-//  private val decoderWrappers: Map[String, (Int, ByteBuffer) => Unit] =
-//    Map(msgPartialCodec.typeCode -> handle)
-
-//  messageStream.foreach { b =>
-//    println(s"${processAddress}: GOT A MESSAGE. DECODING IT." + b.toString)
-//    Codec.decodeFrame(decoderWrappers, 0, b)
-//  }
 
   // TODO if no known peers, create a default routing table with just me.
   // TODO otherwise, enroll with one or more known peers (and obtain/install their routing table here).
@@ -118,20 +90,5 @@ object SimplePeerGroup {
   case class Enroled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, AA)]) extends PeerMessage[A, AA]
 
   case class Config[A, AA](processAddress: A, knownPeers: Map[A, AA])
-
-  object EnrolMe {
-    //    implicit def toByteBuffer[A,AA](implicit enrolMe: EnrolMe[A,AA]): ByteBuffer =
-    //      heapCodec[EnrolMe[A,AA]].encode(enrolMe)
-    //
-    //    implicit def toEnrolMe[A,AA](implicit byteBuffer: ByteBuffer): Either[DecodeFailure, EnrolMe[A, AA]] =
-    //      heapCodec[EnrolMe[A,AA]].decode(byteBuffer)
-
-    implicit def toByteBuffer(implicit enrolMe: EnrolMe[String, InetSocketAddress]): ByteBuffer =
-      heapCodec[EnrolMe[String, InetSocketAddress]].encode(enrolMe)
-
-    implicit def toEnrolMe(implicit byteBuffer: ByteBuffer): Either[DecodeFailure, EnrolMe[String, InetSocketAddress]] =
-      heapCodec[EnrolMe[String, InetSocketAddress]].decode(byteBuffer)
-
-  }
 
 }
