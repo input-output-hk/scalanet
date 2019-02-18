@@ -4,7 +4,6 @@ import java.net.BindException
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets.UTF_8
 
-
 import io.iohk.scalanet.peergroup.UDPPeerGroup.Config
 import io.iohk.scalanet.peergroup.future._
 import org.scalatest.EitherValues._
@@ -41,7 +40,7 @@ class UDPPeerGroupSpec extends FlatSpec {
   }
 
   it should "support a throws create method" in withUDPAddressInUse { address =>
-   isListeningUDP(address) shouldBe true
+    isListeningUDP(address) shouldBe true
     val exception = the[IllegalStateException] thrownBy UDPPeerGroup.createOrThrow(Config(address))
     exception.getCause shouldBe a[BindException]
   }
@@ -50,6 +49,5 @@ class UDPPeerGroupSpec extends FlatSpec {
     isListeningUDP(address) shouldBe true
     UDPPeerGroup.create(Config(address)).left.value.cause shouldBe a[BindException]
   }
-
 
 }
