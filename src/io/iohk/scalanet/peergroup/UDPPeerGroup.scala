@@ -35,6 +35,8 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     .bind(config.bindAddress)
     .syncUninterruptibly()
 
+  private val decoderTable = new DecoderTable()
+
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
     liftF(Task(writeUdp(address, message)))
   }
@@ -43,7 +45,7 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     liftF(Task(server.channel().close().await()))
   }
 
-  override val messageStream: MessageStream[ByteBuffer] = new MonixMessageStream(subscribers.monixMessageStream)
+  override val messageStream: MessageStream[ByteBuffer] = new MonixMessageStream(subscribers.monixMessageStream).map(_.duplicate())
 
   private class ServerInboundHandler extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
@@ -64,8 +66,9 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
   }
 
   override val processAddress: InetSocketAddress = config.processAddress
+
   override def createMessageChannel[MessageType: PartialCodec](): MessageChannel[InetSocketAddress, MessageType, F] =
-    new TerminalGroupMessageChannel(this)
+    new MessageChannel(this, decoderTable)
 }
 
 object UDPPeerGroup {
