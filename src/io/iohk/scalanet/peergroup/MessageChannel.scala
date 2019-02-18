@@ -27,8 +27,7 @@ abstract class MessageChannel[A, MessageType: PartialCodec, F[_]] {
 }
 
 class TerminalGroupMessageChannel[A, MessageType: PartialCodec, F[_]](
-    terminalPeerGroup: TerminalPeerGroup[InetSocketAddress, F],
-    messageStream: MessageStream[ByteBuffer]
+    terminalPeerGroup: TerminalPeerGroup[InetSocketAddress, F]
 ) extends MessageChannel[InetSocketAddress, MessageType, F] {
   private val ev = PartialCodec[MessageType]
   private val codec = Codec.heapCodec
@@ -49,7 +48,7 @@ class TerminalGroupMessageChannel[A, MessageType: PartialCodec, F[_]](
   private val decoderWrappers: Map[String, (Int, ByteBuffer) => Unit] =
     Map(ev.typeCode -> handle)
 
-  messageStream.foreach { b =>
+  terminalPeerGroup.messageStream.foreach { b =>
     println(s"GOT A MESSAGE. DECODING IT." + b.toString)
     Codec.decodeFrame(decoderWrappers, 0, b)
   }

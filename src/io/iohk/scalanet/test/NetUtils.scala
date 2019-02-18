@@ -4,8 +4,7 @@ import java.net._
 import java.nio.ByteBuffer
 
 import io.iohk.scalanet.peergroup.PeerGroup.Lift
-import io.iohk.scalanet.peergroup.TCPPeerGroup
-import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
+import io.iohk.scalanet.peergroup.{TCPPeerGroup, UDPPeerGroup}
 
 import scala.concurrent.Future
 import scala.util.Random
@@ -73,13 +72,26 @@ object NetUtils {
     a
   }
 
-  def randomTCPPeerGroup(implicit liftF: Lift[Future]) = new TCPPeerGroup(Config(aRandomAddress()))
+  def randomTCPPeerGroup(implicit liftF: Lift[Future]) = new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
 
   def withTwoRandomTCPPeerGroups(
       testCode: (TCPPeerGroup[Future], TCPPeerGroup[Future]) => Any
   )(implicit liftF: Lift[Future]): Unit = {
     val pg1 = randomTCPPeerGroup(liftF)
     val pg2 = randomTCPPeerGroup(liftF)
+    try {
+      testCode(pg1, pg2)
+    } finally {
+      pg1.shutdown()
+      pg2.shutdown()
+    }
+  }
+
+   def randomUDPPeerGroup(implicit liftF: Lift[Future]) = new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
+
+   def withTwoRandomUDPPeerGroups(testCode: (UDPPeerGroup[Future], UDPPeerGroup[Future]) => Any)(implicit liftF: Lift[Future]): Unit = {
+    val pg1 = randomUDPPeerGroup
+    val pg2 = randomUDPPeerGroup
     try {
       testCode(pg1, pg2)
     } finally {
