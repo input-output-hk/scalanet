@@ -18,11 +18,11 @@ import SimplePeerGroup._
 import monix.eval.Task
 
 class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
-                                                                val config: Config[A, AA],
-                                                                underLyingPeerGroup: PeerGroup[AA, F]
-                                                              )(
-                                                                implicit liftF: Lift[F]
-                                                              ) extends NonTerminalPeerGroup[A, F, AA](underLyingPeerGroup) {
+    val config: Config[A, AA],
+    underLyingPeerGroup: PeerGroup[AA, F]
+)(
+    implicit liftF: Lift[F]
+) extends NonTerminalPeerGroup[A, F, AA](underLyingPeerGroup) {
 
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
 
