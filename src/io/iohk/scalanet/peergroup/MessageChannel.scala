@@ -40,7 +40,7 @@ class TerminalGroupMessageChannel[A, MessageType: PartialCodec, F[_]](
       case Left(Failure) =>
         println(s"OH DEAR, DECODING FAILED")
       case Right(decodeResult) =>
-        println(s"Got a successful decode $decodeResult. Notifying subscribers")
+        println(s"${terminalPeerGroup.processAddress} Got a successful decode $decodeResult. Notifying subscribers")
         subscribers.notify(decodeResult.decoded)
     }
   }
@@ -49,7 +49,7 @@ class TerminalGroupMessageChannel[A, MessageType: PartialCodec, F[_]](
     Map(ev.typeCode -> handle)
 
   terminalPeerGroup.messageStream.foreach { b =>
-    println(s"GOT A MESSAGE. DECODING IT." + b.toString)
+    println(s"${terminalPeerGroup.processAddress} GOT A MESSAGE. DECODING IT." + b.toString)
     Codec.decodeFrame(decoderWrappers, 0, b)
   }
   override val inboundMessages = new MonixMessageStream(subscribers.monixMessageStream)
