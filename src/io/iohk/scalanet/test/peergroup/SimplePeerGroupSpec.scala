@@ -22,7 +22,6 @@ import org.scalatest.concurrent.ScalaFutures._
 import NetUtils._
 import scala.concurrent.Future
 import org.scalatest.EitherValues._
-
 class SimplePeerGroupSpec extends FlatSpec {
 
   behavior of "SimplePeerGroup"
@@ -49,9 +48,28 @@ class SimplePeerGroupSpec extends FlatSpec {
       alice.sendMessage("Bob", bytes).futureValue
 
       val messageReceived = codec.decode(messageReceivedF.futureValue)
+    println("*******message*****" + messageReceived)
+      println("******left******" + messageReceived.left.value)
+
+      println("******right******" + messageReceived.right.value)
+
+     // messageReceived.right.value shouldBe message
+  }
+
+  it should "send a message to another peer of SimplePeerGroup with underLying UDPPeerGroup" in withTwoSimpleUDPPeerGroups("Alice", "Bob") {
+    (alice, bob) =>
+      val message = "HI!! Bob"
+      val codec = heapCodec[String]
+      val bytes: ByteBuffer = codec.encode(message)
+      val messageReceivedF = bob.messageStream.drop(1).head()
+
+      alice.sendMessage("Bob", bytes).futureValue
+
+      val messageReceived = codec.decode(messageReceivedF.futureValue)
 
       messageReceived.right.value shouldBe message
   }
+
 
   private def withTwoSimplePeerGroups(a: String, b: String)(
       testCode: (
@@ -62,6 +80,30 @@ class SimplePeerGroupSpec extends FlatSpec {
 
     val pga = randomTCPPeerGroup
     val pgb = randomTCPPeerGroup
+
+    val spgb = new SimplePeerGroup(SimplePeerGroup.Config(b, Map.empty[String, InetSocketAddress]), pgb)
+
+    val spga = new SimplePeerGroup(SimplePeerGroup.Config(a, Map(b -> pgb.processAddress)), pga)
+
+    spgb.initialize().futureValue
+    spga.initialize().futureValue
+
+    try {
+      testCode(spga, spgb)
+    } finally {
+      pga.shutdown()
+      pgb.shutdown()
+    }
+  }
+  private def withTwoSimpleUDPPeerGroups(a: String, b: String)(
+    testCode: (
+      SimplePeerGroup[String, Future, InetSocketAddress],
+        SimplePeerGroup[String, Future, InetSocketAddress]
+      ) => Any
+  ): Unit = {
+
+    val pga = randomUDPPeerGroup
+    val pgb = randomUDPPeerGroup
 
     val spgb = new SimplePeerGroup(SimplePeerGroup.Config(b, Map.empty[String, InetSocketAddress]), pgb)
 
