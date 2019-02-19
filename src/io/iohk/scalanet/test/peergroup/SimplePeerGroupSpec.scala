@@ -48,28 +48,29 @@ class SimplePeerGroupSpec extends FlatSpec {
       alice.sendMessage("Bob", bytes).futureValue
 
       val messageReceived = codec.decode(messageReceivedF.futureValue)
-    println("*******message*****" + messageReceived)
+      println("*******message*****" + messageReceived)
       println("******left******" + messageReceived.left.value)
 
       println("******right******" + messageReceived.right.value)
 
-     // messageReceived.right.value shouldBe message
+    // messageReceived.right.value shouldBe message
   }
 
-  it should "send a message to another peer of SimplePeerGroup with underLying UDPPeerGroup" in withTwoSimpleUDPPeerGroups("Alice", "Bob") {
-    (alice, bob) =>
-      val message = "HI!! Bob"
-      val codec = heapCodec[String]
-      val bytes: ByteBuffer = codec.encode(message)
-      val messageReceivedF = bob.messageStream.drop(1).head()
+  it should "send a message to another peer of SimplePeerGroup with underLying UDPPeerGroup" in withTwoSimpleUDPPeerGroups(
+    "Alice",
+    "Bob"
+  ) { (alice, bob) =>
+    val message = "HI!! Bob"
+    val codec = heapCodec[String]
+    val bytes: ByteBuffer = codec.encode(message)
+    val messageReceivedF = bob.messageStream.drop(1).head()
 
-      alice.sendMessage("Bob", bytes).futureValue
+    alice.sendMessage("Bob", bytes).futureValue
 
-      val messageReceived = codec.decode(messageReceivedF.futureValue)
+    val messageReceived = codec.decode(messageReceivedF.futureValue)
 
-      messageReceived.right.value shouldBe message
+    messageReceived.right.value shouldBe message
   }
-
 
   private def withTwoSimplePeerGroups(a: String, b: String)(
       testCode: (
@@ -96,9 +97,9 @@ class SimplePeerGroupSpec extends FlatSpec {
     }
   }
   private def withTwoSimpleUDPPeerGroups(a: String, b: String)(
-    testCode: (
-      SimplePeerGroup[String, Future, InetSocketAddress],
-        SimplePeerGroup[String, Future, InetSocketAddress]
+      testCode: (
+          SimplePeerGroup[String, Future, InetSocketAddress],
+          SimplePeerGroup[String, Future, InetSocketAddress]
       ) => Any
   ): Unit = {
 
