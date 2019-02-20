@@ -32,13 +32,15 @@ class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
 
   private val controlChannel = underLyingPeerGroup.createMessageChannel[PeerMessage[A, AA]]()
 
-  controlChannel.inboundMessages.collect {
-    case EnrolMe(address, underlyingAddress) =>
-      routingTable += address -> underlyingAddress
-      controlChannel
-        .sendMessage(underlyingAddress, Enroled(address, underlyingAddress, routingTable.toList))
-      println(s"$processAddress: GOT AN ENROLL ME MESSAGE $address, $underlyingAddress")
-  }.foreach(_)
+  controlChannel.inboundMessages
+    .collect {
+      case EnrolMe(address, underlyingAddress) =>
+        routingTable += address -> underlyingAddress
+        controlChannel
+          .sendMessage(underlyingAddress, Enroled(address, underlyingAddress, routingTable.toList))
+        println(s"$processAddress: GOT AN ENROLL ME MESSAGE $address, $underlyingAddress")
+    }
+    .foreach(_)
 
   // TODO if no known peers, create a default routing table with just me.
   // TODO otherwise, enroll with one or more known peers (and obtain/install their routing table here).
