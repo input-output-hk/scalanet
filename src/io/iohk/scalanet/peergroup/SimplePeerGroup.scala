@@ -68,12 +68,14 @@ class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
       )
 
       val enrolledTask: Task[Unit] = Task.deferFutureAction { implicit scheduler =>
-        controlChannel.inboundMessages.collect {
-          case Enroled(_, _, newRoutingTable) =>
-            routingTable.clear()
-            routingTable ++= newRoutingTable
-            println(s"$processAddress: enrolled and installed new routing table $newRoutingTable")
-        }.head()
+        controlChannel.inboundMessages
+          .collect {
+            case Enroled(_, _, newRoutingTable) =>
+              routingTable.clear()
+              routingTable ++= newRoutingTable
+              println(s"$processAddress: enrolled and installed new routing table $newRoutingTable")
+          }
+          .head()
 //        controlChannel.inboundMessages.takeWhile(_.isInstanceOf[Enroled[A, AA]]).head().map {
 //          case Enroled(_, _, newRoutingTable) =>
 //            routingTable.clear()
