@@ -25,15 +25,15 @@ maven_dependencies()
 
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
-
-git_repository(
-    name = "codecs",
-    remote = "https://github.com/input-output-hk/decco.git",
-    commit = "3e486abeac552fb6fcc20a3a94effb0f8ca1d419"
-)
-
-git_repository(
-    name = "crypto",
-    remote = "https://github.com/input-output-hk/multicrypto.git",
-    commit = "90c2e4001d4c44b9b87acae1a218d5c9093d8703"
-)
+#
+#git_repository(
+#    name = "codecs",
+#    remote = "https://github.com/input-output-hk/decco.git",
+#    commit = "3e486abeac552fb6fcc20a3a94effb0f8ca1d419"
+#)
+#
+#git_repository(
+#    name = "crypto",
+#    remote = "https://github.com/input-output-hk/multicrypto.git",
+#    commit = "90c2e4001d4c44b9b87acae1a218d5c9093d8703"
+#)
