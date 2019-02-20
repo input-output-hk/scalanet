@@ -32,6 +32,7 @@ class MessageChannel[A, MessageType: PartialCodec, F[_]](peerGroup: PeerGroup[A,
     Codec.decodeFrame(decoderTable.entries, 0, b)
   }
 
+
   val inboundMessages: MessageStream[MessageType] = new MonixMessageStream(subscribers.monixMessageStream)
 
   // (When executed) send a message to the peer at 'address'

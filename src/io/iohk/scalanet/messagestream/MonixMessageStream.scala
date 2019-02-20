@@ -38,6 +38,8 @@ private[scalanet] class MonixMessageStream[T](val o: Observable[T]) extends Mess
   override def drop(n: Int): MonixMessageStream[T] = new MonixMessageStream[T](o.drop(n))
 
   override def dropWhile(predicate: T => Boolean): MessageStream[T] = new MonixMessageStream[T](o.dropWhile(predicate))
+
+  override def collect[A](pf: PartialFunction[T, A]): MessageStream[A] = new MonixMessageStream[A](o.collect(pf))
 }
 
 object MonixMessageStream {
