@@ -87,7 +87,8 @@ object NetUtils {
     }
   }
 
-  def randomUDPPeerGroup(implicit liftF: Lift[Future]) = new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
+  def randomUDPPeerGroup(implicit liftF: Lift[Future]): UDPPeerGroup[Future] =
+    new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
 
   def withTwoRandomUDPPeerGroups(
       testCode: (UDPPeerGroup[Future], UDPPeerGroup[Future]) => Any
