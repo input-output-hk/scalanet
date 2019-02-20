@@ -36,6 +36,8 @@ private[scalanet] class MonixMessageStream[T](val o: Observable[T]) extends Mess
   override def head(): CancellableFuture[T] = CancellableFuture(o.headL.runToFuture)
 
   override def drop(n: Int): MonixMessageStream[T] = new MonixMessageStream[T](o.drop(n))
+
+  override def dropWhile(predicate: T => Boolean): MessageStream[T] = new MonixMessageStream[T](o.dropWhile(predicate))
 }
 
 object MonixMessageStream {

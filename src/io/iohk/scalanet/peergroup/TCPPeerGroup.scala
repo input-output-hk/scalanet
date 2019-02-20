@@ -5,7 +5,8 @@ import java.nio.ByteBuffer
 
 import io.iohk.decco.PartialCodec
 import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
-import io.iohk.scalanet.peergroup.PeerGroup.{InitializationError, Lift, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
+import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}

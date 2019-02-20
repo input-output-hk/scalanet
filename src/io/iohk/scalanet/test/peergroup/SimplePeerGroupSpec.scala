@@ -4,53 +4,55 @@ import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 
 import io.iohk.decco.Codec.heapCodec
-//import io.iohk.scalanet.peergroup.PeerGroup.Lift
-//import java.nio.ByteBuffer
-
 import io.iohk.decco.auto._
-import io.iohk.scalanet.NetUtils
-//import io.iohk.scalanet.NetUtils.randomBytes
-//import io.iohk.scalanet.messagestream.MessageStream
-//import io.iohk.scalanet.peergroup.SimplePeerGroup.Config
+import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.peergroup.future._
-import monix.execution.Scheduler.Implicits.global
-//import org.mockito.Mockito.{verify, when}
+import org.scalatest.EitherValues._
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
+import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
-//import org.scalatest.mockito.MockitoSugar._
-import NetUtils._
+
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import org.scalatest.EitherValues._
+import scala.concurrent.duration._
 
 class SimplePeerGroupSpec extends FlatSpec {
 
+  implicit val patienceConfig = ScalaFutures.PatienceConfig(timeout = 1 second, interval = 100 millis)
+
   behavior of "SimplePeerGroup"
 
-  it should "send a message to itself" in withTwoSimplePeerGroups("_", "Bob") { (_, bob) =>
-    val message = "HI!! Bob"
+  it should "send a message to itself" in withASimplePeerGroup("Alice") { alice =>
+    val message = "HI!!"
     val codec = heapCodec[String]
     val bytes: ByteBuffer = codec.encode(message)
-    val messageReceivedF = bob.messageStream.head()
+    val messageReceivedF = alice.messageStream.head()
 
-    bob.sendMessage("Bob", bytes).futureValue
+    alice.sendMessage("Alice", bytes).futureValue
     val messageReceived = codec.decode(messageReceivedF.futureValue)
-
+    println(messageReceived)
     messageReceived.right.value shouldBe message
   }
 
   it should "send a message to another peer of SimplePeerGroup" in withTwoSimplePeerGroups("Alice", "Bob") {
     (alice, bob) =>
-      val message = "HI!! Bob"
+      val message = "HI!! Alice"
       val codec = heapCodec[String]
       val bytes: ByteBuffer = codec.encode(message)
-      val messageReceivedF = bob.messageStream.drop(1).head()
+      val messageReceivedF = alice.messageStream.head()
 
-      alice.sendMessage("Bob", bytes).futureValue
+      bob.sendMessage("Alice", bytes).futureValue
 
       val messageReceived = codec.decode(messageReceivedF.futureValue)
 
       messageReceived.right.value shouldBe message
+  }
+
+  private def withASimplePeerGroup(
+      a: String
+  )(testCode: SimplePeerGroup[String, Future, InetSocketAddress] => Any): Unit = {
+    withSimplePeerGroups(a)(groups => testCode(groups(0)))
   }
 
   private def withTwoSimplePeerGroups(a: String, b: String)(
@@ -60,51 +62,38 @@ class SimplePeerGroupSpec extends FlatSpec {
       ) => Any
   ): Unit = {
 
-    val pga = randomTCPPeerGroup
-    val pgb = randomTCPPeerGroup
-
-    val spgb = new SimplePeerGroup(SimplePeerGroup.Config(b, Map.empty[String, InetSocketAddress]), pgb)
-
-    val spga = new SimplePeerGroup(SimplePeerGroup.Config(a, Map(b -> pgb.processAddress)), pga)
-
-    spgb.initialize().futureValue
-    spga.initialize().futureValue
-
-    try {
-      testCode(spga, spgb)
-    } finally {
-      pga.shutdown()
-      pgb.shutdown()
-    }
+    withSimplePeerGroups(a, b)(groups => testCode(groups(0), groups(1)))
   }
 
-  //  it should "send a message to a other peer in SimplePeerGroup" in {
-  //    val underlyingPeerGroup = mock[PeerGroup[String, Future]]
-  //    when(underlyingPeerGroup.processAddress).thenReturn("underlying")
-  //    val messageStream = mock[MessageStream[ByteBuffer]]
-  //    when(underlyingPeerGroup.messageStream()).thenReturn(messageStream)
-  //    val message = ByteBuffer.wrap(randomBytes(1024))
-  //
-  //    val nodeAddressB = "B"
-  //    val undelyingAddressB = "underlyingB"
-  //    when(underlyingPeerGroup.sendMessage(nodeAddressB, message)).thenReturn(Future(()))
-  //
-  //    val knownPeers = Map[String, String](nodeAddressB -> undelyingAddressB)
-  //    val simplePeerGroup = createSimplePeerGroup(underlyingPeerGroup, knownPeers)
-  //
-  //    simplePeerGroup.sendMessage(nodeAddressB, message)
-  //    verify(underlyingPeerGroup).sendMessage("underlyingB", message)
-  //
-  //  }
-  //
-  //  it should "shutdown a TCPPeerGroup properly" in {
-  //    val underlyingPeerGroup = mock[PeerGroup[String, Future]]
-  //    val nodeAddressB = "B"
-  //    val undelyingAddressB = "underlyingB"
-  //    when(underlyingPeerGroup.processAddress).thenReturn("underlying")
-  //    val knownPeers = Map[String, String](nodeAddressB -> undelyingAddressB)
-  //    val simplePeerGroup = createSimplePeerGroup(underlyingPeerGroup, knownPeers)
-  //    when(underlyingPeerGroup.shutdown()).thenReturn(Future(()))
-  //    simplePeerGroup.shutdown().futureValue shouldBe (())
-  //  }
+  private def withSimplePeerGroups(bootstrapAddress: String, addresses: String*)(
+      testCode: Seq[SimplePeerGroup[String, Future, InetSocketAddress]] => Any
+  ): Unit = {
+
+    val bootstrapTcpGroup = randomTCPPeerGroup
+    val bootstrap = new SimplePeerGroup(
+      SimplePeerGroup.Config(bootstrapAddress, Map.empty[String, InetSocketAddress]),
+      bootstrapTcpGroup
+    )
+    bootstrap.initialize().futureValue
+
+    val otherPeerGroups = addresses
+      .map(
+        address =>
+          new SimplePeerGroup(
+            SimplePeerGroup.Config(address, Map(bootstrapAddress -> bootstrapTcpGroup.processAddress)),
+            randomTCPPeerGroup
+          )
+      )
+      .toList
+
+    Future.sequence(otherPeerGroups.map(pg => pg.initialize())).futureValue
+
+    val peerGroups = bootstrap :: otherPeerGroups
+
+    try {
+      testCode(peerGroups)
+    } finally {
+      peerGroups.foreach(_.shutdown())
+    }
+  }
 }
