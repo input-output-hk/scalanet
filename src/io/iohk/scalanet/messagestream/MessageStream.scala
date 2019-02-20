@@ -18,4 +18,6 @@ trait MessageStream[T] {
   def head(): CancellableFuture[T]
   def drop(n: Int): MessageStream[T]
   def dropWhile(predicate: T => Boolean): MessageStream[T]
+  def collect[A](pf: PartialFunction[T,A]): MessageStream[A]
+
 }

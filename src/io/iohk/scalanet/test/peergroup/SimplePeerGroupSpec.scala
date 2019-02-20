@@ -41,12 +41,20 @@ class SimplePeerGroupSpec extends FlatSpec {
       val codec = heapCodec[String]
       val bytes: ByteBuffer = codec.encode(message)
       val messageReceivedF = alice.messageStream.head()
+      val message1 = "HI!! Alice Again"
+      val bytes1: ByteBuffer = codec.encode(message1)
 
       bob.sendMessage("Alice", bytes).futureValue
 
       val messageReceived = codec.decode(messageReceivedF.futureValue)
 
       messageReceived.right.value shouldBe message
+
+      bob.sendMessage("Alice", bytes1).futureValue
+
+      val messageReceived1 = codec.decode(messageReceivedF.futureValue)
+
+      messageReceived1.right.value shouldBe message
   }
 
   private def withASimplePeerGroup(
