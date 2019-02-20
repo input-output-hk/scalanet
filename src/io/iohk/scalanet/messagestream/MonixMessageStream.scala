@@ -44,5 +44,6 @@ private[scalanet] class MonixMessageStream[T](val o: Observable[T]) extends Mess
 
 object MonixMessageStream {
   def empty[T]: MonixMessageStream[T] = new MonixMessageStream[T](Observable.empty)
-  def fromIterable[T](iterable: Iterable[T]): MonixMessageStream[T] = new MonixMessageStream[T](Observable.fromIterable(iterable))
+  def fromIterable[T](iterable: Iterable[T]): MonixMessageStream[T] =
+    new MonixMessageStream[T](Observable.fromIterable(iterable))
 }

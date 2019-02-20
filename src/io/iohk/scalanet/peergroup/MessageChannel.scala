@@ -33,8 +33,6 @@ class MessageChannel[A, MessageType: PartialCodec, F[_]](peerGroup: PeerGroup[A,
     Codec.decodeFrame(decoderTable.entries, 0, b)
   }
 
-
-
   // (When executed) send a message to the peer at 'address'
   // The result may raise an error if reliableDelivery is specified as one of the QoS options.
   // In that situation, it is assumed that the message will be acked and so failure to
