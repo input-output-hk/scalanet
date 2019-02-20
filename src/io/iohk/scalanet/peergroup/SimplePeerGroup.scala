@@ -38,10 +38,7 @@ class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
       controlChannel
         .sendMessage(underlyingAddress, Enroled(address, underlyingAddress, routingTable.toList))
       println(s"$processAddress: GOT AN ENROLL ME MESSAGE $address, $underlyingAddress")
-    case Enroled(address, underlyingAddress, newRoutingTable) =>
-      routingTable.clear()
-      routingTable ++= newRoutingTable
-      println(s"$processAddress: enrolled and installed new routing table $newRoutingTable")
+    case _ => ()
   }
 
   // TODO if no known peers, create a default routing table with just me.
@@ -58,26 +55,34 @@ class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
 
   override def shutdown(): F[Unit] = underLyingPeerGroup.shutdown()
 
-  // TODO create subscription to underlying group's messages
-  // TODO process messages from underlying (remove any fields added by this group to get the user data)
-  // TODO add the user message to this stream
-  // Codec[String], Codec[Int], Codec[PeerGroupMessage]
-
   override def initialize(): F[Unit] = {
     routingTable += processAddress -> underLyingPeerGroup.processAddress
 
-    val enrolmentF: Option[F[Unit]] = config.knownPeers.headOption.map({
-      case (knownPeerAddress, knownPeerAddressUnderlying) =>
-        routingTable += knownPeerAddress -> knownPeerAddressUnderlying
+    if (config.knownPeers.nonEmpty) {
+      val (knownPeerAddress, knownPeerAddressUnderlying) = config.knownPeers.head
+      routingTable += knownPeerAddress -> knownPeerAddressUnderlying
 
-        underLyingPeerGroup.sendMessage(
-          knownPeerAddressUnderlying,
-          msgCodec.encode(EnrolMe(config.processAddress, underLyingPeerGroup.processAddress))
-        )
-    })
+      underLyingPeerGroup.sendMessage(
+        knownPeerAddressUnderlying,
+        msgCodec.encode(EnrolMe(config.processAddress, underLyingPeerGroup.processAddress))
+      )
 
-    enrolmentF.getOrElse(liftF(Task.unit))
+      val enrolledTask: Task[Unit] = Task.deferFutureAction { implicit scheduler =>
+        controlChannel.inboundMessages.dropWhile(msg => !msg.isInstanceOf[Enroled[A, AA]]).head().map {
+          case Enroled(_, _, newRoutingTable) =>
+            routingTable.clear()
+            routingTable ++= newRoutingTable
+            println(s"$processAddress: enrolled and installed new routing table $newRoutingTable")
+          case _ => ()
+        }
+      }
+
+      liftF(enrolledTask)
+    } else {
+      liftF(Task.unit)
+    }
   }
+
 }
 
 object SimplePeerGroup {

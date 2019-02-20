@@ -5,7 +5,7 @@ import java.nio.ByteBuffer
 import java.nio.channels.DatagramChannel
 
 import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
-import io.iohk.scalanet.peergroup.PeerGroup.{InitializationError, Lift, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
@@ -16,6 +16,7 @@ import monix.eval.Task
 import scala.language.higherKinds
 import UDPPeerGroup._
 import io.iohk.decco.PartialCodec
+import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 
 class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     extends TerminalPeerGroup[InetSocketAddress, F]() {

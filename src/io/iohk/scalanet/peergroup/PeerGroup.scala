@@ -5,6 +5,7 @@ import java.nio.ByteBuffer
 import cats.data.Kleisli
 import io.iohk.decco.PartialCodec
 import io.iohk.scalanet.messagestream.MessageStream
+import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import monix.eval.Task
 
 import scala.language.higherKinds
@@ -25,8 +26,6 @@ object PeerGroup {
   trait TerminalPeerGroup[A, F[_]] extends PeerGroup[A, F]
 
   abstract class NonTerminalPeerGroup[A, F[_], AA](underlyingPeerGroup: PeerGroup[AA, F]) extends PeerGroup[A, F]
-
-  case class InitializationError(message: String, cause: Throwable)
 
   def create[PG](pg: => PG, config: Any): Either[InitializationError, PG] =
     try {
