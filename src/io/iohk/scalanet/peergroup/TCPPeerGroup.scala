@@ -3,7 +3,7 @@ package io.iohk.scalanet.peergroup
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 
-import io.iohk.decco.PartialCodec
+import io.iohk.decco.{Codec, PartialCodec}
 import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
@@ -22,7 +22,7 @@ import monix.eval.Task
 import scala.language.higherKinds
 
 class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
-    extends TerminalPeerGroup[InetSocketAddress, F]() {
+  extends TerminalPeerGroup[InetSocketAddress, F]() {
 
   private val nettyDecoder = new NettyDecoder()
   private val workerGroup = new NioEventLoopGroup()
@@ -50,8 +50,12 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
 
   private val decoderTable = new DecoderTable()
 
-  override def createMessageChannel[MessageType: PartialCodec](): MessageChannel[InetSocketAddress, MessageType, F] =
-    new MessageChannel(this, decoderTable)
+  override def createMessageChannel[MessageType: PartialCodec](): MessageChannel[InetSocketAddress, MessageType, F] = {
+    val partialCodec = PartialCodec[MessageType]
+    val channel = new MessageChannel(this, decoderTable)
+    decoderTable.decoderWrappers.put(partialCodec.typeCode, channel.handleMessage)
+    channel
+  }
 
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
     val send: Task[Unit] = Task {
@@ -101,6 +105,10 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     new MonixMessageStream(subscribers.monixMessageStream).map(_.duplicate())
 
   override val processAddress: InetSocketAddress = config.processAddress
+
+  messageStream.foreach { b =>
+    Codec.decodeFrame(decoderTable.entries, 0, b)
+  }
 }
 
 object TCPPeerGroup {

@@ -2,6 +2,7 @@ package io.iohk.scalanet.peergroup
 
 import java.util.concurrent.CopyOnWriteArraySet
 
+import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
 import monix.reactive.{Observable, OverflowStrategy}
 import monix.reactive.observers.Subscriber
 
@@ -20,5 +21,10 @@ private[scalanet] class Subscribers[MessageType] {
       () => subscriberSet.remove(subscriber)
     })
 
-  def notify(message: MessageType): Unit = subscriberSet.foreach(_.onNext(message))
+  val messageStream: MessageStream[MessageType] = new MonixMessageStream[MessageType](monixMessageStream)
+
+  def notify(message: MessageType): Unit = {
+    println(s"Subscriber.notify $message called. Subscribers are $subscriberSet")
+    subscriberSet.foreach(_.onNext(message))
+  }
 }

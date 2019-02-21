@@ -14,7 +14,7 @@ class MessageChannel[A, MessageType: PartialCodec, F[_]](peerGroup: PeerGroup[A,
   private val codec = Codec.heapCodec[MessageType]
   private val subscribers = new Subscribers[MessageType]()
 
-  private val handleMessage: (Int, ByteBuffer) => Unit = (nextIndex, byteBuffer) => {
+  def handleMessage(nextIndex: Int, byteBuffer: ByteBuffer): Unit = {
     val messageE: Either[Failure, DecodeResult[MessageType]] = ev.decode(nextIndex, byteBuffer)
     messageE match {
       case Left(Failure) =>
