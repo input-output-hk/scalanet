@@ -89,18 +89,20 @@ def _scala_binary_impl(name, main_class, srcs, deps, external, scalac_jvm_flags,
         **kwargs
     )
 
-def scala_binary(name, main_class, srcs = None, deps = [], external = [], scalac_jvm_flags = _default_scalac_jvm_flags, **kwargs):
+def scala_binary(name, main_class, srcs = None, deps = [], external = [], scalac_jvm_flags = _default_scalac_jvm_flags, visibility = ["//visibility:public"], **kwargs):
     _scala_binary_impl(
         name             = name,                   deps       = deps,
         external         = external,               srcs       = srcs,
         scalac_jvm_flags = scalac_jvm_flags,       main_class = main_class,
-        neverlink        = False,                  **kwargs
+        neverlink        = False,                  visibility = visibility,
+        **kwargs
     )
     _scala_binary_impl(
         name             = name,                   deps       = deps,
         external         = external,               srcs       = srcs,
         scalac_jvm_flags = scalac_jvm_flags,       main_class = main_class,
-        neverlink        = True,                   **kwargs
+        neverlink        = True,                   visibility = visibility,
+        **kwargs
     )
     _scala_library_impl(
         name = "__%s_binary_lib" % name,
@@ -110,6 +112,7 @@ def scala_binary(name, main_class, srcs = None, deps = [], external = [], scalac
         scalac_jvm_flags = scalac_jvm_flags,
         neverlink = False,
         exports = [],
+        visibility = ["//visibility:public"],
         **kwargs
     )
     allexternal = [dep
