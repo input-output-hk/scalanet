@@ -1,0 +1,32 @@
+#!/bin/bash
+
+if [ ! $# -eq 1 ]
+  then
+    echo "USAGE: removeScalaStandardLibrary file.jar"
+    exit 1
+fi
+
+TARGET_JAR="$1"
+
+if [ ! -f "$TARGET_JAR" ]
+  then
+    echo "USAGE: removeScalaStandardLibrary file.jar"
+    echo
+    echo "  ERROR, '$TARGET_JAR' is not a file or can not be read"
+    exit 1
+fi
+
+function performExtraction() {
+  zip -d $TARGET_JAR "scala/*" "rootdoc.txt" "library.properties" "reflect.properties"
+}
+
+if [ ! -w "$TARGET_JAR" ]
+then
+  chmod u+w "$TARGET_JAR"
+  performExtraction
+  EXIT_CODE="$?"
+  chmod u-w "$TARGET_JAR"
+  exit "$EXIT_CODE"
+else
+  performExtraction
+fi
