@@ -35,5 +35,5 @@ load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 #git_repository(
 #    name = "crypto",
 #    remote = "https://github.com/input-output-hk/multicrypto.git",
-#    commit = "90c2e4001d4c44b9b87acae1a218d5c9093d8703"
+#    commit = "3cc44bee9b19238ea2a4fe44edbe9ea08cb539b4"
 #)
