@@ -3,16 +3,17 @@ load("//scala:rules.bzl", "scala_library", "scala_test")
 scala_library(
     name = "network",
     deps = [
-        "//3rdparty/jvm/com/typesafe/akka:akka_actor",
-        "//3rdparty/jvm/com/typesafe/akka:akka_actor_typed",
-        "//3rdparty/jvm/io/micrometer:micrometer_registry_datadog",
-        "//3rdparty/jvm/io/monix",
-        "//3rdparty/jvm/org/bouncycastle:bcprov_jdk15on",
-        "//3rdparty/jvm/io/netty:netty_all",
-        "//src/io/iohk/network/telemetry",
-        "@codecs//src/io/iohk/codecs",
-        "@crypto//src/io/iohk/crypto"
+      "//src/io/iohk/network/telemetry",
+      "@codecs//src/io/iohk/codecs",
+      "@crypto//src/io/iohk/crypto"
     ],
+    external = [
+      "com.typesafe.akka:akka-actor%",
+      "com.typesafe.akka:akka-actor-typed%",
+      "io.monix:monix%",
+      "org.bouncycastle:bcprov-jdk15on",
+      "io.netty:netty-all",
+    ]
 )
 
 scala_test(
@@ -20,20 +21,23 @@ scala_test(
     visibility = ["//visibility:public"],
     deps = [
         "network",
-        "//3rdparty/jvm/com/softwaremill/quicklens",
-        "//3rdparty/jvm/com/typesafe/akka:akka_actor",
-        "//3rdparty/jvm/com/typesafe/akka:akka_actor_typed",
-        "//3rdparty/jvm/com/typesafe/akka:akka_slf4j",
-        "//3rdparty/jvm/com/typesafe/akka:akka_testkit",
-        "//3rdparty/jvm/com/typesafe/akka:akka_testkit_typed",
-        "//3rdparty/jvm/io/micrometer:micrometer_registry_datadog",
-        "//3rdparty/jvm/io/monix",
-        "//3rdparty/jvm/org/bouncycastle:bcprov_jdk15on",
-        "//3rdparty/jvm/org/mockito:mockito_core",
-        "//3rdparty/jvm/org/scalacheck",
-        "//3rdparty/jvm/org/scalatest",
+        #"//3rdparty/jvm/com/typesafe/akka:akka_slf4j",
+
         "//src/io/iohk/network/telemetry",
         "@codecs//src/io/iohk/codecs",
         "@crypto//src/io/iohk/crypto"
+    ],
+    external = [
+      "com.softwaremill.quicklens:quicklens%",
+      "com.typesafe.akka:akka-slf4j%",
+      "com.typesafe.akka:akka-testkit%",
+      "com.typesafe.akka:akka-testkit-typed%",
+      "org.mockito:mockito-core",
+      "org.scalacheck:scalacheck%",
+      "org.scalatest:scalatest%",
+      "javax.xml.bind:jaxb-api",
+      "com.sun.xml.bind:jaxb-core",
+      "com.sun.xml.bind:jaxb-impl",
+      "javax.activation:activation",
     ],
 )
