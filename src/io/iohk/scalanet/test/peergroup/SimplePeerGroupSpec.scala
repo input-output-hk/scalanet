@@ -35,40 +35,44 @@ class SimplePeerGroupSpec extends FlatSpec {
 //    messageReceived.right.value shouldBe message
 //  }
 
-  it should "send a message to another peer of SimplePeerGroup" in withTwoSimplePeerGroups(UdpTerminalPeerGroup,"Alice", "Bob") {
-    (alice, bob) =>
-      val message = "HI!! Alice"
-      val codec = heapCodec[String]
-      val bytes: ByteBuffer = codec.encode(message)
-      val messageReceivedF = alice.messageStream.head()
-      val message1 = "HI!! Alice Again"
-      val bytes1: ByteBuffer = codec.encode(message1)
+  it should "send a message to another peer of SimplePeerGroup" in withTwoSimplePeerGroups(
+    UdpTerminalPeerGroup,
+    "Alice",
+    "Bob"
+  ) { (alice, bob) =>
+    val message = "HI!! Alice"
+    val codec = heapCodec[String]
+    val bytes: ByteBuffer = codec.encode(message)
+    val messageReceivedF = alice.messageStream.head()
+    val message1 = "HI!! Alice Again"
+    val bytes1: ByteBuffer = codec.encode(message1)
 
-      bob.sendMessage("Alice", bytes).futureValue
+    bob.sendMessage("Alice", bytes).futureValue
 
-      val messageReceived = codec.decode(messageReceivedF.futureValue)
+    val messageReceived = codec.decode(messageReceivedF.futureValue)
 
-      messageReceived.right.value shouldBe message
+    messageReceived.right.value shouldBe message
 
   }
 
   private def withASimplePeerGroup[T](
-  underlyingTerminalGroup:T,a: String
+      underlyingTerminalGroup: T,
+      a: String
   )(testCode: SimplePeerGroup[String, Future, InetSocketAddress] => Any): Unit = {
-    withSimplePeerGroups(underlyingTerminalGroup,a)(groups => testCode(groups(0)))
+    withSimplePeerGroups(underlyingTerminalGroup, a)(groups => testCode(groups(0)))
   }
 
-  private def withTwoSimplePeerGroups[T](underlyingTerminalGroup:T,a: String, b: String)(
+  private def withTwoSimplePeerGroups[T](underlyingTerminalGroup: T, a: String, b: String)(
       testCode: (
           SimplePeerGroup[String, Future, InetSocketAddress],
           SimplePeerGroup[String, Future, InetSocketAddress]
       ) => Any
   ): Unit = {
 
-    withSimplePeerGroups(underlyingTerminalGroup,a, b)(groups => testCode(groups(0), groups(1)))
+    withSimplePeerGroups(underlyingTerminalGroup, a, b)(groups => testCode(groups(0), groups(1)))
   }
 
-  private def withSimplePeerGroups[T](underlyingTerminalGroup:T ,bootstrapAddress: String, addresses: String*)(
+  private def withSimplePeerGroups[T](underlyingTerminalGroup: T, bootstrapAddress: String, addresses: String*)(
       testCode: Seq[SimplePeerGroup[String, Future, InetSocketAddress]] => Any
   ): Unit = {
 
