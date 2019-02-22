@@ -71,8 +71,16 @@ object NetUtils {
     Random.nextBytes(a)
     a
   }
+  sealed trait SimpleTerminalPeerGroup
+  case object TcpTerminalPeerGroup extends SimpleTerminalPeerGroup
+  case object UdpTerminalPeerGroup extends SimpleTerminalPeerGroup
 
-  def randomTCPPeerGroup(implicit liftF: Lift[Future]) = new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
+
+  def randomTerminalPeerGroup[T](t:T)(implicit liftF: Lift[Future]) = t match {
+    case TcpTerminalPeerGroup =>    randomTCPPeerGroup
+    case UdpTerminalPeerGroup =>    randomUDPPeerGroup
+  }
+  def randomTCPPeerGroup(implicit liftF: Lift[Future]): TCPPeerGroup[Future] = new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
 
   def withTwoRandomTCPPeerGroups(
       testCode: (TCPPeerGroup[Future], TCPPeerGroup[Future]) => Any

@@ -26,8 +26,11 @@ class UDPPeerGroupSpec extends FlatSpec {
     val b: Array[Byte] = "Hello".getBytes(UTF_8)
 
     pg1.sendMessage(pg2.config.bindAddress, ByteBuffer.wrap(b))
-
     toArray(value.futureValue) shouldBe b
+
+    val value2: Future[ByteBuffer] = pg1.messageStream.head()
+    pg2.sendMessage(pg1.config.bindAddress, ByteBuffer.wrap(b))
+    toArray(value2.futureValue) shouldBe b
   }
 
   it should "shutdown cleanly" in {
