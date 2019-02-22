@@ -75,7 +75,7 @@ object NetUtils {
   case object TcpTerminalPeerGroup extends SimpleTerminalPeerGroup
   case object UdpTerminalPeerGroup extends SimpleTerminalPeerGroup
 
-  def randomTerminalPeerGroup[T](t: T)(implicit liftF: Lift[Future]) = t match {
+  def randomTerminalPeerGroup(t: SimpleTerminalPeerGroup)(implicit liftF: Lift[Future]) = t match {
     case TcpTerminalPeerGroup => randomTCPPeerGroup
     case UdpTerminalPeerGroup => randomUDPPeerGroup
   }

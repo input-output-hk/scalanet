@@ -45,7 +45,6 @@ class SimplePeerGroupSpec extends FlatSpec {
     val bytes: ByteBuffer = codec.encode(message)
     val messageReceivedF = alice.messageStream.head()
     val message1 = "HI!! Alice Again"
-    val bytes1: ByteBuffer = codec.encode(message1)
 
     bob.sendMessage("Alice", bytes).futureValue
 
@@ -55,14 +54,14 @@ class SimplePeerGroupSpec extends FlatSpec {
 
   }
 
-  private def withASimplePeerGroup[T](
-      underlyingTerminalGroup: T,
+  private def withASimplePeerGroup(
+      underlyingTerminalGroup: SimpleTerminalPeerGroup,
       a: String
   )(testCode: SimplePeerGroup[String, Future, InetSocketAddress] => Any): Unit = {
     withSimplePeerGroups(underlyingTerminalGroup, a)(groups => testCode(groups(0)))
   }
 
-  private def withTwoSimplePeerGroups[T](underlyingTerminalGroup: T, a: String, b: String)(
+  private def withTwoSimplePeerGroups(underlyingTerminalGroup: SimpleTerminalPeerGroup, a: String, b: String)(
       testCode: (
           SimplePeerGroup[String, Future, InetSocketAddress],
           SimplePeerGroup[String, Future, InetSocketAddress]
@@ -72,7 +71,11 @@ class SimplePeerGroupSpec extends FlatSpec {
     withSimplePeerGroups(underlyingTerminalGroup, a, b)(groups => testCode(groups(0), groups(1)))
   }
 
-  private def withSimplePeerGroups[T](underlyingTerminalGroup: T, bootstrapAddress: String, addresses: String*)(
+  private def withSimplePeerGroups(
+      underlyingTerminalGroup: SimpleTerminalPeerGroup,
+      bootstrapAddress: String,
+      addresses: String*
+  )(
       testCode: Seq[SimplePeerGroup[String, Future, InetSocketAddress]] => Any
   ): Unit = {
 
