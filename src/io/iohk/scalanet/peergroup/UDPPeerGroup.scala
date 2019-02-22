@@ -26,7 +26,7 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
   private val subscribers = new Subscribers[ByteBuffer]()
 
   private val server = {
-   val server =  new Bootstrap()
+    val server = new Bootstrap()
       .group(workerGroup)
       .channel(classOf[NioDatagramChannel])
       .handler(new ChannelInitializer[NioDatagramChannel]() {
@@ -60,7 +60,7 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
   }
 
   private def writeUdp(address: InetSocketAddress, data: ByteBuffer): Unit = {
-    try{
+    try {
       val udp = DatagramChannel.open()
       udp.configureBlocking(true)
       println(s"*********Connecting the address ${address} to send message")
@@ -71,7 +71,7 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
         udp.close()
       }
     } catch {
-      case e:Throwable => e.printStackTrace()
+      case e: Throwable => e.printStackTrace()
     }
   }
 

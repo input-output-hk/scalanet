@@ -22,7 +22,7 @@ import monix.eval.Task
 import scala.language.higherKinds
 
 class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
-  extends TerminalPeerGroup[InetSocketAddress, F]() {
+    extends TerminalPeerGroup[InetSocketAddress, F]() {
 
   private val nettyDecoder = new NettyDecoder()
   private val workerGroup = new NioEventLoopGroup()
