@@ -25,17 +25,20 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
 
   private val subscribers = new Subscribers[ByteBuffer]()
 
-  private val server = new Bootstrap()
-    .group(workerGroup)
-    .channel(classOf[NioDatagramChannel])
-    .handler(new ChannelInitializer[NioDatagramChannel]() {
-      override def initChannel(ch: NioDatagramChannel): Unit = {
-        ch.pipeline.addLast(new ServerInboundHandler)
-      }
-    })
-    .bind(config.bindAddress)
-    .syncUninterruptibly()
-
+  private val server = {
+   val server =  new Bootstrap()
+      .group(workerGroup)
+      .channel(classOf[NioDatagramChannel])
+      .handler(new ChannelInitializer[NioDatagramChannel]() {
+        override def initChannel(ch: NioDatagramChannel): Unit = {
+          ch.pipeline.addLast(new ServerInboundHandler)
+        }
+      })
+      .bind(config.bindAddress)
+      .syncUninterruptibly()
+    println(s"*********Server Binded to the address ${config.bindAddress}")
+    server
+  }
   private val decoderTable = new DecoderTable()
 
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
@@ -57,13 +60,18 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
   }
 
   private def writeUdp(address: InetSocketAddress, data: ByteBuffer): Unit = {
-    val udp = DatagramChannel.open()
-    udp.configureBlocking(true)
-    udp.connect(address)
-    try {
-      udp.write(data)
-    } finally {
-      udp.close()
+    try{
+      val udp = DatagramChannel.open()
+      udp.configureBlocking(true)
+      println(s"*********Connecting the address ${address} to send message")
+      udp.connect(address)
+      try {
+        udp.write(data)
+      } finally {
+        udp.close()
+      }
+    } catch {
+      case e:Throwable => e.printStackTrace()
     }
   }
 
