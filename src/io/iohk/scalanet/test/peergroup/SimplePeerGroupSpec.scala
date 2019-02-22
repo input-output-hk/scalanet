@@ -22,36 +22,51 @@ class SimplePeerGroupSpec extends FlatSpec {
   implicit val patienceConfig = ScalaFutures.PatienceConfig(timeout = 5 seconds, interval = 100 millis)
 
   behavior of "SimplePeerGroup"
-//
-//  it should "send a message to itself" in withASimplePeerGroup(UdpTerminalPeerGroup,  "Alice") { alice =>
-//    val message = "HI!!"
-//    val codec = heapCodec[String]
-//    val bytes: ByteBuffer = codec.encode(message)
-//    val messageReceivedF = alice.messageStream.head()
-//
-//    alice.sendMessage("Alice", bytes).futureValue
-//    val messageReceived = codec.decode(messageReceivedF.futureValue)
-//    println(messageReceived)
-//    messageReceived.right.value shouldBe message
-//  }
 
-  it should "send a message to another peer of SimplePeerGroup" in withTwoSimplePeerGroups(
-    UdpTerminalPeerGroup,
-    "Alice",
-    "Bob"
-  ) { (alice, bob) =>
-    val message = "HI!! Alice"
-    val codec = heapCodec[String]
-    val bytes: ByteBuffer = codec.encode(message)
-    val messageReceivedF = alice.messageStream.head()
-    val message1 = "HI!! Alice Again"
 
-    bob.sendMessage("Alice", bytes).futureValue
+  it should "send a message to itself" in new SimpleTerminalPeerGroups {
+    terminalPeerGroups.foreach {
+      terminalGroup =>
+        withASimplePeerGroup(terminalGroup,  "Alice") { alice =>
+          val message = "HI!!"
+          val codec = heapCodec[String]
+          val bytes: ByteBuffer = codec.encode(message)
+          val messageReceivedF = alice.messageStream.head()
 
-    val messageReceived = codec.decode(messageReceivedF.futureValue)
+          alice.sendMessage("Alice", bytes).futureValue
+          val messageReceived = codec.decode(messageReceivedF.futureValue)
+          println(messageReceived)
+          messageReceived.right.value shouldBe message
+        }
+    }
+  }
 
-    messageReceived.right.value shouldBe message
+  it should "send a message to another peer of SimplePeerGroup" in new SimpleTerminalPeerGroups {
+    terminalPeerGroups.foreach {
+      terminalGroup =>
+        withTwoSimplePeerGroups(
+          terminalGroup,
+          "Alice",
+          "Bob"
+        ) { (alice, bob) =>
+          val message = "HI!! Alice"
+          val codec = heapCodec[String]
+          val bytes: ByteBuffer = codec.encode(message)
+          val messageReceivedF = alice.messageStream.head()
 
+          bob.sendMessage("Alice", bytes).futureValue
+
+          val messageReceived = codec.decode(messageReceivedF.futureValue)
+
+          messageReceived.right.value shouldBe message
+
+        }
+    }
+
+  }
+
+  trait SimpleTerminalPeerGroups {
+    val terminalPeerGroups = List(UdpTerminalPeerGroup,TcpTerminalPeerGroup)
   }
 
   private def withASimplePeerGroup(
