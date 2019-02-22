@@ -25,20 +25,18 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
 
   private val subscribers = new Subscribers[ByteBuffer]()
 
-  private val server = {
-    val server = new Bootstrap()
-      .group(workerGroup)
-      .channel(classOf[NioDatagramChannel])
-      .handler(new ChannelInitializer[NioDatagramChannel]() {
-        override def initChannel(ch: NioDatagramChannel): Unit = {
-          ch.pipeline.addLast(new ServerInboundHandler)
-        }
-      })
-      .bind(config.bindAddress)
-      .syncUninterruptibly()
-    println(s"*********Server Binded to the address ${config.bindAddress}")
-    server
-  }
+  private val server = new Bootstrap()
+    .group(workerGroup)
+    .channel(classOf[NioDatagramChannel])
+    .handler(new ChannelInitializer[NioDatagramChannel]() {
+      override def initChannel(ch: NioDatagramChannel): Unit = {
+        ch.pipeline.addLast(new ServerInboundHandler)
+      }
+    })
+    .bind(config.bindAddress)
+    .syncUninterruptibly()
+  println(s"*********Server Binded to the address ${config.bindAddress}")
+
   private val decoderTable = new DecoderTable()
 
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
