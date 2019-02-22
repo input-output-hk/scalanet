@@ -2,8 +2,16 @@
 
 ROOT=`pwd`
 
+BAZEL_DEPS_REPO="https://github.com/marcesquerra/bazel-deps.git"
+BAZEL_DEPS_COMMIT="b9baec69bdbaae53743a7c0b69828a9c66f6a624"
+IDENTIFIER="$BAZEL_DEPS_REPO|$BAZEL_DEPS_COMMIT"
 
-BAZEL_DEPS="/tmp/$(echo "$PWD" | sha256sum | awk '{ print $1 }')/.bazel-deps/"
+BAZEL_DEPS="/tmp/$(echo "$IDENTIFIER" | sha256sum | awk '{ print $1 }')/.bazel-deps/"
+
+function fail() {
+  echo "$1"
+  exit 1
+}
 
 if [ -e $BAZEL_DEPS ]; then
     if [ ! -d $BAZEL_DEPS ]; then
@@ -14,10 +22,9 @@ if [ -e $BAZEL_DEPS ]; then
     fi
     cd "$BAZEL_DEPS"
 else
-    git clone https://github.com/johnynek/bazel-deps.git "$BAZEL_DEPS"
+    git clone "$BAZEL_DEPS_REPO" "$BAZEL_DEPS" || fail "Repo could not be found"
     cd "$BAZEL_DEPS"
-    git checkout 1af8921d52f053fad575f26762533a3823b4a847
+    git checkout "$BAZEL_DEPS_COMMIT" || fail "Commit could not be found"
 fi
 
-bazel run //:parse -- generate -r $ROOT -s 3rdparty/workspace.bzl -d dependencies.yaml
-
+bazel run //:parse -- generate --repo-root $ROOT --deps "$ROOT/dependencies.yaml" --external 3rdparty 
