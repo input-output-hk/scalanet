@@ -1,8 +1,8 @@
 package io.iohk.network
 
 import io.iohk.network.discovery.NetworkDiscovery
-import io.iohk.codecs.nio.NioCodec
 import io.iohk.network.transport.Transports
+import io.iohk.codecs.nio.NioCodec
 import scala.reflect.runtime.universe._
 
 class DisseminationalNetwork[Message: NioCodec: TypeTag](networkDiscovery: NetworkDiscovery, transports: Transports) {

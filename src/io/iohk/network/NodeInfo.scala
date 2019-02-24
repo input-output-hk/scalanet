@@ -44,7 +44,7 @@ case class NodeInfo(
   def toPeerInfo: PeerConfig = {
     val itsNodeId = NodeId(id)
     val itsConfiguration =
-      NetworkConfig(Some(TcpTransportConfig(serverAddress)), FrameHeader.defaultTtl)
+      TransportConfig(Some(TcpTransportConfig(serverAddress)), FrameHeader.defaultTtl)
     PeerConfig(itsNodeId, itsConfiguration)
   }
 }

@@ -62,9 +62,9 @@ object NetworkServices {
   // FIXME Get rid of NodeInfo
   private def peerConfig2NodeInfoHack(peerConfig: PeerConfig): NodeInfo = {
     val discoveryAddress =
-      new InetSocketAddress("localhost", peerConfig.networkConfig.tcpTransportConfig.get.bindAddress.getPort + 1)
+      new InetSocketAddress("localhost", peerConfig.transportConfig.tcpTransportConfig.get.bindAddress.getPort + 1)
 
-    val serverAddress = peerConfig.networkConfig.tcpTransportConfig.get.natAddress
+    val serverAddress = peerConfig.transportConfig.tcpTransportConfig.get.natAddress
 
     NodeInfo(peerConfig.nodeId.id, discoveryAddress, serverAddress, Capabilities(0))
   }
