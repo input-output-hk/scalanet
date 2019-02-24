@@ -4,7 +4,7 @@ import java.io.OutputStream
 import java.net.{InetSocketAddress, ServerSocket, Socket}
 import java.nio.ByteBuffer
 
-import io.iohk.network.{NetworkConfig, NodeId, PeerConfig}
+import io.iohk.network.{NodeId, PeerConfig, TransportConfig}
 import io.iohk.network.NodeId.nodeIdBytes
 import io.iohk.network.discovery.NetworkDiscovery
 import io.iohk.network.transport.{FrameHeader, Transports}
@@ -18,6 +18,7 @@ import scala.collection.mutable
 import scala.util.Random
 
 object NetUtils {
+
   def writeTo(address: InetSocketAddress, bytes: Array[Byte]): Unit = {
     val socket = new Socket(address.getHostName, address.getPort)
     val out: OutputStream = socket.getOutputStream
@@ -86,7 +87,7 @@ object NetUtils {
     } yield {
       val address = aRandomAddress()
       val messageTtl = FrameHeader.defaultTtl
-      PeerConfig(nodeId, NetworkConfig(Some(TcpTransportConfig(address)), messageTtl))
+      PeerConfig(nodeId, TransportConfig(Some(TcpTransportConfig(address)), messageTtl))
     }
   }
 
@@ -100,7 +101,7 @@ object NetUtils {
   def randomNetworkFixture(messageTtl: Int = FrameHeader.defaultTtl): NetworkFixture = {
 
     val tcpAddress: InetSocketAddress = aRandomAddress()
-    val configuration = NetworkConfig(Some(TcpTransportConfig(tcpAddress)), messageTtl)
+    val configuration = TransportConfig(Some(TcpTransportConfig(tcpAddress)), messageTtl)
 
     val nodeId = NodeId(randomBytes(NodeId.nodeIdBytes))
 

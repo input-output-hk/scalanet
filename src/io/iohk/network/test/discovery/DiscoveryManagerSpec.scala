@@ -7,7 +7,7 @@ import akka.actor.typed.ActorRef._
 import akka.actor.typed.scaladsl.adapter._
 import akka.actor.typed.{ActorContext, ActorRef}
 import akka.actor.{ActorSystem, typed}
-import akka.testkit.typed.scaladsl.{BehaviorTestKit, TestInbox, TestProbe}
+import akka.actor.testkit.typed.scaladsl.{BehaviorTestKit, TestInbox, TestProbe}
 import akka.testkit.{TestProbe => UntypedTestProbe}
 import akka.util.ByteString
 import akka.{actor => untyped}

@@ -3,7 +3,7 @@ package io.iohk.network.discovery
 import java.net.{InetAddress, InetSocketAddress}
 
 import akka.actor.typed.scaladsl.adapter._
-import akka.testkit.typed.scaladsl.{BehaviorTestKit, TestInbox}
+import akka.actor.testkit.typed.scaladsl.{BehaviorTestKit, TestInbox}
 import akka.util.ByteString
 import akka.{actor => untyped, testkit => untypedKit}
 import io.iohk.network.discovery.DiscoveryListener._

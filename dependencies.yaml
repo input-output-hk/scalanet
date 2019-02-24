@@ -1,15 +1,4 @@
-options:
-  buildHeader: 
-    - "load(\"@io_bazel_rules_scala//scala:scala.bzl\", \"scala_library\")\nload(\"@io_bazel_rules_scala//scala:scala_import.bzl\", \"scala_import\")"
-  languages: [ "java", "scala:2.12.7" ]
-  resolverType: "coursier"
-  resolvers:
-    - id: "mavencentral"
-      type: "default"
-      url: https://repo.maven.apache.org/maven2/
-  strictVisibility: true
-  transitivity: exports # runtime_deps
-  versionConflictPolicy: highest
+scalaVersionSufix: "2.12"
 
 dependencies:
 
@@ -24,8 +13,8 @@ dependencies:
   com.typesafe.akka:
     akka:
       lang: scala
-      version: "2.5.12"
-      modules: [actor, actor-typed, slf4j, testkit, testkit-typed]
+      version: "2.5.19"
+      modules: [actor, actor-typed, slf4j, testkit, actor-testkit-typed]
   io.monix:
     monix:
       version: "3.0.0-RC1"
@@ -65,25 +54,16 @@ dependencies:
     mockito-core:
       version: "2.21.0"
       lang: java
-
-
-replacements:
-  org.scala-lang:
-    scala-compiler:
-      lang: scala/unmangled
-      target: "@io_bazel_rules_scala_scala_compiler//:io_bazel_rules_scala_scala_compiler"
-    scala-library:
-      lang: scala/unmangled
-      target: "@io_bazel_rules_scala_scala_library//:io_bazel_rules_scala_scala_library"
-    scala-reflect:
-      lang: scala/unmangled
-      target: "@io_bazel_rules_scala_scala_reflect//:io_bazel_rules_scala_scala_reflect"
-
-  org.scala-lang.modules:
-    scala-parser-combinators:
-      lang: scala
-      target:
-        "@io_bazel_rules_scala_scala_parser_combinators//:io_bazel_rules_scala_scala_parser_combinators"
-    scala-xml:
-      lang: scala
-      target: "@io_bazel_rules_scala_scala_xml//:io_bazel_rules_scala_scala_xml"
+  javax.xml.bind:
+    jaxb-api:
+      version: "2.2.11"
+      lang: "java"
+  com.sun.xml.bind:
+    jaxb:
+      version: "2.2.11"
+      lang: "java"
+      modules: [core, impl]
+  javax.activation:
+    activation:
+      version: "1.1.1"
+      lang: "java"

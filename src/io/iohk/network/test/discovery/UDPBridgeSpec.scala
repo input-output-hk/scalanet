@@ -5,7 +5,7 @@ import java.net.InetSocketAddress
 import akka.{actor => untyped}
 import akka.actor.typed.ActorSystem
 import akka.io.Udp
-import akka.testkit.typed.scaladsl.TestProbe
+import akka.actor.testkit.typed.scaladsl.TestProbe
 import akka.util.ByteString
 import akka.{testkit => untypedKit}
 import io.iohk.network.discovery.DiscoveryListener._

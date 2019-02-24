@@ -8,7 +8,7 @@ import io.iohk.network.transport.tcp.{NettyTransport, TcpNetworkTransport}
 
 object Transports {
   def usesTcp(peerConfig: PeerConfig): Boolean =
-    peerConfig.networkConfig.tcpTransportConfig.isDefined
+    peerConfig.transportConfig.tcpTransportConfig.isDefined
 }
 
 /**
@@ -21,7 +21,7 @@ class Transports(val peerConfig: PeerConfig) {
   private var nettyTransportRef: Option[NettyTransport] = None
 
   def netty(): Option[NettyTransport] = this.synchronized { // AtomicRef does not work for side-effecting fns
-    peerConfig.networkConfig.tcpTransportConfig.map(tcpConfiguration => {
+    peerConfig.transportConfig.tcpTransportConfig.map(tcpConfiguration => {
       nettyTransportRef match {
         case Some(nettyTransport) =>
           nettyTransport

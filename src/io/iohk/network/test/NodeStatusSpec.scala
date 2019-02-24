@@ -3,7 +3,7 @@ package io.iohk.network
 import java.net.InetSocketAddress
 
 import akka.actor.typed.ActorRef
-import akka.testkit.typed.scaladsl.{BehaviorTestKit, TestInbox}
+import akka.actor.testkit.typed.scaladsl.{BehaviorTestKit, TestInbox}
 import akka.util.ByteString
 import io.iohk.network.NodeStatus._
 import org.scalatest.{FlatSpec, MustMatchers}

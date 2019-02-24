@@ -43,7 +43,7 @@ class ConversationalNetwork[Message: NioCodec: TypeTag](networkDiscovery: Networ
     * @param message the message body itself.
     */
   def sendMessage(nodeId: NodeId, message: Message): Unit =
-    sendMessage(Frame(FrameHeader(peerConfig.nodeId, nodeId, peerConfig.networkConfig.messageTtl), message))
+    sendMessage(Frame(FrameHeader(peerConfig.nodeId, nodeId, peerConfig.transportConfig.messageTtl), message))
 
   def messageStream: MessageStream[Message] =
     if (usesTcp(peerConfig))
@@ -81,7 +81,7 @@ class ConversationalNetwork[Message: NioCodec: TypeTag](networkDiscovery: Networ
       .foreach(remotePeerInfo => {
         if (usesTcp(peerConfig) && usesTcp(remotePeerInfo))
           tcpNetworkTransport.get
-            .sendMessage(remotePeerInfo.networkConfig.tcpTransportConfig.get.natAddress, frame)
+            .sendMessage(remotePeerInfo.transportConfig.tcpTransportConfig.get.natAddress, frame)
         else
           ()
       })
