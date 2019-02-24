@@ -4,6 +4,22 @@
 load("@io_bazel_rules_scala//scala:scala_import.bzl", "scala_import")
 
 scala_import(
+    name = "com___typesafe___akka_and_akka_ds_slf4j__2___12__NEVERLINK",
+    jars = [
+        "@com___typesafe___akka_and_akka_ds_slf4j__2___12__EXTERNAL__NEVERLINK",
+    ],
+    visibility = ['//visibility:public'],
+    neverlink = 1
+)
+scala_import(
+    name = "com___typesafe___akka_and_akka_ds_slf4j__2___12",
+    jars = [
+        "@com___typesafe___akka_and_akka_ds_slf4j__2___12__EXTERNAL",
+    ],
+    visibility = ['//visibility:public'],
+    neverlink = 0
+)
+scala_import(
     name = "io___monix_and_monix_ds_reactive__2___12__NEVERLINK",
     jars = [
         "@io___monix_and_monix_ds_reactive__2___12__EXTERNAL__NEVERLINK",
@@ -100,6 +116,22 @@ scala_import(
     neverlink = 0
 )
 scala_import(
+    name = "com___typesafe___akka_and_akka_ds_actor_ds_testkit_ds_typed__2___12__NEVERLINK",
+    jars = [
+        "@com___typesafe___akka_and_akka_ds_actor_ds_testkit_ds_typed__2___12__EXTERNAL__NEVERLINK",
+    ],
+    visibility = ['//visibility:public'],
+    neverlink = 1
+)
+scala_import(
+    name = "com___typesafe___akka_and_akka_ds_actor_ds_testkit_ds_typed__2___12",
+    jars = [
+        "@com___typesafe___akka_and_akka_ds_actor_ds_testkit_ds_typed__2___12__EXTERNAL",
+    ],
+    visibility = ['//visibility:public'],
+    neverlink = 0
+)
+scala_import(
     name = "com___chuusai_and_shapeless__2___12__NEVERLINK",
     jars = [
         "@com___chuusai_and_shapeless__2___12__EXTERNAL__NEVERLINK",
@@ -143,6 +175,22 @@ scala_import(
     name = "org___scalactic_and_scalactic__2___12",
     jars = [
         "@org___scalactic_and_scalactic__2___12__EXTERNAL",
+    ],
+    visibility = ['//visibility:public'],
+    neverlink = 0
+)
+scala_import(
+    name = "com___typesafe___akka_and_akka_ds_actor__2___12__NEVERLINK",
+    jars = [
+        "@com___typesafe___akka_and_akka_ds_actor__2___12__EXTERNAL__NEVERLINK",
+    ],
+    visibility = ['//visibility:public'],
+    neverlink = 1
+)
+scala_import(
+    name = "com___typesafe___akka_and_akka_ds_actor__2___12",
+    jars = [
+        "@com___typesafe___akka_and_akka_ds_actor__2___12__EXTERNAL",
     ],
     visibility = ['//visibility:public'],
     neverlink = 0
@@ -212,22 +260,6 @@ scala_import(
     neverlink = 0
 )
 scala_import(
-    name = "com___typesafe___akka_and_akka_ds_slf4j__2___12__NEVERLINK",
-    jars = [
-        "@com___typesafe___akka_and_akka_ds_slf4j__2___12__EXTERNAL__NEVERLINK",
-    ],
-    visibility = ['//visibility:public'],
-    neverlink = 1
-)
-scala_import(
-    name = "com___typesafe___akka_and_akka_ds_slf4j__2___12",
-    jars = [
-        "@com___typesafe___akka_and_akka_ds_slf4j__2___12__EXTERNAL",
-    ],
-    visibility = ['//visibility:public'],
-    neverlink = 0
-)
-scala_import(
     name = "org___typelevel_and_macro_ds_compat__2___12__NEVERLINK",
     jars = [
         "@org___typelevel_and_macro_ds_compat__2___12__EXTERNAL__NEVERLINK",
@@ -239,6 +271,22 @@ scala_import(
     name = "org___typelevel_and_macro_ds_compat__2___12",
     jars = [
         "@org___typelevel_and_macro_ds_compat__2___12__EXTERNAL",
+    ],
+    visibility = ['//visibility:public'],
+    neverlink = 0
+)
+scala_import(
+    name = "com___typesafe___akka_and_akka_ds_actor_ds_typed__2___12__NEVERLINK",
+    jars = [
+        "@com___typesafe___akka_and_akka_ds_actor_ds_typed__2___12__EXTERNAL__NEVERLINK",
+    ],
+    visibility = ['//visibility:public'],
+    neverlink = 1
+)
+scala_import(
+    name = "com___typesafe___akka_and_akka_ds_actor_ds_typed__2___12",
+    jars = [
+        "@com___typesafe___akka_and_akka_ds_actor_ds_typed__2___12__EXTERNAL",
     ],
     visibility = ['//visibility:public'],
     neverlink = 0
@@ -260,17 +308,17 @@ scala_import(
     neverlink = 0
 )
 scala_import(
-    name = "com___typesafe___akka_and_akka_ds_actor_ds_typed__2___12__NEVERLINK",
+    name = "com___typesafe___akka_and_akka_ds_testkit__2___12__NEVERLINK",
     jars = [
-        "@com___typesafe___akka_and_akka_ds_actor_ds_typed__2___12__EXTERNAL__NEVERLINK",
+        "@com___typesafe___akka_and_akka_ds_testkit__2___12__EXTERNAL__NEVERLINK",
     ],
     visibility = ['//visibility:public'],
     neverlink = 1
 )
 scala_import(
-    name = "com___typesafe___akka_and_akka_ds_actor_ds_typed__2___12",
+    name = "com___typesafe___akka_and_akka_ds_testkit__2___12",
     jars = [
-        "@com___typesafe___akka_and_akka_ds_actor_ds_typed__2___12__EXTERNAL",
+        "@com___typesafe___akka_and_akka_ds_testkit__2___12__EXTERNAL",
     ],
     visibility = ['//visibility:public'],
     neverlink = 0
@@ -340,22 +388,6 @@ scala_import(
     neverlink = 0
 )
 scala_import(
-    name = "com___typesafe___akka_and_akka_ds_actor__2___12__NEVERLINK",
-    jars = [
-        "@com___typesafe___akka_and_akka_ds_actor__2___12__EXTERNAL__NEVERLINK",
-    ],
-    visibility = ['//visibility:public'],
-    neverlink = 1
-)
-scala_import(
-    name = "com___typesafe___akka_and_akka_ds_actor__2___12",
-    jars = [
-        "@com___typesafe___akka_and_akka_ds_actor__2___12__EXTERNAL",
-    ],
-    visibility = ['//visibility:public'],
-    neverlink = 0
-)
-scala_import(
     name = "com___softwaremill___quicklens_and_quicklens__2___12__NEVERLINK",
     jars = [
         "@com___softwaremill___quicklens_and_quicklens__2___12__EXTERNAL__NEVERLINK",
@@ -404,22 +436,6 @@ scala_import(
     neverlink = 0
 )
 scala_import(
-    name = "com___typesafe___akka_and_akka_ds_testkit__2___12__NEVERLINK",
-    jars = [
-        "@com___typesafe___akka_and_akka_ds_testkit__2___12__EXTERNAL__NEVERLINK",
-    ],
-    visibility = ['//visibility:public'],
-    neverlink = 1
-)
-scala_import(
-    name = "com___typesafe___akka_and_akka_ds_testkit__2___12",
-    jars = [
-        "@com___typesafe___akka_and_akka_ds_testkit__2___12__EXTERNAL",
-    ],
-    visibility = ['//visibility:public'],
-    neverlink = 0
-)
-scala_import(
     name = "com___github___pureconfig_and_pureconfig_ds_generic__2___12__NEVERLINK",
     jars = [
         "@com___github___pureconfig_and_pureconfig_ds_generic__2___12__EXTERNAL__NEVERLINK",
@@ -447,22 +463,6 @@ scala_import(
     name = "org___scala_ds_lang___modules_and_scala_ds_java8_ds_compat__2___12",
     jars = [
         "@org___scala_ds_lang___modules_and_scala_ds_java8_ds_compat__2___12__EXTERNAL",
-    ],
-    visibility = ['//visibility:public'],
-    neverlink = 0
-)
-scala_import(
-    name = "com___typesafe___akka_and_akka_ds_testkit_ds_typed__2___12__NEVERLINK",
-    jars = [
-        "@com___typesafe___akka_and_akka_ds_testkit_ds_typed__2___12__EXTERNAL__NEVERLINK",
-    ],
-    visibility = ['//visibility:public'],
-    neverlink = 1
-)
-scala_import(
-    name = "com___typesafe___akka_and_akka_ds_testkit_ds_typed__2___12",
-    jars = [
-        "@com___typesafe___akka_and_akka_ds_testkit_ds_typed__2___12__EXTERNAL",
     ],
     visibility = ['//visibility:public'],
     neverlink = 0

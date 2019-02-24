@@ -29,7 +29,7 @@ scala_test(
       "com.softwaremill.quicklens:quicklens%",
       "com.typesafe.akka:akka-slf4j%",
       "com.typesafe.akka:akka-testkit%",
-      "com.typesafe.akka:akka-testkit-typed%",
+      "com.typesafe.akka:akka-actor-testkit-typed%",
       "org.mockito:mockito-core",
       "org.scalacheck:scalacheck%",
       "org.scalatest:scalatest%",
