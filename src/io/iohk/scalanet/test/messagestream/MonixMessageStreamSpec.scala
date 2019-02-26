@@ -104,10 +104,12 @@ class MonixMessageStreamSpec extends FlatSpec {
 
   it should "collect elements" in {
     val stream = new MonixMessageStream[Int](Observable.fromIterable(List(1, 2, 3, 4, 5)))
-     val fold: CancellableFuture[Vector[Int]] = stream.collect{
+    val fold: CancellableFuture[Vector[Int]] = stream
+      .collect {
         case 2 => 2
         case 4 => 4
-      }.fold(Vector.empty[Int])((acc, next) => acc :+ next)
+      }
+      .fold(Vector.empty[Int])((acc, next) => acc :+ next)
     fold.futureValue shouldBe Vector(2, 4)
   }
 
