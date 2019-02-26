@@ -101,4 +101,23 @@ class MonixMessageStreamSpec extends FlatSpec {
 
     fold.futureValue shouldBe Vector(3, 4, 5)
   }
+
+  it should "collect elements" in {
+    val stream = new MonixMessageStream[Int](Observable.fromIterable(List(1, 2, 3, 4, 5)))
+     val fold: CancellableFuture[Vector[Int]] = stream.collect{
+        case 2 => 2
+        case 4 => 4
+      }.fold(Vector.empty[Int])((acc, next) => acc :+ next)
+    fold.futureValue shouldBe Vector(2, 4)
+  }
+
+  it should "dropWhile a condition is true and then terminate" in {
+
+    val stream = new MonixMessageStream[Int](Observable.fromIterable(List(1, 2, 3, 4, 5)))
+
+    val fold: CancellableFuture[Vector[Int]] =
+      stream.dropWhile(_ < 3).fold(Vector.empty[Int])((acc, next) => acc :+ next)
+
+    fold.futureValue shouldBe Vector(3, 4, 5)
+  }
 }
