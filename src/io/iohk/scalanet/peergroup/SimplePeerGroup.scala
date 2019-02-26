@@ -15,22 +15,25 @@ import io.iohk.decco._
 import SimplePeerGroup._
 import monix.eval.Task
 
-class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
+class SimplePeerGroup[A, F[_], AA](
     val config: Config[A, AA],
     underLyingPeerGroup: PeerGroup[AA, F]
 )(
-    implicit liftF: Lift[F]
+    implicit liftF: Lift[F],
+    aCodec: Codec[A],
+    aaCodec: Codec[AA]
 ) extends NonTerminalPeerGroup[A, F, AA](underLyingPeerGroup) {
 
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
 
-  private val msgPartialCodec: PartialCodec[PeerMessage[A, AA]] = PartialCodec[PeerMessage[A, AA]]
-  private val msgCodec = Codec.heapCodec(msgPartialCodec)
+  private val (controlChannelCodec, controlChannel) = {
+    implicit val apc: PartialCodec[A] = aCodec.partialCodec
+    implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
+    (Codec.heapCodec[PeerMessage[A, AA]], underLyingPeerGroup.createMessageChannel[PeerMessage[A, AA]]())
+  }
 
   override val processAddress: A = config.processAddress
   override val messageStream: MessageStream[ByteBuffer] = underLyingPeerGroup.messageStream()
-
-  private val controlChannel = underLyingPeerGroup.createMessageChannel[PeerMessage[A, AA]]()
 
   controlChannel.inboundMessages
     .collect {
@@ -67,7 +70,7 @@ class SimplePeerGroup[A: PartialCodec, F[_], AA: PartialCodec](
 
       underLyingPeerGroup.sendMessage(
         knownPeerAddressUnderlying,
-        msgCodec.encode(EnrolMe(config.processAddress, underLyingPeerGroup.processAddress))
+        controlChannelCodec.encode(EnrolMe(config.processAddress, underLyingPeerGroup.processAddress))
       )
 
       val enrolledTask: Task[Unit] = Task.deferFutureAction { implicit scheduler =>

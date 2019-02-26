@@ -3,7 +3,7 @@ package io.iohk.scalanet.peergroup
 import java.nio.ByteBuffer
 
 import cats.data.Kleisli
-import io.iohk.decco.PartialCodec
+import io.iohk.decco.Codec
 import io.iohk.scalanet.messagestream.MessageStream
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import monix.eval.Task
@@ -16,7 +16,7 @@ sealed trait PeerGroup[A, F[_]] {
   def shutdown(): F[Unit]
   def messageStream(): MessageStream[ByteBuffer]
   val processAddress: A
-  def createMessageChannel[MessageType: PartialCodec](): MessageChannel[A, MessageType, F] = ???
+  def createMessageChannel[MessageType: Codec](): MessageChannel[A, MessageType, F] = ???
 }
 
 object PeerGroup {

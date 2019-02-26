@@ -3,7 +3,7 @@ package io.iohk.scalanet.peergroup
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 
-import io.iohk.decco.{Codec, PartialCodec}
+import io.iohk.decco.Codec
 import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
@@ -50,10 +50,11 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
 
   private val decoderTable = new DecoderTable()
 
-  override def createMessageChannel[MessageType: PartialCodec](): MessageChannel[InetSocketAddress, MessageType, F] = {
-    val partialCodec = PartialCodec[MessageType]
+  override def createMessageChannel[MessageType]()(
+      implicit ev: Codec[MessageType]
+  ): MessageChannel[InetSocketAddress, MessageType, F] = {
     val channel = new MessageChannel(this, decoderTable)
-    decoderTable.decoderWrappers.put(partialCodec.typeCode, channel.handleMessage)
+    decoderTable.decoderWrappers.put(ev.typeCode.id, channel.handleMessage)
     channel
   }
 
