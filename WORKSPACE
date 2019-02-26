@@ -32,12 +32,6 @@ load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
 git_repository(
     name = "decco",
-    commit = "8e3c2b4707add60136f6c0b650d2a45252839fc4",
+    commit = "bf2357a79ecfbbd09414270ff749f79e248c52c0",
     remote = "https://github.com/input-output-hk/decco.git",
-)
-
-git_repository(
-    name = "crypto",
-    branch = "develop",
-    remote = "https://github.com/input-output-hk/multicrypto.git",
 )

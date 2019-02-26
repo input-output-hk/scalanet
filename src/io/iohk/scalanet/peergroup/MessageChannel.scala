@@ -2,20 +2,20 @@ package io.iohk.scalanet.peergroup
 
 import java.nio.ByteBuffer
 
-import io.iohk.decco.{Codec, PartialCodec}
+import io.iohk.decco.Codec
 import io.iohk.decco.PartialCodec.{DecodeResult, Failure}
 import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
 
 import scala.language.higherKinds
 
-class MessageChannel[A, MessageType: PartialCodec, F[_]](peerGroup: PeerGroup[A, F], decoderTable: DecoderTable) {
+class MessageChannel[A, MessageType: Codec, F[_]](peerGroup: PeerGroup[A, F], decoderTable: DecoderTable)(
+    implicit codec: Codec[MessageType]
+) {
 
-  private val ev = PartialCodec[MessageType]
-  private val codec = Codec.heapCodec[MessageType]
   private val subscribers = new Subscribers[MessageType]()
 
   def handleMessage(nextIndex: Int, byteBuffer: ByteBuffer): Unit = {
-    val messageE: Either[Failure, DecodeResult[MessageType]] = ev.decode(nextIndex, byteBuffer)
+    val messageE: Either[Failure, DecodeResult[MessageType]] = codec.partialCodec.decode(nextIndex, byteBuffer)
     messageE match {
       case Left(Failure) =>
         println(s"OH DEAR, DECODING FAILED")
@@ -25,7 +25,7 @@ class MessageChannel[A, MessageType: PartialCodec, F[_]](peerGroup: PeerGroup[A,
     }
   }
 
-  decoderTable.decoderWrappers.put(ev.typeCode, handleMessage)
+  decoderTable.decoderWrappers.put(codec.typeCode.id, handleMessage)
   val inboundMessages: MessageStream[MessageType] = new MonixMessageStream(subscribers.monixMessageStream)
 
   peerGroup.messageStream().foreach { b =>

@@ -15,7 +15,7 @@ import monix.eval.Task
 
 import scala.language.higherKinds
 import UDPPeerGroup._
-import io.iohk.decco.PartialCodec
+import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 
 class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
@@ -75,7 +75,7 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
 
   override val processAddress: InetSocketAddress = config.processAddress
 
-  override def createMessageChannel[MessageType: PartialCodec](): MessageChannel[InetSocketAddress, MessageType, F] =
+  override def createMessageChannel[MessageType: Codec](): MessageChannel[InetSocketAddress, MessageType, F] =
     new MessageChannel(this, decoderTable)
 }
 
