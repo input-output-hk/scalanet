@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 
 import io.iohk.decco.Codec
-import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
+import io.iohk.scalanet.messagestream.MessageStream
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
@@ -50,12 +50,20 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
 
   private val decoderTable = new DecoderTable()
 
+  private val subscribers = new Subscribers[ByteBuffer]()
+
+  override val messageStream: MessageStream[ByteBuffer] = subscribers.messageStream
+
+  override val processAddress: InetSocketAddress = config.processAddress
+
+  messageStream.foreach { byteBuffer =>
+    Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
+  }
+
   override def createMessageChannel[MessageType]()(
       implicit ev: Codec[MessageType]
   ): MessageChannel[InetSocketAddress, MessageType, F] = {
-    val channel = new MessageChannel(this, decoderTable)
-    decoderTable.decoderWrappers.put(ev.typeCode.id, channel.handleMessage)
-    channel
+    new MessageChannel(this, decoderTable)
   }
 
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
@@ -92,23 +100,13 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     })
   }
 
-  private val subscribers = new Subscribers[ByteBuffer]()
 
   @Sharable
   private class NettyDecoder extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      val byteBuffer = msg.asInstanceOf[ByteBuf]
+      val byteBuffer: ByteBuf = msg.asInstanceOf[ByteBuf]
       subscribers.notify(byteBuffer.nioBuffer())
     }
-  }
-
-  override val messageStream: MessageStream[ByteBuffer] =
-    new MonixMessageStream(subscribers.monixMessageStream).map(_.duplicate())
-
-  override val processAddress: InetSocketAddress = config.processAddress
-
-  messageStream.foreach { b =>
-    Codec.decodeFrame(decoderTable.entries, 0, b)
   }
 }
 
