@@ -30,8 +30,12 @@ maven_dependencies()
 
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
-git_repository(
+local_repository(
     name = "decco",
-    commit = "bf2357a79ecfbbd09414270ff749f79e248c52c0",
-    remote = "https://github.com/input-output-hk/decco.git",
+    path = "/home/jtownson/Work/iohk/repos/decco",
 )
+#git_repository(
+#    name = "decco",
+#    commit = "bf2357a79ecfbbd09414270ff749f79e248c52c0",
+#    remote = "https://github.com/input-output-hk/decco.git",
+#)

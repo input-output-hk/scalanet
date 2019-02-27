@@ -26,10 +26,10 @@ class SimplePeerGroup[A, F[_], AA](
 
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
 
-  private val (controlChannelCodec, controlChannel) = {
+  private val controlChannel = {
     implicit val apc: PartialCodec[A] = aCodec.partialCodec
     implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
-    (Codec.heapCodec[PeerMessage[A, AA]], underLyingPeerGroup.createMessageChannel[PeerMessage[A, AA]]())
+    underLyingPeerGroup.createMessageChannel[PeerMessage[A, AA]]()
   }
 
   override val processAddress: A = config.processAddress
@@ -68,10 +68,9 @@ class SimplePeerGroup[A, F[_], AA](
       val (knownPeerAddress, knownPeerAddressUnderlying) = config.knownPeers.head
       routingTable += knownPeerAddress -> knownPeerAddressUnderlying
 
-      underLyingPeerGroup.sendMessage(
+      controlChannel.sendMessage(
         knownPeerAddressUnderlying,
-        controlChannelCodec.encode(EnrolMe(config.processAddress, underLyingPeerGroup.processAddress))
-      )
+        EnrolMe(config.processAddress, underLyingPeerGroup.processAddress))
 
       val enrolledTask: Task[Unit] = Task.deferFutureAction { implicit scheduler =>
         controlChannel.inboundMessages

@@ -12,6 +12,8 @@ class MessageChannel[A, MessageType: Codec, F[_]](peerGroup: PeerGroup[A, F], de
     implicit codec: Codec[MessageType]
 ) {
 
+  decoderTable.decoderWrappers.put(codec.typeCode.id, handleMessage)
+
   private val subscribers = new Subscribers[MessageType]()
 
   def handleMessage(nextIndex: Int, byteBuffer: ByteBuffer): Unit = {
@@ -25,13 +27,7 @@ class MessageChannel[A, MessageType: Codec, F[_]](peerGroup: PeerGroup[A, F], de
     }
   }
 
-  decoderTable.decoderWrappers.put(codec.typeCode.id, handleMessage)
   val inboundMessages: MessageStream[MessageType] = new MonixMessageStream(subscribers.monixMessageStream)
-
-  peerGroup.messageStream().foreach { b =>
-    println(s"${peerGroup.processAddress} GOT A MESSAGE. DECODING IT." + b.toString)
-    Codec.decodeFrame(decoderTable.entries, 0, b)
-  }
 
   // (When executed) send a message to the peer at 'address'
   // The result may raise an error if reliableDelivery is specified as one of the QoS options.
