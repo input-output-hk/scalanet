@@ -48,8 +48,6 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     .bind(config.bindAddress)
     .syncUninterruptibly()
 
-  private val decoderTable = new DecoderTable()
-
   private val subscribers = new Subscribers[ByteBuffer]()
 
   override val messageStream: MessageStream[ByteBuffer] = subscribers.messageStream
@@ -58,12 +56,6 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
 
   messageStream.foreach { byteBuffer =>
     Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
-  }
-
-  override def createMessageChannel[MessageType]()(
-      implicit ev: Codec[MessageType]
-  ): MessageChannel[InetSocketAddress, MessageType, F] = {
-    new MessageChannel(this, decoderTable)
   }
 
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
@@ -99,8 +91,6 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
       ()
     })
   }
-
-
   @Sharable
   private class NettyDecoder extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {

@@ -14,6 +14,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import org.scalatest.concurrent.ScalaFutures._
+import io.iohk.decco.auto._
 
 class UDPPeerGroupSpec extends FlatSpec {
 
@@ -31,6 +32,18 @@ class UDPPeerGroupSpec extends FlatSpec {
     val value2: Future[ByteBuffer] = pg1.messageStream.head()
     pg2.sendMessage(pg1.config.bindAddress, ByteBuffer.wrap(b))
     toArray(value2.futureValue) shouldBe b
+  }
+
+  it should "send and receive a typed message" in withTwoRandomUDPPeerGroups { (pg1, pg2) =>
+    val pg1Channel = pg1.createMessageChannel[String]()
+    val pg2Channel = pg2.createMessageChannel[String]()
+    val message = "Hello!"
+
+    val messageReceivedF = pg2Channel.inboundMessages.head()
+
+    pg1Channel.sendMessage(pg2.config.bindAddress, message)
+
+    messageReceivedF.futureValue shouldBe message
   }
 
   it should "shutdown cleanly" in {

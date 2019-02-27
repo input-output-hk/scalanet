@@ -3,6 +3,7 @@ package io.iohk.scalanet.peergroup
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 
+import io.iohk.decco.Codec
 import io.iohk.decco.Codec.heapCodec
 import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils._
@@ -25,16 +26,12 @@ class SimplePeerGroupSpec extends FlatSpec {
 
   it should "send a message to itself" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
-      withASimplePeerGroup(terminalGroup, "Alice") { alice =>
+      withTypedPeer[String](terminalGroup, "Alice") { alice =>
         val message = "HI!!"
-        val codec = heapCodec[String]
-        val bytes: ByteBuffer = codec.encode(message)
-        val messageReceivedF = alice.messageStream.head()
+        val messageReceivedF = alice.inboundMessages.head()
 
-        alice.sendMessage("Alice", bytes).futureValue
-        val messageReceived = codec.decode(messageReceivedF.futureValue)
-        println(messageReceived)
-        messageReceived.right.value shouldBe message
+        alice.sendMessage("Alice", message).futureValue
+        messageReceivedF.futureValue shouldBe message
       }
     }
   }
@@ -66,14 +63,18 @@ class SimplePeerGroupSpec extends FlatSpec {
         val messageReceivedByBob = codec.decode(messageReceivedByBobF.futureValue)
 
         messageReceivedByBob.right.value shouldBe aliceMessage
-
       }
     }
-
   }
 
   trait SimpleTerminalPeerGroups {
     val terminalPeerGroups = List(UdpTerminalPeerGroup, TcpTerminalPeerGroup)
+  }
+
+  private def withTypedPeer[T: Codec](underlyingTerminalGroup: SimpleTerminalPeerGroup, a: String)(testCode: MessageChannel[String, T, Future] => Any): Unit = {
+    withASimplePeerGroup(underlyingTerminalGroup, a) { alice =>
+      testCode(alice.createMessageChannel[T]())
+    }
   }
 
   private def withASimplePeerGroup(

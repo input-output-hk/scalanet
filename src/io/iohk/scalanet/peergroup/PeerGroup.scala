@@ -16,7 +16,12 @@ sealed trait PeerGroup[A, F[_]] {
   def shutdown(): F[Unit]
   def messageStream(): MessageStream[ByteBuffer]
   val processAddress: A
-  def createMessageChannel[MessageType: Codec](): MessageChannel[A, MessageType, F] = ???
+  val decoderTable: DecoderTable = new DecoderTable()
+  def createMessageChannel[MessageType]()(implicit codec: Codec[MessageType]): MessageChannel[A, MessageType, F] = {
+    val messageChannel = new MessageChannel(this)
+    decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)
+    messageChannel
+  }
 }
 
 object PeerGroup {

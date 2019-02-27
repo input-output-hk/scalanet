@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.DatagramChannel
 
-import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
+import io.iohk.scalanet.messagestream.MessageStream
 import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.nio.NioEventLoopGroup
@@ -35,9 +35,7 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     })
     .bind(config.bindAddress)
     .syncUninterruptibly()
-  println(s"*********Server Binded to the address ${config.bindAddress}")
-
-  private val decoderTable = new DecoderTable()
+  println(s"*********Server bound to address ${config.bindAddress}")
 
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
     liftF(Task(writeUdp(address, message)))
@@ -47,8 +45,11 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     liftF(Task(server.channel().close().await()))
   }
 
-  override val messageStream: MessageStream[ByteBuffer] =
-    new MonixMessageStream(subscribers.monixMessageStream).map(_.duplicate())
+  override val messageStream: MessageStream[ByteBuffer] = subscribers.messageStream
+
+  messageStream.foreach { byteBuffer =>
+    Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
+  }
 
   private class ServerInboundHandler extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
@@ -74,9 +75,6 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
   }
 
   override val processAddress: InetSocketAddress = config.processAddress
-
-  override def createMessageChannel[MessageType: Codec](): MessageChannel[InetSocketAddress, MessageType, F] =
-    new MessageChannel(this, decoderTable)
 }
 
 object UDPPeerGroup {
