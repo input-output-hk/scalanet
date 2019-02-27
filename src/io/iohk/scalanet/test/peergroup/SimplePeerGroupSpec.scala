@@ -71,7 +71,9 @@ class SimplePeerGroupSpec extends FlatSpec {
     val terminalPeerGroups = List(UdpTerminalPeerGroup, TcpTerminalPeerGroup)
   }
 
-  private def withTypedPeer[T: Codec](underlyingTerminalGroup: SimpleTerminalPeerGroup, a: String)(testCode: MessageChannel[String, T, Future] => Any): Unit = {
+  private def withTypedPeer[T: Codec](underlyingTerminalGroup: SimpleTerminalPeerGroup, a: String)(
+      testCode: MessageChannel[String, T, Future] => Any
+  ): Unit = {
     withASimplePeerGroup(underlyingTerminalGroup, a) { alice =>
       testCode(alice.createMessageChannel[T]())
     }
