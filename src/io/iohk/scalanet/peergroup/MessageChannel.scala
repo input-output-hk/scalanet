@@ -4,19 +4,17 @@ import java.nio.ByteBuffer
 
 import io.iohk.decco.Codec
 import io.iohk.decco.PartialCodec.{DecodeResult, Failure}
-import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
+import io.iohk.scalanet.messagestream.MessageStream
 
 import scala.language.higherKinds
 
-class MessageChannel[A, MessageType: Codec, F[_]](peerGroup: PeerGroup[A, F], decoderTable: DecoderTable)(
+class MessageChannel[A, MessageType: Codec, F[_]](peerGroup: PeerGroup[A, F])(
     implicit codec: Codec[MessageType]
 ) {
 
-  decoderTable.decoderWrappers.put(codec.typeCode.id, handleMessage)
-
   private val subscribers = new Subscribers[MessageType]()
 
-  def handleMessage(nextIndex: Int, byteBuffer: ByteBuffer): Unit = {
+  private[peergroup] def handleMessage(nextIndex: Int, byteBuffer: ByteBuffer): Unit = {
     val messageE: Either[Failure, DecodeResult[MessageType]] = codec.partialCodec.decode(nextIndex, byteBuffer)
     messageE match {
       case Left(Failure) =>
@@ -27,15 +25,9 @@ class MessageChannel[A, MessageType: Codec, F[_]](peerGroup: PeerGroup[A, F], de
     }
   }
 
-  val inboundMessages: MessageStream[MessageType] = new MonixMessageStream(subscribers.monixMessageStream)
+  val inboundMessages: MessageStream[MessageType] = subscribers.messageStream
 
-  // (When executed) send a message to the peer at 'address'
-  // The result may raise an error if reliableDelivery is specified as one of the QoS options.
-  // In that situation, it is assumed that the message will be acked and so failure to
-  // receive an ack will allow failure detection.
-  //
-  // When reliableDelivery is not enabled, the call will always succeed, whether or not
-  // the message actually reaches the remote peer.
-  def sendMessage(address: A, message: MessageType): F[Unit] =
+  def sendMessage(address: A, message: MessageType): F[Unit] = {
     peerGroup.sendMessage(address, codec.encode(message))
+  }
 }

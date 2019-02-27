@@ -35,6 +35,10 @@ class SimplePeerGroup[A, F[_], AA](
   override val processAddress: A = config.processAddress
   override val messageStream: MessageStream[ByteBuffer] = underLyingPeerGroup.messageStream()
 
+  messageStream.foreach { byteBuffer =>
+    Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
+  }
+
   controlChannel.inboundMessages
     .collect {
       case EnrolMe(address, underlyingAddress) =>
@@ -54,9 +58,8 @@ class SimplePeerGroup[A, F[_], AA](
     // TODO if necessary frame the buffer with peer group specific fields
     // Lookup A in the routing table to obtain an AA for the underlying group.
     // Call sendMessage on the underlyingPeerGroup
-    val underLineAddress = routingTable(address)
-    underLyingPeerGroup.sendMessage(underLineAddress, message)
-
+    val underLyingAddress = routingTable(address)
+    underLyingPeerGroup.sendMessage(underLyingAddress, message)
   }
 
   override def shutdown(): F[Unit] = underLyingPeerGroup.shutdown()
@@ -70,7 +73,8 @@ class SimplePeerGroup[A, F[_], AA](
 
       controlChannel.sendMessage(
         knownPeerAddressUnderlying,
-        EnrolMe(config.processAddress, underLyingPeerGroup.processAddress))
+        EnrolMe(config.processAddress, underLyingPeerGroup.processAddress)
+      )
 
       val enrolledTask: Task[Unit] = Task.deferFutureAction { implicit scheduler =>
         controlChannel.inboundMessages
@@ -88,7 +92,6 @@ class SimplePeerGroup[A, F[_], AA](
       liftF(Task.unit)
     }
   }
-
 }
 
 object SimplePeerGroup {
