@@ -17,9 +17,12 @@ import scala.language.higherKinds
 import UDPPeerGroup._
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
+import org.slf4j.LoggerFactory
 
 class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     extends TerminalPeerGroup[InetSocketAddress, F]() {
+
+  private val log = LoggerFactory.getLogger(getClass)
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -35,7 +38,7 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     })
     .bind(config.bindAddress)
     .syncUninterruptibly()
-  println(s"*********Server bound to address ${config.bindAddress}")
+  log.info(s"Server bound to address ${config.bindAddress}")
 
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
     liftF(Task(writeUdp(address, message)))
@@ -62,7 +65,6 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     try {
       val udp = DatagramChannel.open()
       udp.configureBlocking(true)
-      println(s"*********Connecting the address ${address} to send message")
       udp.connect(address)
       try {
         udp.write(data)

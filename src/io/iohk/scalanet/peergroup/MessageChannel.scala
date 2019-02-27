@@ -5,12 +5,14 @@ import java.nio.ByteBuffer
 import io.iohk.decco.Codec
 import io.iohk.decco.PartialCodec.{DecodeResult, Failure}
 import io.iohk.scalanet.messagestream.MessageStream
+import org.slf4j.LoggerFactory
 
 import scala.language.higherKinds
 
 class MessageChannel[A, MessageType: Codec, F[_]](peerGroup: PeerGroup[A, F])(
     implicit codec: Codec[MessageType]
 ) {
+  private val log = LoggerFactory.getLogger(getClass)
 
   private val subscribers = new Subscribers[MessageType]()
 
@@ -18,9 +20,13 @@ class MessageChannel[A, MessageType: Codec, F[_]](peerGroup: PeerGroup[A, F])(
     val messageE: Either[Failure, DecodeResult[MessageType]] = codec.partialCodec.decode(nextIndex, byteBuffer)
     messageE match {
       case Left(Failure) =>
-        println(s"OH DEAR, DECODING FAILED")
+        log.debug(
+          s"Decode failed in typed channel for peer address '${peerGroup.processAddress}' using codec '${codec.typeCode}'"
+        )
       case Right(decodeResult) =>
-        println(s"${peerGroup.processAddress} Got a successful decode $decodeResult. Notifying subscribers")
+        log.debug(
+          s"Successful decode in typed channel for peer address '${peerGroup.processAddress}' using codec '${codec.typeCode}'. Notifying subscribers."
+        )
         subscribers.notify(decodeResult.decoded)
     }
   }

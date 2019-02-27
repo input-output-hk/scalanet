@@ -7,6 +7,7 @@ scala_library(
         "io.netty:netty-all",
         "org.typelevel:cats-core%",
         "com.chuusai:shapeless%",
+        "org.slf4j:slf4j-api",
     ],
     deps = ["@decco//src/io/iohk/decco"],
 )
@@ -18,6 +19,7 @@ scala_test(
         "org.mockito:mockito-core",
         "org.scalacheck:scalacheck%",
         "com.chuusai:shapeless%",
+        "ch.qos.logback:logback-classic",
     ],
     deps = [
         "scalanet",

@@ -24,25 +24,6 @@ def maven_dependencies():
   )
 
   java_import_external(
-      name = "io___tryp_and_splain__2___12___7",
-      licenses = ["notice"],
-      jar_urls = [
-          "https://repo1.maven.org/maven2/io/tryp/splain_2.12.7/0.4.0/splain_2.12.7-0.4.0.jar"
-      ],
-      jar_sha256 = "0e490c98d6218925c3359516e3e542856f70b71fa12ab11317c28a8caafd5f78",
-      neverlink=0
-  )
-  java_import_external(
-      name = "io___tryp_and_splain__2___12___7__NEVERLINK",
-      licenses = ["notice"],
-      jar_urls = [
-          "https://repo1.maven.org/maven2/io/tryp/splain_2.12.7/0.4.0/splain_2.12.7-0.4.0.jar"
-      ],
-      jar_sha256 = "0e490c98d6218925c3359516e3e542856f70b71fa12ab11317c28a8caafd5f78",
-      neverlink=1
-  )
-
-  java_import_external(
       name = "io___monix_and_monix_ds_eval__2___12__EXTERNAL",
       licenses = ["notice"],
       jar_urls = [
@@ -191,6 +172,44 @@ def maven_dependencies():
           "https://repo1.maven.org/maven2/org/scalatest/scalatest_2.12/3.0.5/scalatest_2.12-3.0.5.jar"
       ],
       jar_sha256 = "b416b5bcef6720da469a8d8a5726e457fc2d1cd5d316e1bc283aa75a2ae005e5",
+      neverlink=1
+  )
+
+  java_import_external(
+      name = "ch___qos___logback_and_logback_ds_classic",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/ch/qos/logback/logback-classic/1.2.3/logback-classic-1.2.3.jar"
+      ],
+      jar_sha256 = "fb53f8539e7fcb8f093a56e138112056ec1dc809ebb020b59d8a36a5ebac37e0",
+      neverlink=0
+  )
+  java_import_external(
+      name = "ch___qos___logback_and_logback_ds_classic__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/ch/qos/logback/logback-classic/1.2.3/logback-classic-1.2.3.jar"
+      ],
+      jar_sha256 = "fb53f8539e7fcb8f093a56e138112056ec1dc809ebb020b59d8a36a5ebac37e0",
+      neverlink=1
+  )
+
+  java_import_external(
+      name = "org___slf4j_and_slf4j_ds_api",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/slf4j/slf4j-api/1.7.25/slf4j-api-1.7.25.jar"
+      ],
+      jar_sha256 = "18c4a0095d5c1da6b817592e767bb23d29dd2f560ad74df75ff3961dbde25b79",
+      neverlink=0
+  )
+  java_import_external(
+      name = "org___slf4j_and_slf4j_ds_api__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/slf4j/slf4j-api/1.7.25/slf4j-api-1.7.25.jar"
+      ],
+      jar_sha256 = "18c4a0095d5c1da6b817592e767bb23d29dd2f560ad74df75ff3961dbde25b79",
       neverlink=1
   )
 
@@ -552,6 +571,25 @@ def maven_dependencies():
           "https://repo1.maven.org/maven2/io/monix/monix-types_2.12/2.3.3/monix-types_2.12-2.3.3.jar"
       ],
       jar_sha256 = "619624432339bc30999a5faef08eecbd0bb85759bd4971451d587e667e0b7a0b",
+      neverlink=1
+  )
+
+  java_import_external(
+      name = "ch___qos___logback_and_logback_ds_core",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/ch/qos/logback/logback-core/1.2.3/logback-core-1.2.3.jar"
+      ],
+      jar_sha256 = "5946d837fe6f960c02a53eda7a6926ecc3c758bbdd69aa453ee429f858217f22",
+      neverlink=0
+  )
+  java_import_external(
+      name = "ch___qos___logback_and_logback_ds_core__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/ch/qos/logback/logback-core/1.2.3/logback-core-1.2.3.jar"
+      ],
+      jar_sha256 = "5946d837fe6f960c02a53eda7a6926ecc3c758bbdd69aa453ee429f858217f22",
       neverlink=1
   )
 

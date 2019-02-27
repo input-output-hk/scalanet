@@ -24,7 +24,6 @@ private[scalanet] class Subscribers[MessageType] {
   val messageStream: MessageStream[MessageType] = new MonixMessageStream[MessageType](monixMessageStream)
 
   def notify(message: MessageType): Unit = {
-    println(s"Subscriber.notify $message called. Subscribers are $subscriberSet")
     subscriberSet.foreach(_.onNext(message))
   }
 }

@@ -14,6 +14,7 @@ import io.iohk.decco.auto._
 import io.iohk.decco._
 import SimplePeerGroup._
 import monix.eval.Task
+import org.slf4j.LoggerFactory
 
 class SimplePeerGroup[A, F[_], AA](
     val config: Config[A, AA],
@@ -23,6 +24,8 @@ class SimplePeerGroup[A, F[_], AA](
     aCodec: Codec[A],
     aaCodec: Codec[AA]
 ) extends NonTerminalPeerGroup[A, F, AA](underLyingPeerGroup) {
+
+  private val log = LoggerFactory.getLogger(getClass)
 
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
 
@@ -41,11 +44,13 @@ class SimplePeerGroup[A, F[_], AA](
 
   controlChannel.inboundMessages
     .collect {
-      case EnrolMe(address, underlyingAddress) =>
+      case e @ EnrolMe(address, underlyingAddress) =>
         routingTable += address -> underlyingAddress
         controlChannel
           .sendMessage(underlyingAddress, Enroled(address, underlyingAddress, routingTable.toList))
-        println(s"$processAddress: GOT AN ENROLL ME MESSAGE $address, $underlyingAddress")
+        log.debug(
+          s"Processed enrolment message $e at address '$processAddress' with corresponding routing table update."
+        )
     }
     .foreach { _ =>
       ()
@@ -82,7 +87,8 @@ class SimplePeerGroup[A, F[_], AA](
             case Enroled(_, _, newRoutingTable) =>
               routingTable.clear()
               routingTable ++= newRoutingTable
-              println(s"$processAddress: enrolled and installed new routing table $newRoutingTable")
+              log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
+              log.debug(s"$newRoutingTable")
           }
           .head()
       }
