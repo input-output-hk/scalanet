@@ -10,7 +10,6 @@ import org.scalatest.mockito.MockitoSugar._
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.Matchers._
 
-import scala.concurrent.Future
 import io.iohk.decco.auto._
 import org.scalatest.concurrent.ScalaFutures
 
@@ -29,10 +28,10 @@ class MessageChannelSpec extends FlatSpec {
     val address = "bob"
     val codec = heapCodec[String]
     val bytes: ByteBuffer = codec.encode(message)
-    val peerGroup = mock[PeerGroup[String, Future]]
+    val peerGroup = mock[PeerGroup[String]]
 
     when(peerGroup.messageStream()).thenReturn(Observable.empty[ByteBuffer])
-    val messageChannel = new MessageChannel[String, String, Future](peerGroup)
+    val messageChannel = new MessageChannel[String, String](peerGroup)
     messageChannel.sendMessage(address, message)
 
     verify(peerGroup).sendMessage(address, bytes)
@@ -43,8 +42,8 @@ class MessageChannelSpec extends FlatSpec {
     val codec = heapCodec[String]
     val bytes: ByteBuffer = codec.encode(message)
     val headerWidth = 20
-    val peerGroup = mock[PeerGroup[String, Future]]
-    val messageChannel = new MessageChannel[String, String, Future](peerGroup)
+    val peerGroup = mock[PeerGroup[String]]
+    val messageChannel = new MessageChannel[String, String](peerGroup)
     val decoderTable = new DecoderTable()
     decoderTable.put(codec.typeCode.id, messageChannel.handleMessage)
 

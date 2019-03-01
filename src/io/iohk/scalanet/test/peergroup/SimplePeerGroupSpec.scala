@@ -7,13 +7,14 @@ import io.iohk.decco.Codec
 import io.iohk.decco.Codec.heapCodec
 import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils._
-import io.iohk.scalanet.peergroup.future._
+//import monix.eval.Task
 import org.scalatest.EitherValues._
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
 import monix.execution.Scheduler.Implicits.global
+
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
@@ -29,7 +30,7 @@ class SimplePeerGroupSpec extends FlatSpec {
         val message = "HI!!"
         val messageReceivedF = alice.inboundMessages.headL.runToFuture
 
-        alice.sendMessage("Alice", message).futureValue
+        alice.sendMessage("Alice", message).runToFuture.futureValue
         messageReceivedF.futureValue shouldBe message
       }
     }
@@ -47,7 +48,7 @@ class SimplePeerGroupSpec extends FlatSpec {
         val bytes: ByteBuffer = codec.encode(message)
         val messageReceivedF = alice.messageStream.headL.runToFuture
 
-        bob.sendMessage("Alice", bytes).futureValue
+        bob.sendMessage("Alice", bytes).runToFuture.futureValue
 
         val messageReceived = codec.decode(messageReceivedF.futureValue)
 
@@ -57,7 +58,7 @@ class SimplePeerGroupSpec extends FlatSpec {
         val bytes1: ByteBuffer = codec.encode(aliceMessage)
         val messageReceivedByBobF = bob.messageStream.headL.runToFuture
 
-        alice.sendMessage("Bob", bytes1).futureValue
+        alice.sendMessage("Bob", bytes1).runToFuture.futureValue
 
         val messageReceivedByBob = codec.decode(messageReceivedByBobF.futureValue)
 
@@ -67,11 +68,11 @@ class SimplePeerGroupSpec extends FlatSpec {
   }
 
   trait SimpleTerminalPeerGroups {
-    val terminalPeerGroups = List(UdpTerminalPeerGroup, TcpTerminalPeerGroup)
+    val terminalPeerGroups = List(TcpTerminalPeerGroup, UdpTerminalPeerGroup)
   }
 
   private def withTypedPeer[T: Codec](underlyingTerminalGroup: SimpleTerminalPeerGroup, a: String)(
-      testCode: MessageChannel[String, T, Future] => Any
+      testCode: MessageChannel[String, T] => Any
   ): Unit = {
     withASimplePeerGroup(underlyingTerminalGroup, a) { alice =>
       testCode(alice.createMessageChannel[T]())
@@ -81,14 +82,14 @@ class SimplePeerGroupSpec extends FlatSpec {
   private def withASimplePeerGroup(
       underlyingTerminalGroup: SimpleTerminalPeerGroup,
       a: String
-  )(testCode: SimplePeerGroup[String, Future, InetSocketAddress] => Any): Unit = {
+  )(testCode: SimplePeerGroup[String, InetSocketAddress] => Any): Unit = {
     withSimplePeerGroups(underlyingTerminalGroup, a)(groups => testCode(groups(0)))
   }
 
   private def withTwoSimplePeerGroups(underlyingTerminalGroup: SimpleTerminalPeerGroup, a: String, b: String)(
       testCode: (
-          SimplePeerGroup[String, Future, InetSocketAddress],
-          SimplePeerGroup[String, Future, InetSocketAddress]
+          SimplePeerGroup[String, InetSocketAddress],
+          SimplePeerGroup[String, InetSocketAddress]
       ) => Any
   ): Unit = {
 
@@ -100,7 +101,7 @@ class SimplePeerGroupSpec extends FlatSpec {
       bootstrapAddress: String,
       addresses: String*
   )(
-      testCode: Seq[SimplePeerGroup[String, Future, InetSocketAddress]] => Any
+      testCode: Seq[SimplePeerGroup[String, InetSocketAddress]] => Any
   ): Unit = {
 
     val bootStrapTerminalGroup = randomTerminalPeerGroup(underlyingTerminalGroup)
@@ -108,7 +109,7 @@ class SimplePeerGroupSpec extends FlatSpec {
       SimplePeerGroup.Config(bootstrapAddress, Map.empty[String, InetSocketAddress]),
       bootStrapTerminalGroup
     )
-    bootstrap.initialize().futureValue
+    bootstrap.initialize().runToFuture.futureValue
 
     val otherPeerGroups = addresses
       .map(
@@ -119,8 +120,8 @@ class SimplePeerGroupSpec extends FlatSpec {
           )
       )
       .toList
-
-    Future.sequence(otherPeerGroups.map(pg => pg.initialize())).futureValue
+    val x: Seq[Future[Unit]] = otherPeerGroups.map(pg => pg.initialize().runToFuture)
+    Future.sequence(x)
 
     val peerGroups = bootstrap :: otherPeerGroups
 

@@ -5,7 +5,7 @@ import java.nio.ByteBuffer
 
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
-import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
@@ -20,10 +20,9 @@ import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
 
-import scala.language.higherKinds
 
-class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F], scheduler: Scheduler)
-    extends TerminalPeerGroup[InetSocketAddress, F]() {
+class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler)
+    extends TerminalPeerGroup[InetSocketAddress]() {
 
   private val nettyDecoder = new NettyDecoder()
   private val workerGroup = new NioEventLoopGroup()
@@ -59,7 +58,7 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F], scheduler:
     Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
   }
 
-  override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
+  override def sendMessage(address: InetSocketAddress, message: ByteBuffer): Task[Unit] = {
     val send: Task[Unit] = Task {
 
       val activationAdapter = new ChannelInboundHandlerAdapter() {
@@ -82,15 +81,15 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F], scheduler:
         .connect(address)
       ()
     }
-    liftF(send)
+    send
   }
 
-  override def shutdown(): F[Unit] = {
-    liftF(Task {
+  override def shutdown(): Task[Unit] = {
+    Task {
       serverBootstrap.channel().close()
       workerGroup.shutdownGracefully()
       ()
-    })
+    }
   }
   @Sharable
   private class NettyDecoder extends ChannelInboundHandlerAdapter {
@@ -109,11 +108,11 @@ object TCPPeerGroup {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
   }
 
-  def create[F[_]](
+  def create(
       config: Config
-  )(implicit liftF: Lift[F], scheduler: Scheduler): Either[InitializationError, TCPPeerGroup[F]] =
-    PeerGroup.create(new TCPPeerGroup[F](config), config)
+  )(implicit scheduler: Scheduler): Either[InitializationError, TCPPeerGroup] =
+    PeerGroup.create(new TCPPeerGroup(config), config)
 
-  def createOrThrow[F[_]](config: Config)(implicit liftF: Lift[F], scheduler: Scheduler): TCPPeerGroup[F] =
-    PeerGroup.createOrThrow(new TCPPeerGroup[F](config), config)
+  def createOrThrow(config: Config)(implicit scheduler: Scheduler): TCPPeerGroup =
+    PeerGroup.createOrThrow(new TCPPeerGroup(config), config)
 }

@@ -4,12 +4,11 @@ import java.nio.ByteBuffer
 
 import io.iohk.decco.Codec
 import io.iohk.decco.PartialCodec.{DecodeResult, Failure}
+import monix.eval.Task
 import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 
-import scala.language.higherKinds
-
-class MessageChannel[A, MessageType: Codec, F[_]](peerGroup: PeerGroup[A, F])(
+class MessageChannel[A, MessageType: Codec](peerGroup: PeerGroup[A])(
     implicit codec: Codec[MessageType]
 ) {
   private val log = LoggerFactory.getLogger(getClass)
@@ -33,7 +32,7 @@ class MessageChannel[A, MessageType: Codec, F[_]](peerGroup: PeerGroup[A, F])(
 
   val inboundMessages: Observable[MessageType] = subscribers.messageStream
 
-  def sendMessage(address: A, message: MessageType): F[Unit] = {
+  def sendMessage(address: A, message: MessageType): Task[Unit] = {
     peerGroup.sendMessage(address, codec.encode(message))
   }
 }

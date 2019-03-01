@@ -2,22 +2,20 @@ package io.iohk.scalanet.peergroup
 
 import java.nio.ByteBuffer
 
-import cats.data.Kleisli
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import monix.eval.Task
 import monix.reactive.Observable
 
-import scala.language.higherKinds
 
-sealed trait PeerGroup[A, F[_]] {
-  def initialize(): F[Unit] = ???
-  def sendMessage(address: A, message: ByteBuffer): F[Unit]
-  def shutdown(): F[Unit]
+sealed trait PeerGroup[A] {
+  def initialize(): Task[Unit] = ???
+  def sendMessage(address: A, message: ByteBuffer): Task[Unit]
+  def shutdown(): Task[Unit]
   def messageStream(): Observable[ByteBuffer]
   val processAddress: A
   val decoderTable: DecoderTable = new DecoderTable()
-  def createMessageChannel[MessageType]()(implicit codec: Codec[MessageType]): MessageChannel[A, MessageType, F] = {
+  def createMessageChannel[MessageType]()(implicit codec: Codec[MessageType]): MessageChannel[A, MessageType] = {
     val messageChannel = new MessageChannel(this)
     decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)
     messageChannel
@@ -26,11 +24,10 @@ sealed trait PeerGroup[A, F[_]] {
 
 object PeerGroup {
 
-  type Lift[F[_]] = Kleisli[F, Task[Unit], Unit]
 
-  trait TerminalPeerGroup[A, F[_]] extends PeerGroup[A, F]
+  trait TerminalPeerGroup[A] extends PeerGroup[A]
 
-  abstract class NonTerminalPeerGroup[A, F[_], AA](underlyingPeerGroup: PeerGroup[AA, F]) extends PeerGroup[A, F]
+  abstract class NonTerminalPeerGroup[A, AA](underlyingPeerGroup: PeerGroup[AA]) extends PeerGroup[A]
 
   def create[PG](pg: => PG, config: Any): Either[InitializationError, PG] =
     try {
@@ -48,7 +45,7 @@ object PeerGroup {
         throw new IllegalStateException(initializationErrorMsg(config), t)
     }
 
-  private def initializationErrorMsg[F[_]](config: Any) =
-    s"Failed initialization of ${classOf[TCPPeerGroup[F]].getName} with config $config. Cause follows."
+  private def initializationErrorMsg(config: Any) =
+    s"Failed initialization of ${classOf[TCPPeerGroup]} with config $config. Cause follows."
 
 }

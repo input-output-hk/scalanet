@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.DatagramChannel
 
-import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
@@ -12,7 +12,6 @@ import io.netty.channel.socket.nio.NioDatagramChannel
 import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter, ChannelInitializer}
 import monix.eval.Task
 
-import scala.language.higherKinds
 import UDPPeerGroup._
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
@@ -20,8 +19,8 @@ import monix.execution.Scheduler
 import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 
-class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F], scheduler: Scheduler)
-    extends TerminalPeerGroup[InetSocketAddress, F]() {
+class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler)
+    extends TerminalPeerGroup[InetSocketAddress]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -41,12 +40,12 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F], scheduler:
     .syncUninterruptibly()
   log.info(s"Server bound to address ${config.bindAddress}")
 
-  override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
-    liftF(Task(writeUdp(address, message)))
+  override def sendMessage(address: InetSocketAddress, message: ByteBuffer): Task[Unit] = {
+    Task(writeUdp(address, message))
   }
 
-  override def shutdown(): F[Unit] = {
-    liftF(Task(server.channel().close().await()))
+  override def shutdown(): Task[Unit] = {
+    Task(server.channel().close().await())
   }
 
   override val messageStream: Observable[ByteBuffer] = subscribers.messageStream
@@ -88,12 +87,12 @@ object UDPPeerGroup {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
   }
 
-  def create[F[_]](
+  def create(
       config: Config
-  )(implicit liftF: Lift[F], scheduler: Scheduler): Either[InitializationError, UDPPeerGroup[F]] =
-    PeerGroup.create(new UDPPeerGroup[F](config), config)
+  )(implicit scheduler: Scheduler): Either[InitializationError, UDPPeerGroup] =
+    PeerGroup.create(new UDPPeerGroup(config), config)
 
-  def createOrThrow[F[_]](config: Config)(implicit liftF: Lift[F], scheduler: Scheduler): UDPPeerGroup[F] =
-    PeerGroup.createOrThrow(new UDPPeerGroup[F](config), config)
+  def createOrThrow(config: Config)(implicit  scheduler: Scheduler): UDPPeerGroup =
+    PeerGroup.createOrThrow(new UDPPeerGroup(config), config)
 
 }
