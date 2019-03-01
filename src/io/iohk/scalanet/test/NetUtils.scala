@@ -5,6 +5,7 @@ import java.nio.ByteBuffer
 
 import io.iohk.scalanet.peergroup.PeerGroup.Lift
 import io.iohk.scalanet.peergroup.{TCPPeerGroup, UDPPeerGroup}
+import monix.execution.Scheduler
 
 import scala.concurrent.Future
 import scala.util.Random
@@ -75,18 +76,18 @@ object NetUtils {
   case object TcpTerminalPeerGroup extends SimpleTerminalPeerGroup
   case object UdpTerminalPeerGroup extends SimpleTerminalPeerGroup
 
-  def randomTerminalPeerGroup(t: SimpleTerminalPeerGroup)(implicit liftF: Lift[Future]) = t match {
+  def randomTerminalPeerGroup(t: SimpleTerminalPeerGroup)(implicit liftF: Lift[Future], scheduler: Scheduler) = t match {
     case TcpTerminalPeerGroup => randomTCPPeerGroup
     case UdpTerminalPeerGroup => randomUDPPeerGroup
   }
-  def randomTCPPeerGroup(implicit liftF: Lift[Future]): TCPPeerGroup[Future] =
+  def randomTCPPeerGroup(implicit liftF: Lift[Future], scheduler: Scheduler): TCPPeerGroup[Future] =
     new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
 
   def withTwoRandomTCPPeerGroups(
       testCode: (TCPPeerGroup[Future], TCPPeerGroup[Future]) => Any
-  )(implicit liftF: Lift[Future]): Unit = {
-    val pg1 = randomTCPPeerGroup(liftF)
-    val pg2 = randomTCPPeerGroup(liftF)
+  )(implicit liftF: Lift[Future], scheduler: Scheduler): Unit = {
+    val pg1 = randomTCPPeerGroup(liftF, scheduler)
+    val pg2 = randomTCPPeerGroup(liftF, scheduler)
     try {
       testCode(pg1, pg2)
     } finally {
@@ -95,12 +96,12 @@ object NetUtils {
     }
   }
 
-  def randomUDPPeerGroup(implicit liftF: Lift[Future]): UDPPeerGroup[Future] =
+  def randomUDPPeerGroup(implicit liftF: Lift[Future], scheduler: Scheduler): UDPPeerGroup[Future] =
     new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
 
   def withTwoRandomUDPPeerGroups(
       testCode: (UDPPeerGroup[Future], UDPPeerGroup[Future]) => Any
-  )(implicit liftF: Lift[Future]): Unit = {
+  )(implicit liftF: Lift[Future], scheduler: Scheduler): Unit = {
     val pg1 = randomUDPPeerGroup
     val pg2 = randomUDPPeerGroup
     try {

@@ -4,7 +4,6 @@ import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.DatagramChannel
 
-import io.iohk.scalanet.messagestream.MessageStream
 import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.nio.NioEventLoopGroup
@@ -17,9 +16,11 @@ import scala.language.higherKinds
 import UDPPeerGroup._
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
+import monix.execution.Scheduler
+import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 
-class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
+class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F], scheduler: Scheduler)
     extends TerminalPeerGroup[InetSocketAddress, F]() {
 
   private val log = LoggerFactory.getLogger(getClass)
@@ -48,7 +49,7 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     liftF(Task(server.channel().close().await()))
   }
 
-  override val messageStream: MessageStream[ByteBuffer] = subscribers.messageStream
+  override val messageStream: Observable[ByteBuffer] = subscribers.messageStream
 
   messageStream.foreach { byteBuffer =>
     Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
@@ -87,10 +88,10 @@ object UDPPeerGroup {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
   }
 
-  def create[F[_]](config: Config)(implicit liftF: Lift[F]): Either[InitializationError, UDPPeerGroup[F]] =
+  def create[F[_]](config: Config)(implicit liftF: Lift[F], scheduler: Scheduler): Either[InitializationError, UDPPeerGroup[F]] =
     PeerGroup.create(new UDPPeerGroup[F](config), config)
 
-  def createOrThrow[F[_]](config: Config)(implicit liftF: Lift[F]): UDPPeerGroup[F] =
+  def createOrThrow[F[_]](config: Config)(implicit liftF: Lift[F], scheduler: Scheduler): UDPPeerGroup[F] =
     PeerGroup.createOrThrow(new UDPPeerGroup[F](config), config)
 
 }

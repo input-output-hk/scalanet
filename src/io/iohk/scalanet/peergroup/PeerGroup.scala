@@ -4,9 +4,9 @@ import java.nio.ByteBuffer
 
 import cats.data.Kleisli
 import io.iohk.decco.Codec
-import io.iohk.scalanet.messagestream.MessageStream
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import monix.eval.Task
+import monix.reactive.Observable
 
 import scala.language.higherKinds
 
@@ -14,7 +14,7 @@ sealed trait PeerGroup[A, F[_]] {
   def initialize(): F[Unit] = ???
   def sendMessage(address: A, message: ByteBuffer): F[Unit]
   def shutdown(): F[Unit]
-  def messageStream(): MessageStream[ByteBuffer]
+  def messageStream(): Observable[ByteBuffer]
   val processAddress: A
   val decoderTable: DecoderTable = new DecoderTable()
   def createMessageChannel[MessageType]()(implicit codec: Codec[MessageType]): MessageChannel[A, MessageType, F] = {

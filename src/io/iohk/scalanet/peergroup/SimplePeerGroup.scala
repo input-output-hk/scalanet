@@ -3,7 +3,6 @@ package io.iohk.scalanet.peergroup
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.scalanet.messagestream.MessageStream
 import io.iohk.scalanet.peergroup.PeerGroup.{Lift, NonTerminalPeerGroup}
 import io.iohk.scalanet.peergroup.SimplePeerGroup.Config
 
@@ -13,16 +12,20 @@ import scala.collection.JavaConverters._
 import io.iohk.decco.auto._
 import io.iohk.decco._
 import SimplePeerGroup._
+import cats.Monad
 import monix.eval.Task
+import monix.execution.Scheduler
+import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 
-class SimplePeerGroup[A, F[_], AA](
+class SimplePeerGroup[A, F[_]: Monad, AA](
     val config: Config[A, AA],
     underLyingPeerGroup: PeerGroup[AA, F]
 )(
     implicit liftF: Lift[F],
     aCodec: Codec[A],
-    aaCodec: Codec[AA]
+    aaCodec: Codec[AA],
+    scheduler: Scheduler,
 ) extends NonTerminalPeerGroup[A, F, AA](underLyingPeerGroup) {
 
   private val log = LoggerFactory.getLogger(getClass)
@@ -36,7 +39,7 @@ class SimplePeerGroup[A, F[_], AA](
   }
 
   override val processAddress: A = config.processAddress
-  override val messageStream: MessageStream[ByteBuffer] = underLyingPeerGroup.messageStream()
+  override val messageStream: Observable[ByteBuffer] = underLyingPeerGroup.messageStream()
 
   messageStream.foreach { byteBuffer =>
     Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
@@ -81,17 +84,15 @@ class SimplePeerGroup[A, F[_], AA](
         EnrolMe(config.processAddress, underLyingPeerGroup.processAddress)
       )
 
-      val enrolledTask: Task[Unit] = Task.deferFutureAction { implicit scheduler =>
-        controlChannel.inboundMessages
-          .collect {
-            case Enroled(_, _, newRoutingTable) =>
-              routingTable.clear()
-              routingTable ++= newRoutingTable
-              log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
-              log.debug(s"$newRoutingTable")
-          }
-          .head()
-      }
+      val enrolledTask: Task[Unit] = controlChannel.inboundMessages
+        .collect {
+          case Enroled(_, _, newRoutingTable) =>
+            routingTable.clear()
+            routingTable ++= newRoutingTable
+            log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
+            log.debug(s"$newRoutingTable")
+        }
+        .headL
 
       liftF(enrolledTask)
     } else {

@@ -4,7 +4,6 @@ import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 
 import io.iohk.decco.Codec
-import io.iohk.scalanet.messagestream.MessageStream
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
@@ -18,10 +17,12 @@ import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
 import io.netty.handler.codec.bytes.ByteArrayEncoder
 import monix.eval.Task
+import monix.execution.Scheduler
+import monix.reactive.Observable
 
 import scala.language.higherKinds
 
-class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
+class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F], scheduler: Scheduler)
     extends TerminalPeerGroup[InetSocketAddress, F]() {
 
   private val nettyDecoder = new NettyDecoder()
@@ -50,7 +51,7 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
 
   private val subscribers = new Subscribers[ByteBuffer]()
 
-  override val messageStream: MessageStream[ByteBuffer] = subscribers.messageStream
+  override val messageStream: Observable[ByteBuffer] = subscribers.messageStream
 
   override val processAddress: InetSocketAddress = config.processAddress
 
@@ -108,9 +109,9 @@ object TCPPeerGroup {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
   }
 
-  def create[F[_]](config: Config)(implicit liftF: Lift[F]): Either[InitializationError, TCPPeerGroup[F]] =
+  def create[F[_]](config: Config)(implicit liftF: Lift[F], scheduler: Scheduler): Either[InitializationError, TCPPeerGroup[F]] =
     PeerGroup.create(new TCPPeerGroup[F](config), config)
 
-  def createOrThrow[F[_]](config: Config)(implicit liftF: Lift[F]): TCPPeerGroup[F] =
+  def createOrThrow[F[_]](config: Config)(implicit liftF: Lift[F], scheduler: Scheduler): TCPPeerGroup[F] =
     PeerGroup.createOrThrow(new TCPPeerGroup[F](config), config)
 }

@@ -16,6 +16,8 @@ import io.iohk.scalanet.messagestream.MonixMessageStream
 import org.scalatest.concurrent.ScalaFutures
 
 import scala.concurrent.duration._
+import monix.execution.Scheduler.Implicits.global
+import monix.reactive.Observable
 
 class MessageChannelSpec extends FlatSpec {
 
@@ -30,7 +32,7 @@ class MessageChannelSpec extends FlatSpec {
     val bytes: ByteBuffer = codec.encode(message)
     val peerGroup = mock[PeerGroup[String, Future]]
 
-    when(peerGroup.messageStream()).thenReturn(MonixMessageStream.empty[ByteBuffer])
+    when(peerGroup.messageStream()).thenReturn(Observable.empty[ByteBuffer])
     val messageChannel = new MessageChannel[String, String, Future](peerGroup)
     messageChannel.sendMessage(address, message)
 
@@ -48,7 +50,7 @@ class MessageChannelSpec extends FlatSpec {
     decoderTable.put(codec.typeCode.id, messageChannel.handleMessage)
 
     Codec.decodeFrame(decoderTable.entries, 0, bytes)
-    val messageF = messageChannel.inboundMessages.head()
+    val messageF = messageChannel.inboundMessages.headL.runToFuture
     messageChannel.handleMessage(headerWidth, bytes)
 
     messageF.futureValue shouldBe message
