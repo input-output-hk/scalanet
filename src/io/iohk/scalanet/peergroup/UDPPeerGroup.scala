@@ -88,7 +88,9 @@ object UDPPeerGroup {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
   }
 
-  def create[F[_]](config: Config)(implicit liftF: Lift[F], scheduler: Scheduler): Either[InitializationError, UDPPeerGroup[F]] =
+  def create[F[_]](
+      config: Config
+  )(implicit liftF: Lift[F], scheduler: Scheduler): Either[InitializationError, UDPPeerGroup[F]] =
     PeerGroup.create(new UDPPeerGroup[F](config), config)
 
   def createOrThrow[F[_]](config: Config)(implicit liftF: Lift[F], scheduler: Scheduler): UDPPeerGroup[F] =

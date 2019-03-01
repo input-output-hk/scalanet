@@ -109,7 +109,9 @@ object TCPPeerGroup {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
   }
 
-  def create[F[_]](config: Config)(implicit liftF: Lift[F], scheduler: Scheduler): Either[InitializationError, TCPPeerGroup[F]] =
+  def create[F[_]](
+      config: Config
+  )(implicit liftF: Lift[F], scheduler: Scheduler): Either[InitializationError, TCPPeerGroup[F]] =
     PeerGroup.create(new TCPPeerGroup[F](config), config)
 
   def createOrThrow[F[_]](config: Config)(implicit liftF: Lift[F], scheduler: Scheduler): TCPPeerGroup[F] =
