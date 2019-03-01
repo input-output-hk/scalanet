@@ -7,14 +7,15 @@ import java.nio.charset.StandardCharsets.UTF_8
 import io.iohk.scalanet.peergroup.UDPPeerGroup.Config
 import io.iohk.scalanet.peergroup.future._
 import org.scalatest.EitherValues._
+import monix.execution.Scheduler.Implicits.global
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import io.iohk.scalanet.NetUtils._
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import org.scalatest.concurrent.ScalaFutures._
 import io.iohk.decco.auto._
+import monix.execution.Scheduler.Implicits.global
 
 class UDPPeerGroupSpec extends FlatSpec {
 
@@ -23,13 +24,13 @@ class UDPPeerGroupSpec extends FlatSpec {
   behavior of "UDPPeerGroup"
 
   it should "send and receive a message" in withTwoRandomUDPPeerGroups { (pg1, pg2) =>
-    val value: Future[ByteBuffer] = pg2.messageStream.head()
+    val value: Future[ByteBuffer] = pg2.messageStream.headL.runToFuture
     val b: Array[Byte] = "Hello".getBytes(UTF_8)
 
     pg1.sendMessage(pg2.config.bindAddress, ByteBuffer.wrap(b))
     toArray(value.futureValue) shouldBe b
 
-    val value2: Future[ByteBuffer] = pg1.messageStream.head()
+    val value2: Future[ByteBuffer] = pg1.messageStream.headL.runToFuture
     pg2.sendMessage(pg1.config.bindAddress, ByteBuffer.wrap(b))
     toArray(value2.futureValue) shouldBe b
   }
@@ -39,7 +40,7 @@ class UDPPeerGroupSpec extends FlatSpec {
     val pg2Channel = pg2.createMessageChannel[String]()
     val message = "Hello!"
 
-    val messageReceivedF = pg2Channel.inboundMessages.head()
+    val messageReceivedF = pg2Channel.inboundMessages.headL.runToFuture
 
     pg1Channel.sendMessage(pg2.config.bindAddress, message)
 

@@ -12,7 +12,6 @@ import org.scalatest.Matchers._
 
 import scala.concurrent.Future
 import io.iohk.decco.auto._
-import io.iohk.scalanet.messagestream.MonixMessageStream
 import org.scalatest.concurrent.ScalaFutures
 
 import scala.concurrent.duration._
