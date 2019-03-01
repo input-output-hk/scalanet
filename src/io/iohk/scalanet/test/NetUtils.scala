@@ -76,10 +76,11 @@ object NetUtils {
   case object TcpTerminalPeerGroup extends SimpleTerminalPeerGroup
   case object UdpTerminalPeerGroup extends SimpleTerminalPeerGroup
 
-  def randomTerminalPeerGroup(t: SimpleTerminalPeerGroup)(implicit liftF: Lift[Future], scheduler: Scheduler) = t match {
-    case TcpTerminalPeerGroup => randomTCPPeerGroup
-    case UdpTerminalPeerGroup => randomUDPPeerGroup
-  }
+  def randomTerminalPeerGroup(t: SimpleTerminalPeerGroup)(implicit liftF: Lift[Future], scheduler: Scheduler) =
+    t match {
+      case TcpTerminalPeerGroup => randomTCPPeerGroup
+      case UdpTerminalPeerGroup => randomUDPPeerGroup
+    }
   def randomTCPPeerGroup(implicit liftF: Lift[Future], scheduler: Scheduler): TCPPeerGroup[Future] =
     new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
 

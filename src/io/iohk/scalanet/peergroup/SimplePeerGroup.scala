@@ -24,7 +24,7 @@ class SimplePeerGroup[A, F[_], AA](
     implicit liftF: Lift[F],
     aCodec: Codec[A],
     aaCodec: Codec[AA],
-    scheduler: Scheduler,
+    scheduler: Scheduler
 ) extends NonTerminalPeerGroup[A, F, AA](underLyingPeerGroup) {
 
   private val log = LoggerFactory.getLogger(getClass)
@@ -83,15 +83,13 @@ class SimplePeerGroup[A, F[_], AA](
         EnrolMe(config.processAddress, underLyingPeerGroup.processAddress)
       )
 
-      val enrolledTask: Task[Unit] = controlChannel.inboundMessages
-        .collect {
-          case Enroled(_, _, newRoutingTable) =>
-            routingTable.clear()
-            routingTable ++= newRoutingTable
-            log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
-            log.debug(s"$newRoutingTable")
-        }
-        .headL
+      val enrolledTask: Task[Unit] = controlChannel.inboundMessages.collect {
+        case Enroled(_, _, newRoutingTable) =>
+          routingTable.clear()
+          routingTable ++= newRoutingTable
+          log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
+          log.debug(s"$newRoutingTable")
+      }.headL
 
       liftF(enrolledTask)
     } else {
