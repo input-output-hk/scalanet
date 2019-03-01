@@ -19,8 +19,7 @@ import monix.execution.Scheduler
 import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 
-class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler)
-    extends TerminalPeerGroup[InetSocketAddress]() {
+class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends TerminalPeerGroup[InetSocketAddress]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -92,7 +91,7 @@ object UDPPeerGroup {
   )(implicit scheduler: Scheduler): Either[InitializationError, UDPPeerGroup] =
     PeerGroup.create(new UDPPeerGroup(config), config)
 
-  def createOrThrow(config: Config)(implicit  scheduler: Scheduler): UDPPeerGroup =
+  def createOrThrow(config: Config)(implicit scheduler: Scheduler): UDPPeerGroup =
     PeerGroup.createOrThrow(new UDPPeerGroup(config), config)
 
 }

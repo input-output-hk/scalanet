@@ -7,7 +7,6 @@ import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import monix.eval.Task
 import monix.reactive.Observable
 
-
 sealed trait PeerGroup[A] {
   def initialize(): Task[Unit] = ???
   def sendMessage(address: A, message: ByteBuffer): Task[Unit]
@@ -23,7 +22,6 @@ sealed trait PeerGroup[A] {
 }
 
 object PeerGroup {
-
 
   trait TerminalPeerGroup[A] extends PeerGroup[A]
 

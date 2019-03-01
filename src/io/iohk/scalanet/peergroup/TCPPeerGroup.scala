@@ -20,9 +20,7 @@ import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
 
-
-class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler)
-    extends TerminalPeerGroup[InetSocketAddress]() {
+class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends TerminalPeerGroup[InetSocketAddress]() {
 
   private val nettyDecoder = new NettyDecoder()
   private val workerGroup = new NioEventLoopGroup()
