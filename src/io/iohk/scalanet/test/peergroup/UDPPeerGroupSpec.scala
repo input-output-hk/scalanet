@@ -5,9 +5,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets.UTF_8
 
 import io.iohk.scalanet.peergroup.UDPPeerGroup.Config
-import io.iohk.scalanet.peergroup.future._
 import org.scalatest.EitherValues._
-import monix.execution.Scheduler.Implicits.global
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import io.iohk.scalanet.NetUtils._
@@ -27,11 +25,11 @@ class UDPPeerGroupSpec extends FlatSpec {
     val value: Future[ByteBuffer] = pg2.messageStream.headL.runToFuture
     val b: Array[Byte] = "Hello".getBytes(UTF_8)
 
-    pg1.sendMessage(pg2.config.bindAddress, ByteBuffer.wrap(b))
+    pg1.sendMessage(pg2.config.bindAddress, ByteBuffer.wrap(b)).runToFuture
     toArray(value.futureValue) shouldBe b
 
     val value2: Future[ByteBuffer] = pg1.messageStream.headL.runToFuture
-    pg2.sendMessage(pg1.config.bindAddress, ByteBuffer.wrap(b))
+    pg2.sendMessage(pg1.config.bindAddress, ByteBuffer.wrap(b)).runToFuture
     toArray(value2.futureValue) shouldBe b
   }
 
@@ -42,7 +40,7 @@ class UDPPeerGroupSpec extends FlatSpec {
 
     val messageReceivedF = pg2Channel.inboundMessages.headL.runToFuture
 
-    pg1Channel.sendMessage(pg2.config.bindAddress, message)
+    pg1Channel.sendMessage(pg2.config.bindAddress, message).runToFuture
 
     messageReceivedF.futureValue shouldBe message
   }
@@ -51,7 +49,7 @@ class UDPPeerGroupSpec extends FlatSpec {
     val pg1 = randomUDPPeerGroup
     isListeningUDP(pg1.config.bindAddress) shouldBe true
 
-    pg1.shutdown().futureValue
+    pg1.shutdown().runToFuture.futureValue
 
     isListeningUDP(pg1.config.bindAddress) shouldBe false
   }
