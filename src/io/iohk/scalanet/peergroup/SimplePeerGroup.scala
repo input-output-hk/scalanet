@@ -20,7 +20,7 @@ class SimplePeerGroup[A, AA](
     val config: Config[A, AA],
     underLyingPeerGroup: PeerGroup[AA]
 )(
-   implicit aCodec: Codec[A],
+    implicit aCodec: Codec[A],
     aaCodec: Codec[AA],
     scheduler: Scheduler
 ) extends NonTerminalPeerGroup[A, AA](underLyingPeerGroup) {
@@ -47,7 +47,8 @@ class SimplePeerGroup[A, AA](
       case e @ EnrolMe(address, underlyingAddress) =>
         routingTable += address -> underlyingAddress
         controlChannel
-          .sendMessage(underlyingAddress, Enrolled(address, underlyingAddress, routingTable.toList)).runToFuture
+          .sendMessage(underlyingAddress, Enrolled(address, underlyingAddress, routingTable.toList))
+          .runToFuture
         log.debug(
           s"Processed enrolment message $e at address '$processAddress' with corresponding routing table update."
         )
@@ -67,7 +68,7 @@ class SimplePeerGroup[A, AA](
     underLyingPeerGroup.sendMessage(underLyingAddress, message)
   }
 
-  override def shutdown():Task[Unit] = underLyingPeerGroup.shutdown()
+  override def shutdown(): Task[Unit] = underLyingPeerGroup.shutdown()
 
   override def initialize(): Task[Unit] = {
     routingTable += processAddress -> underLyingPeerGroup.processAddress
@@ -75,8 +76,6 @@ class SimplePeerGroup[A, AA](
     if (config.knownPeers.nonEmpty) {
       val (knownPeerAddress, knownPeerAddressUnderlying) = config.knownPeers.head
       routingTable += knownPeerAddress -> knownPeerAddressUnderlying
-
-
 
       val enrolledTask: Task[Unit] = controlChannel.inboundMessages.collect {
         case Enrolled(_, _, newRoutingTable) =>
@@ -86,10 +85,12 @@ class SimplePeerGroup[A, AA](
           log.debug(s"$newRoutingTable")
       }.headL
 
-      controlChannel.sendMessage(
-        knownPeerAddressUnderlying,
-        EnrolMe(config.processAddress, underLyingPeerGroup.processAddress)
-      ).runToFuture
+      controlChannel
+        .sendMessage(
+          knownPeerAddressUnderlying,
+          EnrolMe(config.processAddress, underLyingPeerGroup.processAddress)
+        )
+        .runToFuture
 
       enrolledTask
     } else {

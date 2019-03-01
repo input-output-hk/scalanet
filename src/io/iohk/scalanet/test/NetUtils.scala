@@ -74,19 +74,19 @@ object NetUtils {
   case object TcpTerminalPeerGroup extends SimpleTerminalPeerGroup
   case object UdpTerminalPeerGroup extends SimpleTerminalPeerGroup
 
-  def randomTerminalPeerGroup(t: SimpleTerminalPeerGroup)(implicit  scheduler: Scheduler) =
+  def randomTerminalPeerGroup(t: SimpleTerminalPeerGroup)(implicit scheduler: Scheduler) =
     t match {
       case TcpTerminalPeerGroup => randomTCPPeerGroup
       case UdpTerminalPeerGroup => randomUDPPeerGroup
     }
-  def randomTCPPeerGroup(implicit  scheduler: Scheduler): TCPPeerGroup =
+  def randomTCPPeerGroup(implicit scheduler: Scheduler): TCPPeerGroup =
     new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
 
   def withTwoRandomTCPPeerGroups(
       testCode: (TCPPeerGroup, TCPPeerGroup) => Any
   )(implicit scheduler: Scheduler): Unit = {
-    val pg1 = randomTCPPeerGroup( scheduler)
-    val pg2 = randomTCPPeerGroup( scheduler)
+    val pg1 = randomTCPPeerGroup(scheduler)
+    val pg2 = randomTCPPeerGroup(scheduler)
     try {
       testCode(pg1, pg2)
     } finally {
@@ -100,7 +100,7 @@ object NetUtils {
 
   def withTwoRandomUDPPeerGroups(
       testCode: (UDPPeerGroup, UDPPeerGroup) => Any
-  )(implicit  scheduler: Scheduler): Unit = {
+  )(implicit scheduler: Scheduler): Unit = {
     val pg1 = randomUDPPeerGroup
     val pg2 = randomUDPPeerGroup
     try {
