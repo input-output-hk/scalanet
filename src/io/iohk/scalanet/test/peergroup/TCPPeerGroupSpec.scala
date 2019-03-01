@@ -24,7 +24,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   it should "send a message to a TCPPeerGroup" in
     withTwoRandomTCPPeerGroups { (alice, bob) =>
       val message = randomBytes(1024 * 1024 * 10)
-      val messageReceivedF = bob.messageStream.head()
+      val messageReceivedF = bob.messageStream.headL.runToFuture
 
       alice.sendMessage(bob.config.bindAddress, ByteBuffer.wrap(message))
       val messageReceived = messageReceivedF.futureValue
@@ -57,7 +57,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     val bobChannel = bob.createMessageChannel[String]()
     val message = "Hello, Bob!"
 
-    val messageReceivedF = bobChannel.inboundMessages.head()
+    val messageReceivedF = bobChannel.inboundMessages.headL.runToFuture
 
     aliceChannel.sendMessage(bob.processAddress, message).futureValue
     val messageReceived = messageReceivedF.futureValue

@@ -12,13 +12,12 @@ import scala.collection.JavaConverters._
 import io.iohk.decco.auto._
 import io.iohk.decco._
 import SimplePeerGroup._
-import cats.Monad
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 
-class SimplePeerGroup[A, F[_]: Monad, AA](
+class SimplePeerGroup[A, F[_], AA](
     val config: Config[A, AA],
     underLyingPeerGroup: PeerGroup[AA, F]
 )(

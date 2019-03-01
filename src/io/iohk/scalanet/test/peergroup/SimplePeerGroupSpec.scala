@@ -13,8 +13,7 @@ import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
-
-import scala.concurrent.ExecutionContext.Implicits.global
+import monix.execution.Scheduler.Implicits.global
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
@@ -28,7 +27,7 @@ class SimplePeerGroupSpec extends FlatSpec {
     terminalPeerGroups.foreach { terminalGroup =>
       withTypedPeer[String](terminalGroup, "Alice") { alice =>
         val message = "HI!!"
-        val messageReceivedF = alice.inboundMessages.head()
+        val messageReceivedF = alice.inboundMessages.headL.runToFuture
 
         alice.sendMessage("Alice", message).futureValue
         messageReceivedF.futureValue shouldBe message
@@ -46,7 +45,7 @@ class SimplePeerGroupSpec extends FlatSpec {
         val message = "HI!! Alice"
         val codec = heapCodec[String]
         val bytes: ByteBuffer = codec.encode(message)
-        val messageReceivedF = alice.messageStream.head()
+        val messageReceivedF = alice.messageStream.headL.runToFuture
 
         bob.sendMessage("Alice", bytes).futureValue
 
@@ -56,7 +55,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 
         val aliceMessage = "HI!! Bob"
         val bytes1: ByteBuffer = codec.encode(aliceMessage)
-        val messageReceivedByBobF = bob.messageStream.head()
+        val messageReceivedByBobF = bob.messageStream.headL.runToFuture
 
         alice.sendMessage("Bob", bytes1).futureValue
 
