@@ -11,12 +11,12 @@ import monix.eval.Task
 import scala.language.higherKinds
 
 sealed trait PeerGroup[A, F[_]] {
-  def initialize(): F[Unit] = ???
+  def initialize(): F[Unit]
   def sendMessage(address: A, message: ByteBuffer): F[Unit]
   def shutdown(): F[Unit]
   def messageStream(): MessageStream[ByteBuffer]
   val processAddress: A
-  val decoderTable: DecoderTable = new DecoderTable()
+  private[scalanet] val decoderTable: DecoderTable = new DecoderTable()
   def createMessageChannel[MessageType]()(implicit codec: Codec[MessageType]): MessageChannel[A, MessageType, F] = {
     val messageChannel = new MessageChannel(this)
     decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)

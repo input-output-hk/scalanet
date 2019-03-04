@@ -47,7 +47,7 @@ class SimplePeerGroup[A, F[_], AA](
       case e @ EnrolMe(address, underlyingAddress) =>
         routingTable += address -> underlyingAddress
         controlChannel
-          .sendMessage(underlyingAddress, Enroled(address, underlyingAddress, routingTable.toList))
+          .sendMessage(underlyingAddress, Enrolled(address, underlyingAddress, routingTable.toList))
         log.debug(
           s"Processed enrolment message $e at address '$processAddress' with corresponding routing table update."
         )
@@ -84,7 +84,7 @@ class SimplePeerGroup[A, F[_], AA](
       val enrolledTask: Task[Unit] = Task.deferFutureAction { implicit scheduler =>
         controlChannel.inboundMessages
           .collect {
-            case Enroled(_, _, newRoutingTable) =>
+            case Enrolled(_, _, newRoutingTable) =>
               routingTable.clear()
               routingTable ++= newRoutingTable
               log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
@@ -106,7 +106,7 @@ object SimplePeerGroup {
 
   case class EnrolMe[A, AA](myAddress: A, myUnderlyingAddress: AA) extends PeerMessage[A, AA]
 
-  case class Enroled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, AA)]) extends PeerMessage[A, AA]
+  case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, AA)]) extends PeerMessage[A, AA]
 
   case class Config[A, AA](processAddress: A, knownPeers: Map[A, AA])
 
