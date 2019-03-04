@@ -61,21 +61,19 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
   }
 
   private def writeUdp(address: InetSocketAddress, data: ByteBuffer): Unit = {
+    val udp = DatagramChannel.open()
+    udp.configureBlocking(true)
+    udp.connect(address)
     try {
-      val udp = DatagramChannel.open()
-      udp.configureBlocking(true)
-      udp.connect(address)
-      try {
-        udp.write(data)
-      } finally {
-        udp.close()
-      }
-    } catch {
-      case e: Throwable => e.printStackTrace()
+      udp.write(data)
+    } finally {
+      udp.close()
     }
   }
 
   override val processAddress: InetSocketAddress = config.processAddress
+
+  override def initialize(): Task[Unit] = Task.unit
 }
 
 object UDPPeerGroup {
