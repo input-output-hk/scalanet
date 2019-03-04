@@ -3,6 +3,10 @@ package io.iohk.scalanet
 import java.net._
 import java.nio.ByteBuffer
 
+import io.iohk.scalanet.peergroup.PeerGroup.Lift
+import io.iohk.scalanet.peergroup.{TCPPeerGroup, UDPPeerGroup}
+
+import scala.concurrent.Future
 import scala.util.Random
 
 object NetUtils {
@@ -66,6 +70,45 @@ object NetUtils {
     val a = new Array[Byte](n)
     Random.nextBytes(a)
     a
+  }
+  sealed trait SimpleTerminalPeerGroup
+  case object TcpTerminalPeerGroup extends SimpleTerminalPeerGroup
+  case object UdpTerminalPeerGroup extends SimpleTerminalPeerGroup
+
+  def randomTerminalPeerGroup(t: SimpleTerminalPeerGroup)(implicit liftF: Lift[Future]) = t match {
+    case TcpTerminalPeerGroup => randomTCPPeerGroup
+    case UdpTerminalPeerGroup => randomUDPPeerGroup
+  }
+  def randomTCPPeerGroup(implicit liftF: Lift[Future]): TCPPeerGroup[Future] =
+    new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
+
+  def withTwoRandomTCPPeerGroups(
+      testCode: (TCPPeerGroup[Future], TCPPeerGroup[Future]) => Any
+  )(implicit liftF: Lift[Future]): Unit = {
+    val pg1 = randomTCPPeerGroup(liftF)
+    val pg2 = randomTCPPeerGroup(liftF)
+    try {
+      testCode(pg1, pg2)
+    } finally {
+      pg1.shutdown()
+      pg2.shutdown()
+    }
+  }
+
+  def randomUDPPeerGroup(implicit liftF: Lift[Future]): UDPPeerGroup[Future] =
+    new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
+
+  def withTwoRandomUDPPeerGroups(
+      testCode: (UDPPeerGroup[Future], UDPPeerGroup[Future]) => Any
+  )(implicit liftF: Lift[Future]): Unit = {
+    val pg1 = randomUDPPeerGroup
+    val pg2 = randomUDPPeerGroup
+    try {
+      testCode(pg1, pg2)
+    } finally {
+      pg1.shutdown()
+      pg2.shutdown()
+    }
   }
 
 }

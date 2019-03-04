@@ -17,11 +17,35 @@ dependencies:
     cats-core:
       version: "1.6.0"
       lang: scala
-
+  com.chuusai:
+    shapeless:
+      lang: scala
+      version: "2.3.3"
+  org.slf4j:
+    slf4j:
+      version: "1.7.25"
+      lang: "java"
+      modules: [api]
+  ch.qos.logback:
+    logback:
+      version: "1.2.3"
+      lang: java
+      modules: [core, classic]
+      scope: test
   org.scalatest:
     scalatest:
       version: "3.0.5"
       lang: scala
+      scope: test
+  org.scalacheck:
+    scalacheck:
+      version: "1.14.0"
+      lang: scala
+      scope: test
+  org.mockito:
+    mockito-core:
+      version: "2.24.0"
+      lang: java
       scope: test
 
 

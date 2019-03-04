@@ -36,6 +36,22 @@ scala_import(
     neverlink = 0
 )
 scala_import(
+    name = "org___scalacheck_and_scalacheck__2___12__NEVERLINK",
+    jars = [
+        "@org___scalacheck_and_scalacheck__2___12__EXTERNAL__NEVERLINK",
+    ],
+    visibility = ['//visibility:public'],
+    neverlink = 1
+)
+scala_import(
+    name = "org___scalacheck_and_scalacheck__2___12",
+    jars = [
+        "@org___scalacheck_and_scalacheck__2___12__EXTERNAL",
+    ],
+    visibility = ['//visibility:public'],
+    neverlink = 0
+)
+scala_import(
     name = "org___typelevel_and_cats_ds_kernel__2___12__NEVERLINK",
     jars = [
         "@org___typelevel_and_cats_ds_kernel__2___12__EXTERNAL__NEVERLINK",
@@ -63,6 +79,22 @@ scala_import(
     name = "io___monix_and_monix_ds_execution__2___12",
     jars = [
         "@io___monix_and_monix_ds_execution__2___12__EXTERNAL",
+    ],
+    visibility = ['//visibility:public'],
+    neverlink = 0
+)
+scala_import(
+    name = "com___chuusai_and_shapeless__2___12__NEVERLINK",
+    jars = [
+        "@com___chuusai_and_shapeless__2___12__EXTERNAL__NEVERLINK",
+    ],
+    visibility = ['//visibility:public'],
+    neverlink = 1
+)
+scala_import(
+    name = "com___chuusai_and_shapeless__2___12",
+    jars = [
+        "@com___chuusai_and_shapeless__2___12__EXTERNAL",
     ],
     visibility = ['//visibility:public'],
     neverlink = 0

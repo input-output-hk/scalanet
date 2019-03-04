@@ -2,11 +2,27 @@ load("//scala:rules.bzl", "scala_library", "scala_test")
 
 scala_library(
     name = "scalanet",
-    external = ["io.monix:monix%", "io.netty:netty-all", "org.typelevel:cats-core%"]
+    external = [
+        "io.monix:monix%",
+        "io.netty:netty-all",
+        "org.typelevel:cats-core%",
+        "com.chuusai:shapeless%",
+        "org.slf4j:slf4j-api",
+    ],
+    deps = ["@decco//src/io/iohk/decco"],
 )
 
 scala_test(
     name = "tests",
-    deps = [ "scalanet" ],
-    external = ["org.scalatest:scalatest%"]
+    external = [
+        "org.scalatest:scalatest%",
+        "org.mockito:mockito-core",
+        "org.scalacheck:scalacheck%",
+        "com.chuusai:shapeless%",
+        "ch.qos.logback:logback-classic",
+    ],
+    deps = [
+        "scalanet",
+        "@decco//src/io/iohk/decco",
+    ],
 )

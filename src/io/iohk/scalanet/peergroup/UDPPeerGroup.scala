@@ -4,8 +4,8 @@ import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.DatagramChannel
 
-import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
-import io.iohk.scalanet.peergroup.PeerGroup.{InitializationError, Lift, TerminalPeerGroup}
+import io.iohk.scalanet.messagestream.MessageStream
+import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
@@ -15,13 +15,18 @@ import monix.eval.Task
 
 import scala.language.higherKinds
 import UDPPeerGroup._
+import io.iohk.decco.Codec
+import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
+import org.slf4j.LoggerFactory
 
-class UDPPeerGroup[F[_]](val udpPeerGroupConfig: Config)(implicit liftF: Lift[F])
+class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     extends TerminalPeerGroup[InetSocketAddress, F]() {
+
+  private val log = LoggerFactory.getLogger(getClass)
 
   private val workerGroup = new NioEventLoopGroup()
 
-  private val subscribers = new Subscribers()
+  private val subscribers = new Subscribers[ByteBuffer]()
 
   private val server = new Bootstrap()
     .group(workerGroup)
@@ -31,8 +36,9 @@ class UDPPeerGroup[F[_]](val udpPeerGroupConfig: Config)(implicit liftF: Lift[F]
         ch.pipeline.addLast(new ServerInboundHandler)
       }
     })
-    .bind(udpPeerGroupConfig.bindAddress)
+    .bind(config.bindAddress)
     .syncUninterruptibly()
+  log.info(s"Server bound to address ${config.bindAddress}")
 
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
     liftF(Task(writeUdp(address, message)))
@@ -42,7 +48,11 @@ class UDPPeerGroup[F[_]](val udpPeerGroupConfig: Config)(implicit liftF: Lift[F]
     liftF(Task(server.channel().close().await()))
   }
 
-  override val messageStream: MessageStream[ByteBuffer] = new MonixMessageStream(subscribers.monixMessageStream)
+  override val messageStream: MessageStream[ByteBuffer] = subscribers.messageStream
+
+  messageStream.foreach { byteBuffer =>
+    Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
+  }
 
   private class ServerInboundHandler extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
@@ -61,11 +71,19 @@ class UDPPeerGroup[F[_]](val udpPeerGroupConfig: Config)(implicit liftF: Lift[F]
       udp.close()
     }
   }
+
+  override val processAddress: InetSocketAddress = config.processAddress
+
+  override def initialize(): F[Unit] = liftF(Task.unit)
 }
 
 object UDPPeerGroup {
 
-  case class Config(bindAddress: InetSocketAddress)
+  case class Config(bindAddress: InetSocketAddress, processAddress: InetSocketAddress)
+
+  object Config {
+    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
+  }
 
   def create[F[_]](config: Config)(implicit liftF: Lift[F]): Either[InitializationError, UDPPeerGroup[F]] =
     PeerGroup.create(new UDPPeerGroup[F](config), config)
