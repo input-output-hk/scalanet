@@ -10,7 +10,7 @@ private[scalanet] class DecoderTable() {
   val decoderWrappers: mutable.Map[String, (Int, ByteBuffer) => Unit] =
     new ConcurrentHashMap[String, (Int, ByteBuffer) => Unit]().asScala
 
-  def put(typeCode: String, decoderWrapper: (Int, ByteBuffer) => Unit) =
+  def put(typeCode: String, decoderWrapper: (Int, ByteBuffer) => Unit): Option[(Int, ByteBuffer) => Unit] =
     decoderWrappers.put(typeCode, decoderWrapper)
 
   def entries: Map[String, (Int, ByteBuffer) => Unit] = decoderWrappers.toMap

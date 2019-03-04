@@ -96,6 +96,8 @@ class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
       subscribers.notify(byteBuffer.nioBuffer())
     }
   }
+
+  override def initialize(): Task[Unit] = Task.unit
 }
 
 object TCPPeerGroup {
