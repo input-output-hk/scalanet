@@ -1,25 +1,29 @@
 package io.iohk.scalanet.peergroup
 
-import java.nio.ByteBuffer
 import java.util.concurrent.CopyOnWriteArraySet
 
+import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
 import monix.reactive.{Observable, OverflowStrategy}
 import monix.reactive.observers.Subscriber
 
 import scala.collection.mutable
 import scala.collection.JavaConverters._
 
-private[scalanet] class Subscribers {
-  private val subscriberSet: mutable.Set[Subscriber.Sync[ByteBuffer]] =
-    new CopyOnWriteArraySet[Subscriber.Sync[ByteBuffer]]().asScala
+private[scalanet] class Subscribers[MessageType] {
+  private val subscriberSet: mutable.Set[Subscriber.Sync[MessageType]] =
+    new CopyOnWriteArraySet[Subscriber.Sync[MessageType]]().asScala
 
-  val monixMessageStream: Observable[ByteBuffer] =
-    Observable.create(overflowStrategy = OverflowStrategy.Unbounded)((subscriber: Subscriber.Sync[ByteBuffer]) => {
+  val monixMessageStream: Observable[MessageType] =
+    Observable.create(overflowStrategy = OverflowStrategy.Unbounded)((subscriber: Subscriber.Sync[MessageType]) => {
 
       subscriberSet.add(subscriber)
 
       () => subscriberSet.remove(subscriber)
     })
 
-  def notify(byteBuffer: ByteBuffer): Unit = subscriberSet.foreach(_.onNext(byteBuffer))
+  val messageStream: MessageStream[MessageType] = new MonixMessageStream[MessageType](monixMessageStream)
+
+  def notify(message: MessageType): Unit = {
+    subscriberSet.foreach(_.onNext(message))
+  }
 }

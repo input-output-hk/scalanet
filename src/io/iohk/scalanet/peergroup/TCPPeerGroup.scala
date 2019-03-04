@@ -3,11 +3,14 @@ package io.iohk.scalanet.peergroup
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 
-import io.iohk.scalanet.messagestream.{MessageStream, MonixMessageStream}
-import io.iohk.scalanet.peergroup.PeerGroup.{InitializationError, Lift, TerminalPeerGroup}
+import io.iohk.decco.Codec
+import io.iohk.scalanet.messagestream.MessageStream
+import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
+import io.iohk.scalanet.peergroup.PeerGroup.{Lift, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
+import io.netty.channel.ChannelHandler.Sharable
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
@@ -22,10 +25,7 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     extends TerminalPeerGroup[InetSocketAddress, F]() {
 
   private val nettyDecoder = new NettyDecoder()
-
   private val workerGroup = new NioEventLoopGroup()
-
-  private val subscribers = new Subscribers()
 
   private val clientBootstrap = new Bootstrap()
     .group(workerGroup)
@@ -47,6 +47,16 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
     .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
     .bind(config.bindAddress)
     .syncUninterruptibly()
+
+  private val subscribers = new Subscribers[ByteBuffer]()
+
+  override val messageStream: MessageStream[ByteBuffer] = subscribers.messageStream
+
+  override val processAddress: InetSocketAddress = config.processAddress
+
+  messageStream.foreach { byteBuffer =>
+    Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
+  }
 
   override def sendMessage(address: InetSocketAddress, message: ByteBuffer): F[Unit] = {
     val send: Task[Unit] = Task {
@@ -81,22 +91,24 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
       ()
     })
   }
-
-  override val messageStream: MessageStream[ByteBuffer] = new MonixMessageStream(subscribers.monixMessageStream)
-
+  @Sharable
   private class NettyDecoder extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      // TODO message stream will need to expose the address.
-//      val remoteAddress = ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress]
-      val byteBuffer = msg.asInstanceOf[ByteBuf]
+      val byteBuffer: ByteBuf = msg.asInstanceOf[ByteBuf]
       subscribers.notify(byteBuffer.nioBuffer())
     }
   }
+
+  override def initialize(): F[Unit] = liftF(Task.unit)
 }
 
 object TCPPeerGroup {
 
-  case class Config(bindAddress: InetSocketAddress)
+  case class Config(bindAddress: InetSocketAddress, processAddress: InetSocketAddress)
+
+  object Config {
+    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
+  }
 
   def create[F[_]](config: Config)(implicit liftF: Lift[F]): Either[InitializationError, TCPPeerGroup[F]] =
     PeerGroup.create(new TCPPeerGroup[F](config), config)

@@ -3,15 +3,25 @@ package io.iohk.scalanet.peergroup
 import java.nio.ByteBuffer
 
 import cats.data.Kleisli
+import io.iohk.decco.Codec
 import io.iohk.scalanet.messagestream.MessageStream
+import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import monix.eval.Task
 
 import scala.language.higherKinds
 
 sealed trait PeerGroup[A, F[_]] {
+  def initialize(): F[Unit]
   def sendMessage(address: A, message: ByteBuffer): F[Unit]
   def shutdown(): F[Unit]
   def messageStream(): MessageStream[ByteBuffer]
+  val processAddress: A
+  private[scalanet] val decoderTable: DecoderTable = new DecoderTable()
+  def createMessageChannel[MessageType]()(implicit codec: Codec[MessageType]): MessageChannel[A, MessageType, F] = {
+    val messageChannel = new MessageChannel(this)
+    decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)
+    messageChannel
+  }
 }
 
 object PeerGroup {
@@ -20,7 +30,7 @@ object PeerGroup {
 
   trait TerminalPeerGroup[A, F[_]] extends PeerGroup[A, F]
 
-  case class InitializationError(message: String, cause: Throwable)
+  abstract class NonTerminalPeerGroup[A, F[_], AA](underlyingPeerGroup: PeerGroup[AA, F]) extends PeerGroup[A, F]
 
   def create[PG](pg: => PG, config: Any): Either[InitializationError, PG] =
     try {

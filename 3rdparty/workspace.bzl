@@ -81,6 +81,44 @@ def maven_dependencies():
   )
 
   java_import_external(
+      name = "com___chuusai_and_shapeless__2___12__EXTERNAL",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/com/chuusai/shapeless_2.12/2.3.3/shapeless_2.12-2.3.3.jar"
+      ],
+      jar_sha256 = "312e301432375132ab49592bd8d22b9cd42a338a6300c6157fb4eafd1e3d5033",
+      neverlink=0
+  )
+  java_import_external(
+      name = "com___chuusai_and_shapeless__2___12__EXTERNAL__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/com/chuusai/shapeless_2.12/2.3.3/shapeless_2.12-2.3.3.jar"
+      ],
+      jar_sha256 = "312e301432375132ab49592bd8d22b9cd42a338a6300c6157fb4eafd1e3d5033",
+      neverlink=1
+  )
+
+  java_import_external(
+      name = "net___bytebuddy_and_byte_ds_buddy",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy/1.9.7/byte-buddy-1.9.7.jar"
+      ],
+      jar_sha256 = "69a9140c11de463789a1badfe6c3dcdc17608c4304cb443c5c3a179585b78b39",
+      neverlink=0
+  )
+  java_import_external(
+      name = "net___bytebuddy_and_byte_ds_buddy__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy/1.9.7/byte-buddy-1.9.7.jar"
+      ],
+      jar_sha256 = "69a9140c11de463789a1badfe6c3dcdc17608c4304cb443c5c3a179585b78b39",
+      neverlink=1
+  )
+
+  java_import_external(
       name = "org___typelevel_and_cats_ds_core__2___12__EXTERNAL",
       licenses = ["notice"],
       jar_urls = [
@@ -138,6 +176,44 @@ def maven_dependencies():
   )
 
   java_import_external(
+      name = "ch___qos___logback_and_logback_ds_classic",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/ch/qos/logback/logback-classic/1.2.3/logback-classic-1.2.3.jar"
+      ],
+      jar_sha256 = "fb53f8539e7fcb8f093a56e138112056ec1dc809ebb020b59d8a36a5ebac37e0",
+      neverlink=0
+  )
+  java_import_external(
+      name = "ch___qos___logback_and_logback_ds_classic__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/ch/qos/logback/logback-classic/1.2.3/logback-classic-1.2.3.jar"
+      ],
+      jar_sha256 = "fb53f8539e7fcb8f093a56e138112056ec1dc809ebb020b59d8a36a5ebac37e0",
+      neverlink=1
+  )
+
+  java_import_external(
+      name = "org___slf4j_and_slf4j_ds_api",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/slf4j/slf4j-api/1.7.25/slf4j-api-1.7.25.jar"
+      ],
+      jar_sha256 = "18c4a0095d5c1da6b817592e767bb23d29dd2f560ad74df75ff3961dbde25b79",
+      neverlink=0
+  )
+  java_import_external(
+      name = "org___slf4j_and_slf4j_ds_api__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/slf4j/slf4j-api/1.7.25/slf4j-api-1.7.25.jar"
+      ],
+      jar_sha256 = "18c4a0095d5c1da6b817592e767bb23d29dd2f560ad74df75ff3961dbde25b79",
+      neverlink=1
+  )
+
+  java_import_external(
       name = "org___reactivestreams_and_reactive_ds_streams",
       licenses = ["notice"],
       jar_urls = [
@@ -153,6 +229,25 @@ def maven_dependencies():
           "https://repo1.maven.org/maven2/org/reactivestreams/reactive-streams/1.0.2/reactive-streams-1.0.2.jar"
       ],
       jar_sha256 = "cc09ab0b140e0d0496c2165d4b32ce24f4d6446c0a26c5dc77b06bdf99ee8fae",
+      neverlink=1
+  )
+
+  java_import_external(
+      name = "net___bytebuddy_and_byte_ds_buddy_ds_agent",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy-agent/1.9.7/byte-buddy-agent-1.9.7.jar"
+      ],
+      jar_sha256 = "145ce0fab5390374e69b2b4070d65fedaa2b07c3cfad06b330bea1b6dcfa826f",
+      neverlink=0
+  )
+  java_import_external(
+      name = "net___bytebuddy_and_byte_ds_buddy_ds_agent__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy-agent/1.9.7/byte-buddy-agent-1.9.7.jar"
+      ],
+      jar_sha256 = "145ce0fab5390374e69b2b4070d65fedaa2b07c3cfad06b330bea1b6dcfa826f",
       neverlink=1
   )
 
@@ -176,6 +271,25 @@ def maven_dependencies():
   )
 
   java_import_external(
+      name = "org___scala_ds_sbt_and_test_ds_interface",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/scala-sbt/test-interface/1.0/test-interface-1.0.jar"
+      ],
+      jar_sha256 = "15f70b38bb95f3002fec9aea54030f19bb4ecfbad64c67424b5e5fea09cd749e",
+      neverlink=0
+  )
+  java_import_external(
+      name = "org___scala_ds_sbt_and_test_ds_interface__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/scala-sbt/test-interface/1.0/test-interface-1.0.jar"
+      ],
+      jar_sha256 = "15f70b38bb95f3002fec9aea54030f19bb4ecfbad64c67424b5e5fea09cd749e",
+      neverlink=1
+  )
+
+  java_import_external(
       name = "com___github___mpilquist_and_simulacrum__2___12__EXTERNAL",
       licenses = ["notice"],
       jar_urls = [
@@ -191,6 +305,25 @@ def maven_dependencies():
           "https://repo1.maven.org/maven2/com/github/mpilquist/simulacrum_2.12/0.10.0/simulacrum_2.12-0.10.0.jar"
       ],
       jar_sha256 = "ab973ec7cf3ac1cbe11a3d866aae7b567bb4b2a7f038b9ee21ba3ce6b177613e",
+      neverlink=1
+  )
+
+  java_import_external(
+      name = "org___scalacheck_and_scalacheck__2___12__EXTERNAL",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/scalacheck/scalacheck_2.12/1.14.0/scalacheck_2.12-1.14.0.jar"
+      ],
+      jar_sha256 = "1e6f5b292bb74b03be74195047816632b7d95e40e7f9c13d5d2c53bafeece62e",
+      neverlink=0
+  )
+  java_import_external(
+      name = "org___scalacheck_and_scalacheck__2___12__EXTERNAL__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/scalacheck/scalacheck_2.12/1.14.0/scalacheck_2.12-1.14.0.jar"
+      ],
+      jar_sha256 = "1e6f5b292bb74b03be74195047816632b7d95e40e7f9c13d5d2c53bafeece62e",
       neverlink=1
   )
 
@@ -286,6 +419,25 @@ def maven_dependencies():
           "https://repo1.maven.org/maven2/org/typelevel/cats-macros_2.12/1.6.0/cats-macros_2.12-1.6.0.jar"
       ],
       jar_sha256 = "b9bb2c24f6af1279b051c0fd257e0420d2b407bb0d50febfee52a4b6d1a09aa0",
+      neverlink=1
+  )
+
+  java_import_external(
+      name = "org___objenesis_and_objenesis",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/objenesis/objenesis/2.6/objenesis-2.6.jar"
+      ],
+      jar_sha256 = "5e168368fbc250af3c79aa5fef0c3467a2d64e5a7bd74005f25d8399aeb0708d",
+      neverlink=0
+  )
+  java_import_external(
+      name = "org___objenesis_and_objenesis__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/objenesis/objenesis/2.6/objenesis-2.6.jar"
+      ],
+      jar_sha256 = "5e168368fbc250af3c79aa5fef0c3467a2d64e5a7bd74005f25d8399aeb0708d",
       neverlink=1
   )
 
@@ -419,6 +571,44 @@ def maven_dependencies():
           "https://repo1.maven.org/maven2/io/monix/monix-types_2.12/2.3.3/monix-types_2.12-2.3.3.jar"
       ],
       jar_sha256 = "619624432339bc30999a5faef08eecbd0bb85759bd4971451d587e667e0b7a0b",
+      neverlink=1
+  )
+
+  java_import_external(
+      name = "ch___qos___logback_and_logback_ds_core",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/ch/qos/logback/logback-core/1.2.3/logback-core-1.2.3.jar"
+      ],
+      jar_sha256 = "5946d837fe6f960c02a53eda7a6926ecc3c758bbdd69aa453ee429f858217f22",
+      neverlink=0
+  )
+  java_import_external(
+      name = "ch___qos___logback_and_logback_ds_core__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/ch/qos/logback/logback-core/1.2.3/logback-core-1.2.3.jar"
+      ],
+      jar_sha256 = "5946d837fe6f960c02a53eda7a6926ecc3c758bbdd69aa453ee429f858217f22",
+      neverlink=1
+  )
+
+  java_import_external(
+      name = "org___mockito_and_mockito_ds_core",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/mockito/mockito-core/2.24.0/mockito-core-2.24.0.jar"
+      ],
+      jar_sha256 = "ae8fd3becb2a8e262507a9df85e54a6e41c5ae3a34cda5495abef6299a587ff6",
+      neverlink=0
+  )
+  java_import_external(
+      name = "org___mockito_and_mockito_ds_core__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/mockito/mockito-core/2.24.0/mockito-core-2.24.0.jar"
+      ],
+      jar_sha256 = "ae8fd3becb2a8e262507a9df85e54a6e41c5ae3a34cda5495abef6299a587ff6",
       neverlink=1
   )
 
