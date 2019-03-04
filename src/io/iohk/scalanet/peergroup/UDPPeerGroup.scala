@@ -62,21 +62,19 @@ class UDPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
   }
 
   private def writeUdp(address: InetSocketAddress, data: ByteBuffer): Unit = {
+    val udp = DatagramChannel.open()
+    udp.configureBlocking(true)
+    udp.connect(address)
     try {
-      val udp = DatagramChannel.open()
-      udp.configureBlocking(true)
-      udp.connect(address)
-      try {
-        udp.write(data)
-      } finally {
-        udp.close()
-      }
-    } catch {
-      case e: Throwable => e.printStackTrace()
+      udp.write(data)
+    } finally {
+      udp.close()
     }
   }
 
   override val processAddress: InetSocketAddress = config.processAddress
+
+  override def initialize(): F[Unit] = liftF(Task.unit)
 }
 
 object UDPPeerGroup {

@@ -98,6 +98,8 @@ class TCPPeerGroup[F[_]](val config: Config)(implicit liftF: Lift[F])
       subscribers.notify(byteBuffer.nioBuffer())
     }
   }
+
+  override def initialize(): F[Unit] = liftF(Task.unit)
 }
 
 object TCPPeerGroup {
