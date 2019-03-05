@@ -18,6 +18,7 @@ import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepende
 import io.netty.handler.codec.bytes.ByteArrayEncoder
 import monix.eval.Task
 import monix.execution.Scheduler
+import monix.reactive.Observable
 
 class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends TerminalPeerGroup[InetSocketAddress]() {
 
@@ -78,6 +79,9 @@ class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
     }
     send
   }
+
+  override def messageChannel[MessageType:Codec]: Observable[MessageType] = this.createMessageChannel().inboundMessages
+
 
   override def shutdown(): Task[Unit] = {
     Task {

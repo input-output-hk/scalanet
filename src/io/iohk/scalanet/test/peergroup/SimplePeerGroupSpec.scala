@@ -22,9 +22,9 @@ class SimplePeerGroupSpec extends FlatSpec {
 
   it should "send a message to itself" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
-      withTypedPeer[String](terminalGroup, "Alice") { alice =>
+      withASimplePeerGroup(terminalGroup, "Alice") { alice =>
         val message = "HI!!"
-        val messageReceivedF = alice.inboundMessages.headL.runToFuture
+        val messageReceivedF = alice.messageChannel[String].headL.runToFuture
 
         alice.sendMessage("Alice", message).runToFuture.futureValue
         messageReceivedF.futureValue shouldBe message
