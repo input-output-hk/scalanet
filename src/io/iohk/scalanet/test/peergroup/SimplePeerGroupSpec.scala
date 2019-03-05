@@ -2,7 +2,6 @@ package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
 
-import io.iohk.decco.Codec
 import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils._
 import org.scalatest.FlatSpec
@@ -20,56 +19,49 @@ class SimplePeerGroupSpec extends FlatSpec {
 
   behavior of "SimplePeerGroup"
 
-  it should "send a message to itself" in new SimpleTerminalPeerGroups {
+//  it should "send a message to itself" in new SimpleTerminalPeerGroups {
+//    terminalPeerGroups.foreach { terminalGroup =>
+//      withASimplePeerGroup(terminalGroup, "Alice") { alice =>
+//        val message = "HI!!"
+//        val messageReceivedF = alice.messageChannel[String].headL.runToFuture
+//
+//        alice.sendMessage("Alice", message).runToFuture.futureValue
+//
+//        messageReceivedF.futureValue shouldBe message
+//      }
+//    }
+//  }
+//
+  it should "send and receive a message to another peer of SimplePeerGroup" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
-      withASimplePeerGroup(terminalGroup, "Alice") { alice =>
-        val message = "HI!!"
+      withTwoSimplePeerGroups(
+        terminalGroup,
+        "Alice",
+        "Bob"
+      ) { (alice, bob) =>
+        val message = "HI!! Alice"
         val messageReceivedF = alice.messageChannel[String].headL.runToFuture
 
-        alice.sendMessage("Alice", message).runToFuture.futureValue
-        messageReceivedF.futureValue shouldBe message
+        bob.sendMessage("Alice", message).runToFuture.futureValue
+
+        val messageReceived: String = messageReceivedF.futureValue
+
+        messageReceived shouldBe message
+
+        val aliceMessage = "HI!! Bob"
+        val messageReceivedByBobF = bob.messageChannel[String].headL.runToFuture
+
+        alice.sendMessage("Bob", aliceMessage).runToFuture.futureValue
+
+        val messageReceivedByBob = messageReceivedByBobF.futureValue
+
+        messageReceivedByBob shouldBe aliceMessage
       }
     }
   }
 
-//  it should "send and receive a message to another peer of SimplePeerGroup" in new SimpleTerminalPeerGroups {
-//    terminalPeerGroups.foreach { terminalGroup =>
-//      withTwoTypedPeers[String](
-//        terminalGroup,
-//        "Alice",
-//        "Bob"
-//      ) { (alice, bob) =>
-//        val message = "HI!! Alice"
-//        val messageReceivedF = alice.inboundMessages.headL.runToFuture
-//
-//        bob.sendMessage("Alice", message).runToFuture.futureValue
-//
-//        val messageReceived: String = messageReceivedF.futureValue
-//
-//        messageReceived shouldBe message
-//
-//        val aliceMessage = "HI!! Bob"
-//        val messageReceivedByBobF = bob.inboundMessages.headL.runToFuture
-//
-//        alice.sendMessage("Bob", aliceMessage).runToFuture.futureValue
-//
-//        val messageReceivedByBob = messageReceivedByBobF.futureValue
-//
-//        messageReceivedByBob shouldBe aliceMessage
-//      }
-//    }
-//  }
-
   trait SimpleTerminalPeerGroups {
-    val terminalPeerGroups = List(TcpTerminalPeerGroup /*, UdpTerminalPeerGroup*/ )
-  }
-
-  private def withTypedPeer[T: Codec](underlyingTerminalGroup: SimpleTerminalPeerGroup, a: String)(
-      testCode: MessageChannel[String, T] => Any
-  ): Unit = {
-    withASimplePeerGroup(underlyingTerminalGroup, a) { alice =>
-      testCode(alice.createMessageChannel[T]())
-    }
+    val terminalPeerGroups = List(TcpTerminalPeerGroup/*, UdpTerminalPeerGroup*/)
   }
 
   private def withASimplePeerGroup(
@@ -77,17 +69,6 @@ class SimplePeerGroupSpec extends FlatSpec {
       a: String
   )(testCode: SimplePeerGroup[String, InetSocketAddress] => Any): Unit = {
     withSimplePeerGroups(underlyingTerminalGroup, a)(groups => testCode(groups(0)))
-  }
-
-  private def withTwoTypedPeers[T: Codec](underlyingTerminalGroup: SimpleTerminalPeerGroup, a: String, b: String)(
-      testCode: (
-          MessageChannel[String, T],
-          MessageChannel[String, T]
-      ) => Any
-  ): Unit = {
-    withTwoSimplePeerGroups(underlyingTerminalGroup, a, b) { (alice, bob) =>
-      testCode(alice.createMessageChannel[T](), bob.createMessageChannel[T]())
-    }
   }
 
   private def withTwoSimplePeerGroups(underlyingTerminalGroup: SimpleTerminalPeerGroup, a: String, b: String)(
@@ -124,8 +105,8 @@ class SimplePeerGroupSpec extends FlatSpec {
           )
       )
       .toList
-    val x: Seq[Future[Unit]] = otherPeerGroups.map(pg => pg.initialize().runToFuture)
-    Future.sequence(x)
+    val futures: Seq[Future[Unit]] = otherPeerGroups.map(pg => pg.initialize().runToFuture)
+    Future.sequence(futures)
 
     val peerGroups = bootstrap :: otherPeerGroups
 

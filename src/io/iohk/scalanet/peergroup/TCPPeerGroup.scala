@@ -1,7 +1,6 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
-import java.nio.ByteBuffer
 
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
@@ -18,7 +17,6 @@ import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepende
 import io.netty.handler.codec.bytes.ByteArrayEncoder
 import monix.eval.Task
 import monix.execution.Scheduler
-import monix.reactive.Observable
 
 class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends TerminalPeerGroup[InetSocketAddress]() {
 
@@ -46,13 +44,7 @@ class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
     .bind(config.bindAddress)
     .syncUninterruptibly()
 
-  private val subscribers = new Subscribers[ByteBuffer]()
-
   override val processAddress: InetSocketAddress = config.processAddress
-
-  subscribers.messageStream.foreach { byteBuffer =>
-    Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
-  }
 
   override def sendMessage[T](address: InetSocketAddress, message: T)(implicit codec: Codec[T]): Task[Unit] = {
     val send: Task[Unit] = Task {
@@ -79,8 +71,6 @@ class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
     }
     send
   }
-
-  override def messageChannel[MessageType: Codec]: Observable[MessageType] = this.createMessageChannel().inboundMessages
 
   override def shutdown(): Task[Unit] = {
     Task {

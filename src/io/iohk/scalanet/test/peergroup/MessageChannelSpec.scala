@@ -6,7 +6,6 @@ import io.iohk.decco.Codec
 import io.iohk.decco.Codec.heapCodec
 import io.iohk.decco.auto._
 import monix.execution.Scheduler.Implicits.global
-import org.mockito.Mockito.verify
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures
@@ -20,17 +19,6 @@ class MessageChannelSpec extends FlatSpec {
   implicit val patienceConfig = ScalaFutures.PatienceConfig(timeout = 1 second, interval = 100 millis)
 
   behavior of "MessageChannel"
-
-  it should "able to send a typed message" in {
-    val message = "Hello"
-    val address = "bob"
-    val peerGroup = mock[PeerGroup[String]]
-
-    val messageChannel = new MessageChannel[String, String](peerGroup)
-    messageChannel.sendMessage(address, message)
-
-    verify(peerGroup).sendMessage(address, message)
-  }
 
   it should "add a message from a peer group to its message stream" in {
     val message = "Hello"
