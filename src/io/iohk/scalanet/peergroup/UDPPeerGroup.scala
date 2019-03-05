@@ -24,8 +24,6 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
 
   private val workerGroup = new NioEventLoopGroup()
 
-  private val subscribers = new Subscribers[ByteBuffer]()
-
   private val server = new Bootstrap()
     .group(workerGroup)
     .channel(classOf[NioDatagramChannel])
@@ -44,10 +42,6 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
 
   override def shutdown(): Task[Unit] = {
     Task(server.channel().close().await())
-  }
-
-  subscribers.messageStream.foreach { byteBuffer =>
-    Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
   }
 
   private class ServerInboundHandler extends ChannelInboundHandlerAdapter {

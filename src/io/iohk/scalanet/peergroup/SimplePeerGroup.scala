@@ -28,19 +28,18 @@ class SimplePeerGroup[A, AA](
 
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
 
-  private val controlChannel = {
-    implicit val apc: PartialCodec[A] = aCodec.partialCodec
-    implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
-    underLyingPeerGroup.createMessageChannel[PeerMessage[A, AA]]()
-  }
+  private implicit val apc: PartialCodec[A] = aCodec.partialCodec
+  private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
+
+  private val controlChannel = underLyingPeerGroup.messageChannel[PeerMessage[A, AA]]
 
   override val processAddress: A = config.processAddress
 
-  controlChannel.inboundMessages
+  controlChannel
     .collect {
       case e @ EnrolMe(address, underlyingAddress) =>
         routingTable += address -> underlyingAddress
-        controlChannel
+        underLyingPeerGroup
           .sendMessage(underlyingAddress, Enrolled(address, underlyingAddress, routingTable.toList))
           .runToFuture
         log.debug(
@@ -52,20 +51,8 @@ class SimplePeerGroup[A, AA](
     }
 
   override def sendMessage[T: Codec](address: A, message: T): Task[Unit] = {
-    // Lookup A in the routing table to obtain an AA for the underlying group.
-    // Call sendMessage on the underlyingPeerGroup
     val underLyingAddress = routingTable(address)
     underLyingPeerGroup.sendMessage(underLyingAddress, message)
-  }
-
-  override def createMessageChannel[MessageType]()(
-      implicit codec: Codec[MessageType]
-  ): MessageChannel[A, MessageType] = {
-    val underlyingChannel: MessageChannel[AA, MessageType] = underLyingPeerGroup.createMessageChannel[MessageType]()
-    //    val messageChannel = new MessageChannel[A, MessageType](this)
-    //    decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)
-    //underlyingChannel.inboundMessages.map( b => (processAddress,b))
-    new MessageChannel[A, MessageType](this, underlyingChannel.inboundMessages)
   }
 
   override def messageChannel[MessageType: Codec]: Observable[MessageType] =
@@ -80,7 +67,7 @@ class SimplePeerGroup[A, AA](
       val (knownPeerAddress, knownPeerAddressUnderlying) = config.knownPeers.head
       routingTable += knownPeerAddress -> knownPeerAddressUnderlying
 
-      val enrolledTask: Task[Unit] = controlChannel.inboundMessages.collect {
+      val enrolledTask: Task[Unit] = controlChannel.collect {
         case Enrolled(_, _, newRoutingTable) =>
           routingTable.clear()
           routingTable ++= newRoutingTable
@@ -88,7 +75,7 @@ class SimplePeerGroup[A, AA](
           log.debug(s"$newRoutingTable")
       }.headL
 
-      controlChannel
+      underLyingPeerGroup
         .sendMessage(
           knownPeerAddressUnderlying,
           EnrolMe(config.processAddress, underLyingPeerGroup.processAddress)

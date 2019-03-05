@@ -1,34 +1,37 @@
 package io.iohk.scalanet.peergroup
 
-//import java.nio.ByteBuffer
+import java.nio.ByteBuffer
 
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import monix.eval.Task
+import monix.execution.Scheduler
 import monix.reactive.Observable
-//import monix.reactive.Observable
 
 sealed trait PeerGroup[A] {
-  def initialize(): Task[Unit] = ???
-//  def sendMessage(address: A, message: ByteBuffer): Task[Unit]
-  def sendMessage[T: Codec](address: A, message: T): Task[Unit]
-  def shutdown(): Task[Unit]
-//  def messageStream(): Observable[ByteBuffer]
   val processAddress: A
-  val decoderTable: DecoderTable = new DecoderTable()
-  def createMessageChannel[MessageType]()(implicit codec: Codec[MessageType]): MessageChannel[A, MessageType] = {
-    val messageChannel = new MessageChannel(this)
-    decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)
-    messageChannel
-  }
-
+  def initialize(): Task[Unit] = ???
+  def sendMessage[T: Codec](address: A, message: T): Task[Unit]
   def messageChannel[MessageType: Codec]: Observable[MessageType] = ???
-
+  def shutdown(): Task[Unit]
 }
 
 object PeerGroup {
 
-  trait TerminalPeerGroup[A] extends PeerGroup[A]
+  abstract class TerminalPeerGroup[A](implicit scheduler: Scheduler) extends PeerGroup[A] {
+    val subscribers = new Subscribers[ByteBuffer]()
+    val decoderTable: DecoderTable = new DecoderTable()
+
+    subscribers.messageStream.foreach { byteBuffer =>
+      Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
+    }
+
+    override def messageChannel[MessageType](implicit codec: Codec[MessageType]): Observable[MessageType] = {
+      val messageChannel = new MessageChannel(this)
+      decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)
+      messageChannel.inboundMessages
+    }
+  }
 
   abstract class NonTerminalPeerGroup[A, AA](underlyingPeerGroup: PeerGroup[AA]) extends PeerGroup[A] {}
 

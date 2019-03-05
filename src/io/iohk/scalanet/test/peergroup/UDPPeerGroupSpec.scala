@@ -21,15 +21,15 @@ class UDPPeerGroupSpec extends FlatSpec {
   behavior of "UDPPeerGroup"
 
   it should "send and receive a message" in withTwoRandomUDPPeerGroups { (pg1, pg2) =>
-    val pg1Channel = pg1.createMessageChannel[Array[Byte]]()
-    val pg2Channel = pg2.createMessageChannel[Array[Byte]]()
-    val pg2Msg: Future[Array[Byte]] = pg2Channel.inboundMessages.headL.runToFuture
+    val pg1Channel = pg1.messageChannel[Array[Byte]]
+    val pg2Channel = pg2.messageChannel[Array[Byte]]
+    val pg2Msg: Future[Array[Byte]] = pg2Channel.headL.runToFuture
     val b: Array[Byte] = "Hello".getBytes(UTF_8)
 
     pg1.sendMessage(pg2.config.bindAddress, b).runToFuture
     pg2Msg.futureValue shouldBe b
 
-    val pg1Msg: Future[Array[Byte]] = pg1Channel.inboundMessages.headL.runToFuture
+    val pg1Msg: Future[Array[Byte]] = pg1Channel.headL.runToFuture
     pg2.sendMessage(pg1.config.bindAddress, b).runToFuture
     pg1Msg.futureValue shouldBe b
   }
