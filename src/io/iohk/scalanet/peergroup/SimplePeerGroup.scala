@@ -1,6 +1,5 @@
 package io.iohk.scalanet.peergroup
 
-import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.scalanet.peergroup.PeerGroup.NonTerminalPeerGroup
@@ -13,7 +12,6 @@ import io.iohk.decco._
 import SimplePeerGroup._
 import monix.eval.Task
 import monix.execution.Scheduler
-import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 
 class SimplePeerGroup[A, AA](
@@ -36,11 +34,6 @@ class SimplePeerGroup[A, AA](
   }
 
   override val processAddress: A = config.processAddress
-  override val messageStream: Observable[ByteBuffer] = underLyingPeerGroup.messageStream()
-
-  messageStream.foreach { byteBuffer =>
-    Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
-  }
 
   controlChannel.inboundMessages
     .collect {
@@ -57,15 +50,18 @@ class SimplePeerGroup[A, AA](
       ()
     }
 
-  // TODO if no known peers, create a default routing table with just me.
-  // TODO otherwise, enroll with one or more known peers (and obtain/install their routing table here).
-
-  override def sendMessage(address: A, message: ByteBuffer): Task[Unit] = {
-    // TODO if necessary frame the buffer with peer group specific fields
+  override def sendMessage[T: Codec](address: A, message: T): Task[Unit] = {
     // Lookup A in the routing table to obtain an AA for the underlying group.
     // Call sendMessage on the underlyingPeerGroup
     val underLyingAddress = routingTable(address)
     underLyingPeerGroup.sendMessage(underLyingAddress, message)
+  }
+
+  override def createMessageChannel[MessageType]()(implicit codec: Codec[MessageType]): MessageChannel[A, MessageType] = {
+    val underlyingChannel: MessageChannel[AA, MessageType] = underLyingPeerGroup.createMessageChannel[MessageType]()
+//    val messageChannel = new MessageChannel[A, MessageType](this)
+//    decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)
+    new MessageChannel[A, MessageType](this, underlyingChannel.inboundMessages)
   }
 
   override def shutdown(): Task[Unit] = underLyingPeerGroup.shutdown()
@@ -108,5 +104,4 @@ object SimplePeerGroup {
   case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, AA)]) extends PeerMessage[A, AA]
 
   case class Config[A, AA](processAddress: A, knownPeers: Map[A, AA])
-
 }

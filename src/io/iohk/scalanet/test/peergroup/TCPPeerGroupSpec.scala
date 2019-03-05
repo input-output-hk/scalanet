@@ -1,7 +1,6 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.BindException
-import java.nio.ByteBuffer
 
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
@@ -22,13 +21,14 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   it should "send a message to a TCPPeerGroup" in
     withTwoRandomTCPPeerGroups { (alice, bob) =>
-      val message = randomBytes(1024 * 1024 * 10)
-      val messageReceivedF = bob.messageStream.headL.runToFuture
+      val message: Array[Byte] = randomBytes(1024 * 1024 * 10)
+      val bobsChannel = bob.createMessageChannel[Array[Byte]]()
+      val messageReceivedF = bobsChannel.inboundMessages.headL.runToFuture
 
-      alice.sendMessage(bob.config.bindAddress, ByteBuffer.wrap(message)).runToFuture
+      alice.sendMessage(bob.config.bindAddress, message).runToFuture
       val messageReceived = messageReceivedF.futureValue
 
-      toArray(messageReceived) shouldBe message
+      messageReceived shouldBe message
     }
 
   it should "shutdown a TCPPeerGroup properly" in {
@@ -49,18 +49,5 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   it should "support an Either create method" in withAddressInUse { address =>
     isListening(address) shouldBe true
     TCPPeerGroup.create(Config(address)).left.value.cause shouldBe a[BindException]
-  }
-
-  it should "return a working typed message channel" in withTwoRandomTCPPeerGroups { (alice, bob) =>
-    val aliceChannel = alice.createMessageChannel[String]()
-    val bobChannel = bob.createMessageChannel[String]()
-    val message = "Hello, Bob!"
-
-    val messageReceivedF = bobChannel.inboundMessages.headL.runToFuture
-
-    aliceChannel.sendMessage(bob.processAddress, message).runToFuture.futureValue
-    val messageReceived = messageReceivedF.futureValue
-
-    messageReceived shouldBe message
   }
 }
