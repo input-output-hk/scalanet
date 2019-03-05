@@ -58,18 +58,18 @@ class SimplePeerGroup[A, AA](
     underLyingPeerGroup.sendMessage(underLyingAddress, message)
   }
 
-  override def createMessageChannel[MessageType]()(implicit codec: Codec[MessageType]): MessageChannel[A, MessageType] = {
+  override def createMessageChannel[MessageType]()(
+      implicit codec: Codec[MessageType]
+  ): MessageChannel[A, MessageType] = {
     val underlyingChannel: MessageChannel[AA, MessageType] = underLyingPeerGroup.createMessageChannel[MessageType]()
     //    val messageChannel = new MessageChannel[A, MessageType](this)
     //    decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)
     //underlyingChannel.inboundMessages.map( b => (processAddress,b))
-     new MessageChannel[A, MessageType](this, underlyingChannel.inboundMessages)
+    new MessageChannel[A, MessageType](this, underlyingChannel.inboundMessages)
   }
 
-
-  override def messageChannel[MessageType:Codec]: Observable[MessageType] = underLyingPeerGroup.messageChannel[MessageType]
-
-
+  override def messageChannel[MessageType: Codec]: Observable[MessageType] =
+    underLyingPeerGroup.messageChannel[MessageType]
 
   override def shutdown(): Task[Unit] = underLyingPeerGroup.shutdown()
 

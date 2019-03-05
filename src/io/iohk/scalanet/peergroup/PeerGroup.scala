@@ -22,7 +22,7 @@ sealed trait PeerGroup[A] {
     messageChannel
   }
 
-  def messageChannel[MessageType:Codec]: Observable[MessageType] = ???
+  def messageChannel[MessageType: Codec]: Observable[MessageType] = ???
 
 }
 
@@ -30,8 +30,7 @@ object PeerGroup {
 
   trait TerminalPeerGroup[A] extends PeerGroup[A]
 
-  abstract class NonTerminalPeerGroup[A, AA](underlyingPeerGroup: PeerGroup[AA]) extends PeerGroup[A] {
-  }
+  abstract class NonTerminalPeerGroup[A, AA](underlyingPeerGroup: PeerGroup[AA]) extends PeerGroup[A] {}
 
   def create[PG](pg: => PG, config: Any): Either[InitializationError, PG] =
     try {

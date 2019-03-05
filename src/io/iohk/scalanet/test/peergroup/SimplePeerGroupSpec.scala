@@ -61,7 +61,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 //  }
 
   trait SimpleTerminalPeerGroups {
-    val terminalPeerGroups = List(TcpTerminalPeerGroup/*, UdpTerminalPeerGroup*/)
+    val terminalPeerGroups = List(TcpTerminalPeerGroup /*, UdpTerminalPeerGroup*/ )
   }
 
   private def withTypedPeer[T: Codec](underlyingTerminalGroup: SimpleTerminalPeerGroup, a: String)(
@@ -80,9 +80,9 @@ class SimplePeerGroupSpec extends FlatSpec {
   }
 
   private def withTwoTypedPeers[T: Codec](underlyingTerminalGroup: SimpleTerminalPeerGroup, a: String, b: String)(
-    testCode: (
-      MessageChannel[String, T],
-        MessageChannel[String, T]
+      testCode: (
+          MessageChannel[String, T],
+          MessageChannel[String, T]
       ) => Any
   ): Unit = {
     withTwoSimplePeerGroups(underlyingTerminalGroup, a, b) { (alice, bob) =>
