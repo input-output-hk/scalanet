@@ -8,9 +8,14 @@ import monix.eval.Task
 import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 
-class MessageChannel[A, MessageType: Codec](peerGroup: PeerGroup[A])(
+class MessageChannel[A, MessageType](val peerGroup: PeerGroup[A], val inboundMessages: Observable[MessageType])(
     implicit codec: Codec[MessageType]
 ) {
+
+  def this(peerGroup: PeerGroup[A])(implicit codec: Codec[MessageType]) = {
+    this(peerGroup, new Subscribers[MessageType]().messageStream)
+  }
+
   private val log = LoggerFactory.getLogger(getClass)
 
   private val subscribers = new Subscribers[MessageType]()
@@ -30,9 +35,10 @@ class MessageChannel[A, MessageType: Codec](peerGroup: PeerGroup[A])(
     }
   }
 
-  val inboundMessages: Observable[MessageType] = subscribers.messageStream
+//  val inboundMessages: Observable[MessageType] = subscribers.messageStream
 
   def sendMessage(address: A, message: MessageType): Task[Unit] = {
-    peerGroup.sendMessage(address, codec.encode(message))
+    peerGroup.sendMessage(address, message)
   }
+
 }

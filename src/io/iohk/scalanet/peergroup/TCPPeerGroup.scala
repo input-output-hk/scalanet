@@ -18,7 +18,6 @@ import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepende
 import io.netty.handler.codec.bytes.ByteArrayEncoder
 import monix.eval.Task
 import monix.execution.Scheduler
-import monix.reactive.Observable
 
 class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends TerminalPeerGroup[InetSocketAddress]() {
 
@@ -48,21 +47,19 @@ class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
 
   private val subscribers = new Subscribers[ByteBuffer]()
 
-  override val messageStream: Observable[ByteBuffer] = subscribers.messageStream
-
   override val processAddress: InetSocketAddress = config.processAddress
 
-  messageStream.foreach { byteBuffer =>
+  subscribers.messageStream.foreach { byteBuffer =>
     Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
   }
 
-  override def sendMessage(address: InetSocketAddress, message: ByteBuffer): Task[Unit] = {
+  override def sendMessage[T](address: InetSocketAddress, message: T)(implicit codec: Codec[T]): Task[Unit] = {
     val send: Task[Unit] = Task {
 
       val activationAdapter = new ChannelInboundHandlerAdapter() {
         override def channelActive(ctx: ChannelHandlerContext): Unit = {
           ctx
-            .writeAndFlush(Unpooled.wrappedBuffer(message))
+            .writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
             .addListener((_: ChannelFuture) => ctx.channel().close())
         }
       }
