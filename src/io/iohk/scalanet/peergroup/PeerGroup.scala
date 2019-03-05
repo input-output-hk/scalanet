@@ -5,6 +5,7 @@ package io.iohk.scalanet.peergroup
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import monix.eval.Task
+import monix.reactive.Observable
 //import monix.reactive.Observable
 
 sealed trait PeerGroup[A] {
@@ -20,6 +21,9 @@ sealed trait PeerGroup[A] {
     decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)
     messageChannel
   }
+
+  def messageChannel[MessageType:Codec]: Observable[MessageType] = ???
+
 }
 
 object PeerGroup {

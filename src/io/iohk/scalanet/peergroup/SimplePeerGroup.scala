@@ -12,6 +12,7 @@ import io.iohk.decco._
 import SimplePeerGroup._
 import monix.eval.Task
 import monix.execution.Scheduler
+import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 
 class SimplePeerGroup[A, AA](
@@ -59,10 +60,16 @@ class SimplePeerGroup[A, AA](
 
   override def createMessageChannel[MessageType]()(implicit codec: Codec[MessageType]): MessageChannel[A, MessageType] = {
     val underlyingChannel: MessageChannel[AA, MessageType] = underLyingPeerGroup.createMessageChannel[MessageType]()
-//    val messageChannel = new MessageChannel[A, MessageType](this)
-//    decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)
-    new MessageChannel[A, MessageType](this, underlyingChannel.inboundMessages)
+    //    val messageChannel = new MessageChannel[A, MessageType](this)
+    //    decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)
+    //underlyingChannel.inboundMessages.map( b => (processAddress,b))
+     new MessageChannel[A, MessageType](this, underlyingChannel.inboundMessages)
   }
+
+
+  override def messageChannel[MessageType:Codec]: Observable[MessageType] = underLyingPeerGroup.messageChannel[MessageType]
+
+
 
   override def shutdown(): Task[Unit] = underLyingPeerGroup.shutdown()
 
