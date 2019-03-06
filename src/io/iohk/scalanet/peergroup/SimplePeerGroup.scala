@@ -91,9 +91,9 @@ class SimplePeerGroup[A, AA](
 
 object SimplePeerGroup {
 
-  case class EnrolMe[A, AA](myAddress: A, myUnderlyingAddress: AA)
+  private[scalanet] case class EnrolMe[A, AA](myAddress: A, myUnderlyingAddress: AA)
 
-  case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, AA)])
+  private[scalanet] case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, AA)])
 
   case class Config[A, AA](processAddress: A, knownPeers: Map[A, AA])
 }
