@@ -46,7 +46,9 @@ class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
 
   override val processAddress: InetSocketAddress = config.processAddress
 
-  override def sendMessage[T](address: InetSocketAddress, message: T)(implicit codec: Codec[T]): Task[Unit] = {
+  override def sendMessage[MessageType](address: InetSocketAddress, message: MessageType)(
+      implicit codec: Codec[MessageType]
+  ): Task[Unit] = {
     val send: Task[Unit] = Task {
 
       val activationAdapter = new ChannelInboundHandlerAdapter() {

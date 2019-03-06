@@ -36,7 +36,9 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
     .syncUninterruptibly()
   log.info(s"Server bound to address ${config.bindAddress}")
 
-  override def sendMessage[T](address: InetSocketAddress, message: T)(implicit codec: Codec[T]): Task[Unit] = {
+  override def sendMessage[MessageType](address: InetSocketAddress, message: MessageType)(
+      implicit codec: Codec[MessageType]
+  ): Task[Unit] = {
     Task(writeUdp(address, codec.encode(message)))
   }
 
