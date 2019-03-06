@@ -12,6 +12,7 @@ import monix.execution.Scheduler.Implicits.global
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.util.Random
 
 class SimplePeerGroupSpec extends FlatSpec {
 
@@ -22,12 +23,14 @@ class SimplePeerGroupSpec extends FlatSpec {
   it should "send a message to itself" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withASimplePeerGroup(terminalGroup, "Alice") { alice =>
-        val message = "HI!!"
+        // FIXME when this number is increased 1013, the test fails cos the string gets truncated.
+        val message = Random.alphanumeric.take(1012).mkString
         val messageReceivedF = alice.messageChannel[String].headL.runToFuture
 
         alice.sendMessage("Alice", message).runToFuture.futureValue
 
-        messageReceivedF.futureValue shouldBe message
+        val value = messageReceivedF.futureValue
+        value shouldBe message
       }
     }
   }
