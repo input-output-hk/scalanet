@@ -19,19 +19,19 @@ class SimplePeerGroupSpec extends FlatSpec {
 
   behavior of "SimplePeerGroup"
 
-//  it should "send a message to itself" in new SimpleTerminalPeerGroups {
-//    terminalPeerGroups.foreach { terminalGroup =>
-//      withASimplePeerGroup(terminalGroup, "Alice") { alice =>
-//        val message = "HI!!"
-//        val messageReceivedF = alice.messageChannel[String].headL.runToFuture
-//
-//        alice.sendMessage("Alice", message).runToFuture.futureValue
-//
-//        messageReceivedF.futureValue shouldBe message
-//      }
-//    }
-//  }
-//
+  it should "send a message to itself" in new SimpleTerminalPeerGroups {
+    terminalPeerGroups.foreach { terminalGroup =>
+      withASimplePeerGroup(terminalGroup, "Alice") { alice =>
+        val message = "HI!!"
+        val messageReceivedF = alice.messageChannel[String].headL.runToFuture
+
+        alice.sendMessage("Alice", message).runToFuture.futureValue
+
+        messageReceivedF.futureValue shouldBe message
+      }
+    }
+  }
+
   it should "send and receive a message to another peer of SimplePeerGroup" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withTwoSimplePeerGroups(
@@ -61,7 +61,7 @@ class SimplePeerGroupSpec extends FlatSpec {
   }
 
   trait SimpleTerminalPeerGroups {
-    val terminalPeerGroups = List(TcpTerminalPeerGroup/*, UdpTerminalPeerGroup*/)
+    val terminalPeerGroups = List(TcpTerminalPeerGroup, UdpTerminalPeerGroup)
   }
 
   private def withASimplePeerGroup(

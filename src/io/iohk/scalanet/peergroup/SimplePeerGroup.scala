@@ -31,11 +31,13 @@ class SimplePeerGroup[A, AA](
   private implicit val apc: PartialCodec[A] = aCodec.partialCodec
   private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
 
-  private val controlChannel = underLyingPeerGroup.messageChannel[PeerMessage[A, AA]]
+ // private val controlChannel = underLyingPeerGroup.messageChannel[PeerMessage[A, AA]]
+  private val controlChannelEnrolMe = underLyingPeerGroup.messageChannel[EnrolMe[A, AA]]
+  private val controlChannelEnrolled = underLyingPeerGroup.messageChannel[Enrolled[A, AA]]
 
   override val processAddress: A = config.processAddress
 
-  controlChannel
+  controlChannelEnrolMe
     .collect {
       case e @ EnrolMe(address, underlyingAddress) =>
         routingTable += address -> underlyingAddress
@@ -67,7 +69,7 @@ class SimplePeerGroup[A, AA](
       val (knownPeerAddress, knownPeerAddressUnderlying) = config.knownPeers.head
       routingTable += knownPeerAddress -> knownPeerAddressUnderlying
 
-      val enrolledTask: Task[Unit] = controlChannel.collect {
+      val enrolledTask: Task[Unit] = controlChannelEnrolled.collect {
         case Enrolled(_, _, newRoutingTable) =>
           routingTable.clear()
           routingTable ++= newRoutingTable
