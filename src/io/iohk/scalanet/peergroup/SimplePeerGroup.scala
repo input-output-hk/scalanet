@@ -35,7 +35,7 @@ class SimplePeerGroup[A, AA](
 
   underLyingPeerGroup
     .messageChannel[EnrolMe[A, AA]]
-    .foreach { enrolMe: EnrolMe[A, AA] =>
+    .foreach { case (aa, enrolMe) =>
       routingTable += enrolMe.myAddress -> enrolMe.myUnderlyingAddress
       underLyingPeerGroup
         .sendMessage(
@@ -53,8 +53,11 @@ class SimplePeerGroup[A, AA](
     underLyingPeerGroup.sendMessage(underLyingAddress, message)
   }
 
-  override def messageChannel[MessageType: Codec]: Observable[MessageType] =
-    underLyingPeerGroup.messageChannel[MessageType]
+  override def messageChannel[MessageType: Codec]: Observable[(A, MessageType)] =
+    underLyingPeerGroup.messageChannel[MessageType].map{ case (aa, message) =>
+        ???
+    }
+
 
   override def shutdown(): Task[Unit] = underLyingPeerGroup.shutdown()
 
@@ -67,7 +70,7 @@ class SimplePeerGroup[A, AA](
 
       val enrolledTask: Task[Unit] = underLyingPeerGroup
         .messageChannel[Enrolled[A, AA]]
-        .map { enrolled =>
+        .map { case (aa, enrolled) =>
           routingTable.clear()
           routingTable ++= enrolled.routingTable
           log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")

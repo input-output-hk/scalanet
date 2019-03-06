@@ -47,7 +47,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 
         bob.sendMessage("Alice", message).runToFuture.futureValue
 
-        val messageReceived: String = messageReceivedF.futureValue
+        val messageReceived: (String, String) = messageReceivedF.futureValue
 
         messageReceived shouldBe message
 

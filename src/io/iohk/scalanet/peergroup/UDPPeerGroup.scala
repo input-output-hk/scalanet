@@ -49,7 +49,8 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
   private class ServerInboundHandler extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val b = msg.asInstanceOf[DatagramPacket]
-      subscribers.notify(b.content().nioBuffer().asReadOnlyBuffer())
+      val remoteAddress = b.sender()
+      subscribers.notify((remoteAddress, b.content().nioBuffer().asReadOnlyBuffer()))
     }
   }
 
