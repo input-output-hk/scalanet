@@ -31,7 +31,7 @@ class SimplePeerGroup[A, AA](
   private implicit val apc: PartialCodec[A] = aCodec.partialCodec
   private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
 
- // private val controlChannel = underLyingPeerGroup.messageChannel[PeerMessage[A, AA]]
+  // private val controlChannel = underLyingPeerGroup.messageChannel[PeerMessage[A, AA]]
   private val controlChannelEnrolMe = underLyingPeerGroup.messageChannel[EnrolMe[A, AA]]
   private val controlChannelEnrolled = underLyingPeerGroup.messageChannel[Enrolled[A, AA]]
 
