@@ -84,8 +84,9 @@ class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
   @Sharable
   private class NettyDecoder extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
+      val remoteAddress = ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress]
       val byteBuffer: ByteBuf = msg.asInstanceOf[ByteBuf]
-      subscribers.notify(byteBuffer.nioBuffer())
+      subscribers.notify((remoteAddress, byteBuffer.nioBuffer().asReadOnlyBuffer()))
     }
   }
 

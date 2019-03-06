@@ -13,22 +13,24 @@ private[scalanet] class MessageChannel[A, MessageType](peerGroup: PeerGroup[A])(
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private val subscribers = new Subscribers[MessageType]()
+  private val subscribers = new Subscribers[(A, MessageType)]()
 
-  val inboundMessages: Observable[MessageType] = subscribers.messageStream
+  val inboundMessages: Observable[(A, MessageType)] = subscribers.messageStream
 
-  private[peergroup] def handleMessage(nextIndex: Int, byteBuffer: ByteBuffer): Unit = {
+  private[peergroup] def handleMessage(address: A)(nextIndex: Int, byteBuffer: ByteBuffer): Unit = {
     val messageE: Either[Failure, DecodeResult[MessageType]] = codec.partialCodec.decode(nextIndex, byteBuffer)
     messageE match {
       case Left(Failure) =>
-        log.debug(
-          s"Decode failed in typed channel for peer address '${peerGroup.processAddress}' using codec '${codec.typeCode}'"
+        log.info(
+          s"Decode failed in typed channel for message from '$address' to '${peerGroup.processAddress}' " +
+            s"using codec '${codec.typeCode}'"
         )
       case Right(decodeResult) =>
         log.debug(
-          s"Successful decode in typed channel for peer address '${peerGroup.processAddress}' using codec '${codec.typeCode}'. Notifying subscribers. $decodeResult"
+          s"Successful decode in typed channel for message from '$address' to '${peerGroup.processAddress}' " +
+            s"using codec '${codec.typeCode}'. Notifying subscribers. $decodeResult"
         )
-        subscribers.notify(decodeResult.decoded)
+        subscribers.notify(address -> decodeResult.decoded)
     }
   }
 }
