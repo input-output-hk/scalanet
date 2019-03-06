@@ -91,8 +91,6 @@ class SimplePeerGroup[A, AA](
 
 object SimplePeerGroup {
 
-//  sealed trait PeerMessage[A, AA]
-
   case class EnrolMe[A, AA](myAddress: A, myUnderlyingAddress: AA)
 
   case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, AA)])
