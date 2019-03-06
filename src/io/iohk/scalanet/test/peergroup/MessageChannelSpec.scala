@@ -10,12 +10,12 @@ import org.scalatest.mockito.MockitoSugar._
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.Matchers._
 
-import scala.concurrent.Future
 import io.iohk.decco.auto._
-import io.iohk.scalanet.messagestream.MonixMessageStream
 import org.scalatest.concurrent.ScalaFutures
 
 import scala.concurrent.duration._
+import monix.execution.Scheduler.Implicits.global
+import monix.reactive.Observable
 
 class MessageChannelSpec extends FlatSpec {
 
@@ -28,10 +28,10 @@ class MessageChannelSpec extends FlatSpec {
     val address = "bob"
     val codec = heapCodec[String]
     val bytes: ByteBuffer = codec.encode(message)
-    val peerGroup = mock[PeerGroup[String, Future]]
+    val peerGroup = mock[PeerGroup[String]]
 
-    when(peerGroup.messageStream()).thenReturn(MonixMessageStream.empty[ByteBuffer])
-    val messageChannel = new MessageChannel[String, String, Future](peerGroup)
+    when(peerGroup.messageStream()).thenReturn(Observable.empty[ByteBuffer])
+    val messageChannel = new MessageChannel[String, String](peerGroup)
     messageChannel.sendMessage(address, message)
 
     verify(peerGroup).sendMessage(address, bytes)
@@ -42,13 +42,13 @@ class MessageChannelSpec extends FlatSpec {
     val codec = heapCodec[String]
     val bytes: ByteBuffer = codec.encode(message)
     val headerWidth = 20
-    val peerGroup = mock[PeerGroup[String, Future]]
-    val messageChannel = new MessageChannel[String, String, Future](peerGroup)
+    val peerGroup = mock[PeerGroup[String]]
+    val messageChannel = new MessageChannel[String, String](peerGroup)
     val decoderTable = new DecoderTable()
     decoderTable.put(codec.typeCode.id, messageChannel.handleMessage)
 
     Codec.decodeFrame(decoderTable.entries, 0, bytes)
-    val messageF = messageChannel.inboundMessages.head()
+    val messageF = messageChannel.inboundMessages.headL.runToFuture
     messageChannel.handleMessage(headerWidth, bytes)
 
     messageF.futureValue shouldBe message

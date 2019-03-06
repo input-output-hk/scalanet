@@ -3,10 +3,9 @@ package io.iohk.scalanet
 import java.net._
 import java.nio.ByteBuffer
 
-import io.iohk.scalanet.peergroup.PeerGroup.Lift
 import io.iohk.scalanet.peergroup.{TCPPeerGroup, UDPPeerGroup}
+import monix.execution.Scheduler
 
-import scala.concurrent.Future
 import scala.util.Random
 
 object NetUtils {
@@ -75,18 +74,19 @@ object NetUtils {
   case object TcpTerminalPeerGroup extends SimpleTerminalPeerGroup
   case object UdpTerminalPeerGroup extends SimpleTerminalPeerGroup
 
-  def randomTerminalPeerGroup(t: SimpleTerminalPeerGroup)(implicit liftF: Lift[Future]) = t match {
-    case TcpTerminalPeerGroup => randomTCPPeerGroup
-    case UdpTerminalPeerGroup => randomUDPPeerGroup
-  }
-  def randomTCPPeerGroup(implicit liftF: Lift[Future]): TCPPeerGroup[Future] =
+  def randomTerminalPeerGroup(t: SimpleTerminalPeerGroup)(implicit scheduler: Scheduler) =
+    t match {
+      case TcpTerminalPeerGroup => randomTCPPeerGroup
+      case UdpTerminalPeerGroup => randomUDPPeerGroup
+    }
+  def randomTCPPeerGroup(implicit scheduler: Scheduler): TCPPeerGroup =
     new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
 
   def withTwoRandomTCPPeerGroups(
-      testCode: (TCPPeerGroup[Future], TCPPeerGroup[Future]) => Any
-  )(implicit liftF: Lift[Future]): Unit = {
-    val pg1 = randomTCPPeerGroup(liftF)
-    val pg2 = randomTCPPeerGroup(liftF)
+      testCode: (TCPPeerGroup, TCPPeerGroup) => Any
+  )(implicit scheduler: Scheduler): Unit = {
+    val pg1 = randomTCPPeerGroup(scheduler)
+    val pg2 = randomTCPPeerGroup(scheduler)
     try {
       testCode(pg1, pg2)
     } finally {
@@ -95,12 +95,12 @@ object NetUtils {
     }
   }
 
-  def randomUDPPeerGroup(implicit liftF: Lift[Future]): UDPPeerGroup[Future] =
+  def randomUDPPeerGroup(implicit scheduler: Scheduler): UDPPeerGroup =
     new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
 
   def withTwoRandomUDPPeerGroups(
-      testCode: (UDPPeerGroup[Future], UDPPeerGroup[Future]) => Any
-  )(implicit liftF: Lift[Future]): Unit = {
+      testCode: (UDPPeerGroup, UDPPeerGroup) => Any
+  )(implicit scheduler: Scheduler): Unit = {
     val pg1 = randomUDPPeerGroup
     val pg2 = randomUDPPeerGroup
     try {
