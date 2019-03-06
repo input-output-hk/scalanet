@@ -3,27 +3,27 @@ package io.iohk.scalanet.peergroup
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.scalanet.messagestream.MessageStream
-import io.iohk.scalanet.peergroup.PeerGroup.{Lift, NonTerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.NonTerminalPeerGroup
 import io.iohk.scalanet.peergroup.SimplePeerGroup.Config
 
 import scala.collection.mutable
-import scala.language.higherKinds
 import scala.collection.JavaConverters._
 import io.iohk.decco.auto._
 import io.iohk.decco._
 import SimplePeerGroup._
 import monix.eval.Task
+import monix.execution.Scheduler
+import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 
-class SimplePeerGroup[A, F[_], AA](
+class SimplePeerGroup[A, AA](
     val config: Config[A, AA],
-    underLyingPeerGroup: PeerGroup[AA, F]
+    underLyingPeerGroup: PeerGroup[AA]
 )(
-    implicit liftF: Lift[F],
-    aCodec: Codec[A],
-    aaCodec: Codec[AA]
-) extends NonTerminalPeerGroup[A, F, AA](underLyingPeerGroup) {
+    implicit aCodec: Codec[A],
+    aaCodec: Codec[AA],
+    scheduler: Scheduler
+) extends NonTerminalPeerGroup[A, AA](underLyingPeerGroup) {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -36,7 +36,7 @@ class SimplePeerGroup[A, F[_], AA](
   }
 
   override val processAddress: A = config.processAddress
-  override val messageStream: MessageStream[ByteBuffer] = underLyingPeerGroup.messageStream()
+  override val messageStream: Observable[ByteBuffer] = underLyingPeerGroup.messageStream()
 
   messageStream.foreach { byteBuffer =>
     Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
@@ -48,6 +48,7 @@ class SimplePeerGroup[A, F[_], AA](
         routingTable += address -> underlyingAddress
         controlChannel
           .sendMessage(underlyingAddress, Enrolled(address, underlyingAddress, routingTable.toList))
+          .runToFuture
         log.debug(
           s"Processed enrolment message $e at address '$processAddress' with corresponding routing table update."
         )
@@ -59,7 +60,7 @@ class SimplePeerGroup[A, F[_], AA](
   // TODO if no known peers, create a default routing table with just me.
   // TODO otherwise, enroll with one or more known peers (and obtain/install their routing table here).
 
-  override def sendMessage(address: A, message: ByteBuffer): F[Unit] = {
+  override def sendMessage(address: A, message: ByteBuffer): Task[Unit] = {
     // TODO if necessary frame the buffer with peer group specific fields
     // Lookup A in the routing table to obtain an AA for the underlying group.
     // Call sendMessage on the underlyingPeerGroup
@@ -67,35 +68,34 @@ class SimplePeerGroup[A, F[_], AA](
     underLyingPeerGroup.sendMessage(underLyingAddress, message)
   }
 
-  override def shutdown(): F[Unit] = underLyingPeerGroup.shutdown()
+  override def shutdown(): Task[Unit] = underLyingPeerGroup.shutdown()
 
-  override def initialize(): F[Unit] = {
+  override def initialize(): Task[Unit] = {
     routingTable += processAddress -> underLyingPeerGroup.processAddress
 
     if (config.knownPeers.nonEmpty) {
       val (knownPeerAddress, knownPeerAddressUnderlying) = config.knownPeers.head
       routingTable += knownPeerAddress -> knownPeerAddressUnderlying
 
-      controlChannel.sendMessage(
-        knownPeerAddressUnderlying,
-        EnrolMe(config.processAddress, underLyingPeerGroup.processAddress)
-      )
+      val enrolledTask: Task[Unit] = controlChannel.inboundMessages.collect {
+        case Enrolled(_, _, newRoutingTable) =>
+          routingTable.clear()
+          routingTable ++= newRoutingTable
+          log.debug(
+            s"Peer address '$processAddress' enrolled into group and installed new routing table:\n$newRoutingTable"
+          )
+      }.headL
 
-      val enrolledTask: Task[Unit] = Task.deferFutureAction { implicit scheduler =>
-        controlChannel.inboundMessages
-          .collect {
-            case Enrolled(_, _, newRoutingTable) =>
-              routingTable.clear()
-              routingTable ++= newRoutingTable
-              log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
-              log.debug(s"$newRoutingTable")
-          }
-          .head()
-      }
+      controlChannel
+        .sendMessage(
+          knownPeerAddressUnderlying,
+          EnrolMe(config.processAddress, underLyingPeerGroup.processAddress)
+        )
+        .runToFuture
 
-      liftF(enrolledTask)
+      enrolledTask
     } else {
-      liftF(Task.unit)
+      Task.unit
     }
   }
 }

@@ -5,7 +5,6 @@ import java.nio.ByteBuffer
 
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
-import io.iohk.scalanet.peergroup.future._
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures._
@@ -24,9 +23,9 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   it should "send a message to a TCPPeerGroup" in
     withTwoRandomTCPPeerGroups { (alice, bob) =>
       val message = randomBytes(1024 * 1024 * 10)
-      val messageReceivedF = bob.messageStream.head()
+      val messageReceivedF = bob.messageStream.headL.runToFuture
 
-      alice.sendMessage(bob.config.bindAddress, ByteBuffer.wrap(message))
+      alice.sendMessage(bob.config.bindAddress, ByteBuffer.wrap(message)).runToFuture
       val messageReceived = messageReceivedF.futureValue
 
       toArray(messageReceived) shouldBe message
@@ -36,7 +35,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     val tcpPeerGroup = randomTCPPeerGroup
     isListening(tcpPeerGroup.config.bindAddress) shouldBe true
 
-    tcpPeerGroup.shutdown().futureValue
+    tcpPeerGroup.shutdown().runToFuture.futureValue
 
     isListening(tcpPeerGroup.config.bindAddress) shouldBe false
   }
@@ -57,9 +56,9 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     val bobChannel = bob.createMessageChannel[String]()
     val message = "Hello, Bob!"
 
-    val messageReceivedF = bobChannel.inboundMessages.head()
+    val messageReceivedF = bobChannel.inboundMessages.headL.runToFuture
 
-    aliceChannel.sendMessage(bob.processAddress, message).futureValue
+    aliceChannel.sendMessage(bob.processAddress, message).runToFuture.futureValue
     val messageReceived = messageReceivedF.futureValue
 
     messageReceived shouldBe message
