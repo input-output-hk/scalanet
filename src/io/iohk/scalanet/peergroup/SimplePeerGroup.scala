@@ -31,25 +31,21 @@ class SimplePeerGroup[A, AA](
   private implicit val apc: PartialCodec[A] = aCodec.partialCodec
   private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
 
-  // private val controlChannel = underLyingPeerGroup.messageChannel[PeerMessage[A, AA]]
-  private val controlChannelEnrolMe = underLyingPeerGroup.messageChannel[EnrolMe[A, AA]]
-  private val controlChannelEnrolled = underLyingPeerGroup.messageChannel[Enrolled[A, AA]]
-
   override val processAddress: A = config.processAddress
 
-  controlChannelEnrolMe
-    .collect {
-      case e @ EnrolMe(address, underlyingAddress) =>
-        routingTable += address -> underlyingAddress
-        underLyingPeerGroup
-          .sendMessage(underlyingAddress, Enrolled(address, underlyingAddress, routingTable.toList))
-          .runToFuture
-        log.debug(
-          s"Processed enrolment message $e at address '$processAddress' with corresponding routing table update."
+  underLyingPeerGroup
+    .messageChannel[EnrolMe[A, AA]]
+    .foreach { enrolMe: EnrolMe[A, AA] =>
+      routingTable += enrolMe.myAddress -> enrolMe.myUnderlyingAddress
+      underLyingPeerGroup
+        .sendMessage(
+          enrolMe.myUnderlyingAddress,
+          Enrolled(enrolMe.myAddress, enrolMe.myUnderlyingAddress, routingTable.toList)
         )
-    }
-    .foreach { _ =>
-      ()
+        .runToFuture
+      log.debug(
+        s"Processed enrolment message $enrolMe at address '$processAddress' with corresponding routing table update."
+      )
     }
 
   override def sendMessage[T: Codec](address: A, message: T): Task[Unit] = {
@@ -69,13 +65,15 @@ class SimplePeerGroup[A, AA](
       val (knownPeerAddress, knownPeerAddressUnderlying) = config.knownPeers.head
       routingTable += knownPeerAddress -> knownPeerAddressUnderlying
 
-      val enrolledTask: Task[Unit] = controlChannelEnrolled.collect {
-        case Enrolled(_, _, newRoutingTable) =>
+      val enrolledTask: Task[Unit] = underLyingPeerGroup
+        .messageChannel[Enrolled[A, AA]]
+        .map { enrolled =>
           routingTable.clear()
-          routingTable ++= newRoutingTable
+          routingTable ++= enrolled.routingTable
           log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
-          log.debug(s"$newRoutingTable")
-      }.headL
+          log.debug(s"${enrolled.routingTable}")
+        }
+        .headL
 
       underLyingPeerGroup
         .sendMessage(
@@ -93,11 +91,11 @@ class SimplePeerGroup[A, AA](
 
 object SimplePeerGroup {
 
-  sealed trait PeerMessage[A, AA]
+//  sealed trait PeerMessage[A, AA]
 
-  case class EnrolMe[A, AA](myAddress: A, myUnderlyingAddress: AA) extends PeerMessage[A, AA]
+  case class EnrolMe[A, AA](myAddress: A, myUnderlyingAddress: AA)
 
-  case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, AA)]) extends PeerMessage[A, AA]
+  case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, AA)])
 
   case class Config[A, AA](processAddress: A, knownPeers: Map[A, AA])
 }
