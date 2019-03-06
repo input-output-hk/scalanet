@@ -10,9 +10,9 @@ import monix.reactive.Observable
 
 sealed trait PeerGroup[A] {
   val processAddress: A
-  def initialize(): Task[Unit] = ???
-  def sendMessage[T: Codec](address: A, message: T): Task[Unit]
-  def messageChannel[MessageType: Codec]: Observable[MessageType] = ???
+  def initialize(): Task[Unit]
+  def sendMessage[MessageType: Codec](address: A, message: MessageType): Task[Unit]
+  def messageChannel[MessageType: Codec]: Observable[MessageType]
   def shutdown(): Task[Unit]
 }
 
@@ -33,7 +33,7 @@ object PeerGroup {
     }
   }
 
-  abstract class NonTerminalPeerGroup[A, AA](underlyingPeerGroup: PeerGroup[AA]) extends PeerGroup[A] {}
+  abstract class NonTerminalPeerGroup[A, AA](underlyingPeerGroup: PeerGroup[AA]) extends PeerGroup[A]
 
   def create[PG](pg: => PG, config: Any): Either[InitializationError, PG] =
     try {
