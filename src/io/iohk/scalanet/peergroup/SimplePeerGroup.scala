@@ -35,18 +35,17 @@ class SimplePeerGroup[A, AA](
 
   underLyingPeerGroup
     .messageChannel[EnrolMe[A, AA]]
-    .foreach {
-      case (aa, enrolMe) =>
-        routingTable += enrolMe.myAddress -> enrolMe.myUnderlyingAddress
-        underLyingPeerGroup
-          .sendMessage(
-            enrolMe.myUnderlyingAddress,
-            Enrolled(enrolMe.myAddress, enrolMe.myUnderlyingAddress, routingTable.toList)
-          )
-          .runToFuture
-        log.debug(
-          s"Processed enrolment message $enrolMe at address '$processAddress' with corresponding routing table update."
+    .foreach { case (aa, enrolMe) =>
+      routingTable += enrolMe.myAddress -> enrolMe.myUnderlyingAddress
+      underLyingPeerGroup
+        .sendMessage(
+          enrolMe.myUnderlyingAddress,
+          Enrolled(enrolMe.myAddress, enrolMe.myUnderlyingAddress, routingTable.toList)
         )
+        .runToFuture
+      log.debug(
+        s"Processed enrolment message $enrolMe at address '$processAddress' with corresponding routing table update."
+      )
     }
 
   override def sendMessage[MessageType: Codec](address: A, message: MessageType): Task[Unit] = {
@@ -55,10 +54,10 @@ class SimplePeerGroup[A, AA](
   }
 
   override def messageChannel[MessageType: Codec]: Observable[(A, MessageType)] =
-    underLyingPeerGroup.messageChannel[MessageType].map {
-      case (aa, message) =>
+    underLyingPeerGroup.messageChannel[MessageType].map{ case (aa, message) =>
         ???
     }
+
 
   override def shutdown(): Task[Unit] = underLyingPeerGroup.shutdown()
 
@@ -71,12 +70,11 @@ class SimplePeerGroup[A, AA](
 
       val enrolledTask: Task[Unit] = underLyingPeerGroup
         .messageChannel[Enrolled[A, AA]]
-        .map {
-          case (aa, enrolled) =>
-            routingTable.clear()
-            routingTable ++= enrolled.routingTable
-            log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
-            log.debug(s"${enrolled.routingTable}")
+        .map { case (aa, enrolled) =>
+          routingTable.clear()
+          routingTable ++= enrolled.routingTable
+          log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
+          log.debug(s"${enrolled.routingTable}")
         }
         .headL
 
