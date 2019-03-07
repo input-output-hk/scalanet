@@ -1,13 +1,11 @@
 package io.iohk.scalanet.peergroup
 
-import java.net.{InetAddress, InetSocketAddress}
-import java.util.UUID
-import java.util.UUID.randomUUID
+import java.net.InetSocketAddress
 
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
-import io.iohk.scalanet.peergroup.TCPPeerGroup.{Config, TcpAddress}
+import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
 import io.netty.channel.ChannelHandler.Sharable
@@ -20,7 +18,7 @@ import io.netty.handler.codec.bytes.ByteArrayEncoder
 import monix.eval.Task
 import monix.execution.Scheduler
 
-class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends TerminalPeerGroup[InetAddress]() {
+class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends TerminalPeerGroup[InetSocketAddress]() {
 
   private val nettyDecoder = new NettyDecoder()
   private val workerGroup = new NioEventLoopGroup()
@@ -35,6 +33,7 @@ class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
+
         ch.pipeline()
           .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
           .addLast(nettyDecoder)
@@ -45,14 +44,11 @@ class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
     .bind(config.bindAddress)
     .syncUninterruptibly()
 
-  override val processAddress: InetAddress = config.processAddress
+  override val processAddress: InetSocketAddress = config.processAddress
 
-  override def sendMessage[MessageType](address: InetAddress, message: MessageType)(
+  override def sendMessage[MessageType](address: InetSocketAddress, message: MessageType)(
       implicit codec: Codec[MessageType]
   ): Task[Unit] = {
-
-    val tcpAddress = getTcpAddress(address)
-
     val send: Task[Unit] = Task {
 
       val activationAdapter = new ChannelInboundHandlerAdapter() {
@@ -72,7 +68,7 @@ class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
               .addLast(activationAdapter)
           }
         })
-        .connect(tcpAddress)
+        .connect(address)
       ()
     }
     send
@@ -85,27 +81,24 @@ class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
       ()
     }
   }
-
-  override def initialize(): Task[Unit] = Task.unit
-
   @Sharable
   private class NettyDecoder extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      val remoteAddress = ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress].getAddress
+      val remoteAddress = ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress]
       val byteBuffer: ByteBuf = msg.asInstanceOf[ByteBuf]
       subscribers.notify((remoteAddress, byteBuffer.nioBuffer().asReadOnlyBuffer()))
     }
   }
 
-  private def getTcpAddress(address: InetAddress): InetSocketAddress = ???
+  override def initialize(): Task[Unit] = Task.unit
 }
 
 object TCPPeerGroup {
 
-  case class Config(bindAddress: InetSocketAddress, processAddress: InetAddress)
+  case class Config(bindAddress: InetSocketAddress, processAddress: InetSocketAddress)
 
   object Config {
-    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress.getAddress)
+    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
   }
 
   def create(
@@ -115,5 +108,4 @@ object TCPPeerGroup {
 
   def createOrThrow(config: Config)(implicit scheduler: Scheduler): TCPPeerGroup =
     PeerGroup.createOrThrow(new TCPPeerGroup(config), config)
-
 }
