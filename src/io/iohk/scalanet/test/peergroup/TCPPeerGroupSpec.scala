@@ -12,6 +12,7 @@ import org.scalatest.EitherValues._
 import io.iohk.decco.auto._
 
 import scala.concurrent.duration._
+import scala.util.Random
 
 class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
@@ -21,14 +22,14 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   it should "send a message to a TCPPeerGroup" in
     withTwoRandomTCPPeerGroups { (alice, bob) =>
-      val message: Array[Byte] = randomBytes(1024 * 1024 * 10)
-      val bobsChannel = bob.messageChannel[Array[Byte]]
+      val message: String = Random.nextString(1024 * 1024 * 10)
+      val bobsChannel = bob.messageChannel[String]
       val messageReceivedF = bobsChannel.headL.runToFuture
 
       alice.sendMessage(bob.config.bindAddress, message).runToFuture
       val messageReceived = messageReceivedF.futureValue
 
-      messageReceived shouldBe message
+      messageReceived shouldBe (alice.processAddress, message)
     }
 
   it should "shutdown a TCPPeerGroup properly" in {

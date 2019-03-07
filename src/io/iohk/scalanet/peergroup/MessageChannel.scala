@@ -28,7 +28,7 @@ private[scalanet] class MessageChannel[A, MessageType](peerGroup: PeerGroup[A])(
       case Right(decodeResult) =>
         log.debug(
           s"Successful decode in typed channel for message from '$address' to '${peerGroup.processAddress}' " +
-            s"using codec '${codec.typeCode}'. Notifying subscribers. $decodeResult"
+            s"using codec '${codec.typeCode}'. Notifying subscribers."
         )
         subscribers.notify(address -> decodeResult.decoded)
     }
