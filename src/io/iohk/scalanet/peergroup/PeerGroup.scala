@@ -32,6 +32,7 @@ object PeerGroup {
       decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)
       messageChannel.inboundMessages
     }
+
   }
 
   abstract class NonTerminalPeerGroup[A, AA](underlyingPeerGroup: PeerGroup[AA]) extends PeerGroup[A]
