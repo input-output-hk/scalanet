@@ -79,6 +79,7 @@ object NetUtils {
       case TcpTerminalPeerGroup => randomTCPPeerGroup
       case UdpTerminalPeerGroup => randomUDPPeerGroup
     }
+
   def randomTCPPeerGroup(implicit scheduler: Scheduler): TCPPeerGroup =
     new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
 
