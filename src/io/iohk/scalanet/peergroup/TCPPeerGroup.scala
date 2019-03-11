@@ -82,12 +82,15 @@ class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
     send
   }
 
-  override def messageChannel[MessageType](implicit codec: Codec[MessageType]): Observable[(InetSocketAddress, MessageType)] = {
+  override def messageChannel[MessageType](
+      implicit codec: Codec[MessageType]
+  ): Observable[(InetSocketAddress, MessageType)] = {
     val pduCodec = derivePduCodec[MessageType]
     val messageChannel = new MessageChannel[InetSocketAddress, PDU[MessageType]](this)(pduCodec)
     decoderTable.decoderWrappers.put(pduCodec.typeCode.id, messageChannel.handleMessage)
-    messageChannel.inboundMessages.map { case (_, pdu) =>
-      (pdu.replyTo, pdu.sdu)
+    messageChannel.inboundMessages.map {
+      case (_, pdu) =>
+        (pdu.replyTo, pdu.sdu)
     }
   }
 
