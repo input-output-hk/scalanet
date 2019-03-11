@@ -49,7 +49,6 @@ class SimplePeerGroup[A, AA](
         )
     }
 
-
   override def sendMessage[MessageType: Codec](address: A, message: MessageType): Task[Unit] = {
     val underLyingAddress = routingTable(address)
     underLyingPeerGroup.sendMessage(underLyingAddress, message)

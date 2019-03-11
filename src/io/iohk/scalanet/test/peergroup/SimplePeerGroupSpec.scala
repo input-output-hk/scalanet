@@ -51,7 +51,6 @@ class SimplePeerGroupSpec extends FlatSpec {
         val messageReceived = messageReceivedF.futureValue
         messageReceived shouldBe (bob.processAddress, message)
 
-
         val aliceMessage = "HI!! Bob"
         val messageReceivedByBobF = bob.messageChannel[String].headL.runToFuture
 
