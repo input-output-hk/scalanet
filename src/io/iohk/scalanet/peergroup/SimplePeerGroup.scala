@@ -33,19 +33,17 @@ class SimplePeerGroup[A, AA](
 
   override val processAddress: A = config.processAddress
 
+  private[scalanet] def deriveEnrolMeCodec(implicit codec: Codec[EnrolMe[A, AA]]): Codec[(AA, EnrolMe[A, AA])] = {
+    implicit val pduTc: TypeCode[(AA, EnrolMe[A, AA])] = TypeCode.genTypeCode[Tuple2, AA, EnrolMe[A, AA]]
+    implicit val mpc1: PartialCodec[EnrolMe[A, AA]] = codec.partialCodec
 
-  private[scalanet] def deriveEnrolMeCodec(implicit codec: Codec[EnrolMe[A,AA]]): Codec[(AA,EnrolMe[A,AA])] = {
-    implicit val pduTc: TypeCode[(AA, EnrolMe[A, AA])] = TypeCode.genTypeCode[Tuple2,AA,EnrolMe[A,AA]]
-      implicit val mpc1: PartialCodec[EnrolMe[A,AA]] = codec.partialCodec
-
-    Codec[(AA,EnrolMe[A,AA])]
+    Codec[(AA, EnrolMe[A, AA])]
   }
 
-
-
-    underLyingPeerGroup
-      .messageChannel[EnrolMe[A, AA]].foreach {
-      case (aa,enrolMe) =>
+  underLyingPeerGroup
+    .messageChannel[EnrolMe[A, AA]]
+    .foreach {
+      case (aa, enrolMe) =>
         routingTable += enrolMe.myAddress -> aa
         underLyingPeerGroup
           .sendMessage(
@@ -78,18 +76,15 @@ class SimplePeerGroup[A, AA](
     underLyingPeerGroup.sendMessage(underLyingAddress, message)
   }
 
-  override def messageChannel[MessageType](implicit codec: Codec[MessageType]): Observable[(A, MessageType)] ={
+  override def messageChannel[MessageType](implicit codec: Codec[MessageType]): Observable[(A, MessageType)] = {
     val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
-    log.debug("**************" +  routingTable)
+    log.debug("**************" + routingTable)
 
     log.debug("********" + reverseLookup)
     underLyingPeerGroup.messageChannel[MessageType].map {
-      case (aa,messageType) => (reverseLookup(aa),messageType)
+      case (aa, messageType) => (reverseLookup(aa), messageType)
     }
   }
-
-
-
 
   override def shutdown(): Task[Unit] = underLyingPeerGroup.shutdown()
 
@@ -102,11 +97,12 @@ class SimplePeerGroup[A, AA](
 
       val enrolledTask: Task[Unit] = underLyingPeerGroup
         .messageChannel[Enrolled[A, AA]]
-        .map { case (aa, enrolled) =>
-          routingTable.clear()
-          routingTable ++= enrolled.routingTable
-          log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
-          log.debug(s"${enrolled.routingTable}")
+        .map {
+          case (aa, enrolled) =>
+            routingTable.clear()
+            routingTable ++= enrolled.routingTable
+            log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
+            log.debug(s"${enrolled.routingTable}")
         }
         .headL
 //

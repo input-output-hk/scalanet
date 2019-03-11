@@ -22,8 +22,9 @@ object PeerGroup {
     val subscribers = new Subscribers[(A, ByteBuffer)]()
     val decoderTable = new DecoderTable[A]()
 
-    subscribers.messageStream.foreach { case (a, byteBuffer) =>
-      Codec.decodeFrame(decoderTable.entries(a), 0, byteBuffer)
+    subscribers.messageStream.foreach {
+      case (a, byteBuffer) =>
+        Codec.decodeFrame(decoderTable.entries(a), 0, byteBuffer)
     }
 
     override def messageChannel[MessageType](implicit codec: Codec[MessageType]): Observable[(A, MessageType)] = {
