@@ -16,7 +16,6 @@ import UDPPeerGroup._
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import monix.execution.Scheduler
-import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 
 class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends TerminalPeerGroup[InetSocketAddress]() {
@@ -24,8 +23,6 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
   private val log = LoggerFactory.getLogger(getClass)
 
   private val workerGroup = new NioEventLoopGroup()
-
-  private val subscribers = new Subscribers[ByteBuffer]()
 
   private val server = new Bootstrap()
     .group(workerGroup)
@@ -39,18 +36,14 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
     .syncUninterruptibly()
   log.info(s"Server bound to address ${config.bindAddress}")
 
-  override def sendMessage(address: InetSocketAddress, message: ByteBuffer): Task[Unit] = {
-    Task(writeUdp(address, message))
+  override def sendMessage[MessageType](address: InetSocketAddress, message: MessageType)(
+      implicit codec: Codec[MessageType]
+  ): Task[Unit] = {
+    Task(writeUdp(address, codec.encode(message)))
   }
 
   override def shutdown(): Task[Unit] = {
     Task(server.channel().close().await())
-  }
-
-  override val messageStream: Observable[ByteBuffer] = subscribers.messageStream
-
-  messageStream.foreach { byteBuffer =>
-    Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
   }
 
   private class ServerInboundHandler extends ChannelInboundHandlerAdapter {

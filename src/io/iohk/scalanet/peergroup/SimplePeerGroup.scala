@@ -1,6 +1,5 @@
 package io.iohk.scalanet.peergroup
 
-import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.scalanet.peergroup.PeerGroup.NonTerminalPeerGroup
@@ -29,44 +28,33 @@ class SimplePeerGroup[A, AA](
 
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
 
-  private val controlChannel = {
-    implicit val apc: PartialCodec[A] = aCodec.partialCodec
-    implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
-    underLyingPeerGroup.createMessageChannel[PeerMessage[A, AA]]()
-  }
+  private implicit val apc: PartialCodec[A] = aCodec.partialCodec
+  private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
 
   override val processAddress: A = config.processAddress
-  override val messageStream: Observable[ByteBuffer] = underLyingPeerGroup.messageStream()
 
-  messageStream.foreach { byteBuffer =>
-    Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
-  }
-
-  controlChannel.inboundMessages
-    .collect {
-      case e @ EnrolMe(address, underlyingAddress) =>
-        routingTable += address -> underlyingAddress
-        controlChannel
-          .sendMessage(underlyingAddress, Enrolled(address, underlyingAddress, routingTable.toList))
-          .runToFuture
-        log.debug(
-          s"Processed enrolment message $e at address '$processAddress' with corresponding routing table update."
+  underLyingPeerGroup
+    .messageChannel[EnrolMe[A, AA]]
+    .foreach { enrolMe: EnrolMe[A, AA] =>
+      routingTable += enrolMe.myAddress -> enrolMe.myUnderlyingAddress
+      underLyingPeerGroup
+        .sendMessage(
+          enrolMe.myUnderlyingAddress,
+          Enrolled(enrolMe.myAddress, enrolMe.myUnderlyingAddress, routingTable.toList)
         )
-    }
-    .foreach { _ =>
-      ()
+        .runToFuture
+      log.debug(
+        s"Processed enrolment message $enrolMe at address '$processAddress' with corresponding routing table update."
+      )
     }
 
-  // TODO if no known peers, create a default routing table with just me.
-  // TODO otherwise, enroll with one or more known peers (and obtain/install their routing table here).
-
-  override def sendMessage(address: A, message: ByteBuffer): Task[Unit] = {
-    // TODO if necessary frame the buffer with peer group specific fields
-    // Lookup A in the routing table to obtain an AA for the underlying group.
-    // Call sendMessage on the underlyingPeerGroup
+  override def sendMessage[MessageType: Codec](address: A, message: MessageType): Task[Unit] = {
     val underLyingAddress = routingTable(address)
     underLyingPeerGroup.sendMessage(underLyingAddress, message)
   }
+
+  override def messageChannel[MessageType: Codec]: Observable[MessageType] =
+    underLyingPeerGroup.messageChannel[MessageType]
 
   override def shutdown(): Task[Unit] = underLyingPeerGroup.shutdown()
 
@@ -77,16 +65,17 @@ class SimplePeerGroup[A, AA](
       val (knownPeerAddress, knownPeerAddressUnderlying) = config.knownPeers.head
       routingTable += knownPeerAddress -> knownPeerAddressUnderlying
 
-      val enrolledTask: Task[Unit] = controlChannel.inboundMessages.collect {
-        case Enrolled(_, _, newRoutingTable) =>
+      val enrolledTask: Task[Unit] = underLyingPeerGroup
+        .messageChannel[Enrolled[A, AA]]
+        .map { enrolled =>
           routingTable.clear()
-          routingTable ++= newRoutingTable
-          log.debug(
-            s"Peer address '$processAddress' enrolled into group and installed new routing table:\n$newRoutingTable"
-          )
-      }.headL
+          routingTable ++= enrolled.routingTable
+          log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
+          log.debug(s"${enrolled.routingTable}")
+        }
+        .headL
 
-      controlChannel
+      underLyingPeerGroup
         .sendMessage(
           knownPeerAddressUnderlying,
           EnrolMe(config.processAddress, underLyingPeerGroup.processAddress)
@@ -102,12 +91,9 @@ class SimplePeerGroup[A, AA](
 
 object SimplePeerGroup {
 
-  sealed trait PeerMessage[A, AA]
+  private[scalanet] case class EnrolMe[A, AA](myAddress: A, myUnderlyingAddress: AA)
 
-  case class EnrolMe[A, AA](myAddress: A, myUnderlyingAddress: AA) extends PeerMessage[A, AA]
-
-  case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, AA)]) extends PeerMessage[A, AA]
+  private[scalanet] case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, AA)])
 
   case class Config[A, AA](processAddress: A, knownPeers: Map[A, AA])
-
 }

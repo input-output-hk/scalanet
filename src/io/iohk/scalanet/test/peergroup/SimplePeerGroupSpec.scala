@@ -1,14 +1,9 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
-import java.nio.ByteBuffer
 
-import io.iohk.decco.Codec
-import io.iohk.decco.Codec.heapCodec
 import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils._
-//import monix.eval.Task
-import org.scalatest.EitherValues._
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures
@@ -17,21 +12,25 @@ import monix.execution.Scheduler.Implicits.global
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.util.Random
 
 class SimplePeerGroupSpec extends FlatSpec {
 
-  implicit val patienceConfig = ScalaFutures.PatienceConfig(timeout = 5 seconds, interval = 100 millis)
+  implicit val patienceConfig = ScalaFutures.PatienceConfig(timeout = 1 second, interval = 100 millis)
 
   behavior of "SimplePeerGroup"
 
   it should "send a message to itself" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
-      withTypedPeer[String](terminalGroup, "Alice") { alice =>
-        val message = "HI!!"
-        val messageReceivedF = alice.inboundMessages.headL.runToFuture
+      withASimplePeerGroup(terminalGroup, "Alice") { alice =>
+        // FIXME when this number is increased, the test fails cos the string gets truncated.
+        val message = Random.alphanumeric.take(1012).mkString
+        val messageReceivedF = alice.messageChannel[String].headL.runToFuture
 
         alice.sendMessage("Alice", message).runToFuture.futureValue
-        messageReceivedF.futureValue shouldBe message
+
+        val value = messageReceivedF.futureValue
+        value shouldBe message
       }
     }
   }
@@ -44,39 +43,28 @@ class SimplePeerGroupSpec extends FlatSpec {
         "Bob"
       ) { (alice, bob) =>
         val message = "HI!! Alice"
-        val codec = heapCodec[String]
-        val bytes: ByteBuffer = codec.encode(message)
-        val messageReceivedF = alice.messageStream.headL.runToFuture
+        val messageReceivedF = alice.messageChannel[String].headL.runToFuture
 
-        bob.sendMessage("Alice", bytes).runToFuture.futureValue
+        bob.sendMessage("Alice", message).runToFuture.futureValue
 
-        val messageReceived = codec.decode(messageReceivedF.futureValue)
+        val messageReceived: String = messageReceivedF.futureValue
 
-        messageReceived.right.value shouldBe message
+        messageReceived shouldBe message
 
         val aliceMessage = "HI!! Bob"
-        val bytes1: ByteBuffer = codec.encode(aliceMessage)
-        val messageReceivedByBobF = bob.messageStream.headL.runToFuture
+        val messageReceivedByBobF = bob.messageChannel[String].headL.runToFuture
 
-        alice.sendMessage("Bob", bytes1).runToFuture.futureValue
+        alice.sendMessage("Bob", aliceMessage).runToFuture.futureValue
 
-        val messageReceivedByBob = codec.decode(messageReceivedByBobF.futureValue)
+        val messageReceivedByBob = messageReceivedByBobF.futureValue
 
-        messageReceivedByBob.right.value shouldBe aliceMessage
+        messageReceivedByBob shouldBe aliceMessage
       }
     }
   }
 
   trait SimpleTerminalPeerGroups {
     val terminalPeerGroups = List(TcpTerminalPeerGroup, UdpTerminalPeerGroup)
-  }
-
-  private def withTypedPeer[T: Codec](underlyingTerminalGroup: SimpleTerminalPeerGroup, a: String)(
-      testCode: MessageChannel[String, T] => Any
-  ): Unit = {
-    withASimplePeerGroup(underlyingTerminalGroup, a) { alice =>
-      testCode(alice.createMessageChannel[T]())
-    }
   }
 
   private def withASimplePeerGroup(
@@ -120,8 +108,8 @@ class SimplePeerGroupSpec extends FlatSpec {
           )
       )
       .toList
-    val x: Seq[Future[Unit]] = otherPeerGroups.map(pg => pg.initialize().runToFuture)
-    Future.sequence(x)
+    val futures: Seq[Future[Unit]] = otherPeerGroups.map(pg => pg.initialize().runToFuture)
+    Future.sequence(futures)
 
     val peerGroups = bootstrap :: otherPeerGroups
 
