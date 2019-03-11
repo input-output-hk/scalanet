@@ -12,7 +12,7 @@ import monix.execution.Scheduler.Implicits.global
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
-//import scala.util.Random
+import scala.util.Random
 
 class SimplePeerGroupSpec extends FlatSpec {
 
@@ -20,21 +20,21 @@ class SimplePeerGroupSpec extends FlatSpec {
 
   behavior of "SimplePeerGroup"
 
-//  it should "send a message to itself" in new SimpleTerminalPeerGroups {
-//    terminalPeerGroups.foreach { terminalGroup =>
-//      withASimplePeerGroup(terminalGroup, "Alice") { alice =>
-//        // FIXME when this number is increased, the test fails cos the string gets truncated.
-//        val message = Random.alphanumeric.take(1012).mkString
-//        val messageReceivedF = alice.messageChannel[String].headL.runToFuture
-//
-//        alice.sendMessage("Alice", message).runToFuture.futureValue
-//
-//        val messageReceived = messageReceivedF.futureValue
-//        messageReceived shouldBe (alice.processAddress, message)
-//      }
-//    }
-//  }
+  it should "send a message to itself" in new SimpleTerminalPeerGroups {
+    terminalPeerGroups.foreach { terminalGroup =>
+      withASimplePeerGroup(terminalGroup, "Alice") { alice =>
+        // FIXME when this number is increased, the test fails cos the string gets truncated.
+        val message = Random.alphanumeric.take(512).mkString
+        val messageReceivedF = alice.messageChannel[String].headL.runToFuture
 
+        alice.sendMessage("Alice", message).runToFuture.futureValue
+
+        val messageReceived = messageReceivedF.futureValue
+        messageReceived shouldBe (alice.processAddress, message)
+      }
+    }
+  }
+//
   it should "send and receive a message to another peer of SimplePeerGroup" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withTwoSimplePeerGroups(
@@ -64,7 +64,7 @@ class SimplePeerGroupSpec extends FlatSpec {
   }
 
   trait SimpleTerminalPeerGroups {
-    val terminalPeerGroups = List(TcpTerminalPeerGroup)
+    val terminalPeerGroups = List(TcpTerminalPeerGroup, UdpTerminalPeerGroup)
   }
 
   private def withASimplePeerGroup(
