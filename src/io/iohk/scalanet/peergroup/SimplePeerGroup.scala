@@ -33,30 +33,62 @@ class SimplePeerGroup[A, AA](
 
   override val processAddress: A = config.processAddress
 
-  underLyingPeerGroup
-    .messageChannel[EnrolMe[A, AA]]
-    .foreach { case (aa, enrolMe) =>
-      routingTable += enrolMe.myAddress -> enrolMe.myUnderlyingAddress
-      underLyingPeerGroup
-        .sendMessage(
-          enrolMe.myUnderlyingAddress,
-          Enrolled(enrolMe.myAddress, enrolMe.myUnderlyingAddress, routingTable.toList)
+
+  private[scalanet] def deriveEnrolMeCodec(implicit codec: Codec[EnrolMe[A,AA]]): Codec[(AA,EnrolMe[A,AA])] = {
+    implicit val pduTc: TypeCode[(AA, EnrolMe[A, AA])] = TypeCode.genTypeCode[Tuple2,AA,EnrolMe[A,AA]]
+      implicit val mpc1: PartialCodec[EnrolMe[A,AA]] = codec.partialCodec
+
+    Codec[(AA,EnrolMe[A,AA])]
+  }
+
+
+
+    underLyingPeerGroup
+      .messageChannel[EnrolMe[A, AA]].foreach {
+      case (aa,enrolMe) =>
+        routingTable += enrolMe.myAddress -> aa
+        underLyingPeerGroup
+          .sendMessage(
+            aa,
+            Enrolled(enrolMe.myAddress, aa, routingTable.toList)
+          )
+          .runToFuture
+        log.debug(
+          s"Processed enrolment message $enrolMe at address '$processAddress' with corresponding routing table update."
         )
-        .runToFuture
-      log.debug(
-        s"Processed enrolment message $enrolMe at address '$processAddress' with corresponding routing table update."
-      )
     }
+
+//  underLyingPeerGroup
+//    .messageChannel[EnrolMe[A, AA]]
+//    .foreach { case (aa, enrolMe) =>
+//      routingTable += enrolMe.myAddress -> enrolMe.myUnderlyingAddress
+//      underLyingPeerGroup
+//        .sendMessage(
+//          enrolMe.myUnderlyingAddress,
+//          Enrolled(enrolMe.myAddress, enrolMe.myUnderlyingAddress, routingTable.toList)
+//        )
+//        .runToFuture
+//      log.debug(
+//        s"Processed enrolment message $enrolMe at address '$processAddress' with corresponding routing table update."
+//      )
+//    }
 
   override def sendMessage[MessageType: Codec](address: A, message: MessageType): Task[Unit] = {
     val underLyingAddress = routingTable(address)
     underLyingPeerGroup.sendMessage(underLyingAddress, message)
   }
 
-  override def messageChannel[MessageType: Codec]: Observable[(A, MessageType)] =
-    underLyingPeerGroup.messageChannel[MessageType].map{ case (aa, message) =>
-        ???
+  override def messageChannel[MessageType](implicit codec: Codec[MessageType]): Observable[(A, MessageType)] ={
+    val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
+    log.debug("**************" +  routingTable)
+
+    log.debug("********" + reverseLookup)
+    underLyingPeerGroup.messageChannel[MessageType].map {
+      case (aa,messageType) => (reverseLookup(aa),messageType)
     }
+  }
+
+
 
 
   override def shutdown(): Task[Unit] = underLyingPeerGroup.shutdown()
@@ -77,6 +109,16 @@ class SimplePeerGroup[A, AA](
           log.debug(s"${enrolled.routingTable}")
         }
         .headL
+//
+//      val enrolledTask: Task[Unit] = underLyingPeerGroup
+//        .messageChannel[(A,Enrolled[A, AA])]
+//        .map { case (_,(_, enrolled)) =>
+//          routingTable.clear()
+//          routingTable ++= enrolled.routingTable
+//          log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
+//          log.debug(s"${enrolled.routingTable}")
+//        }
+//        .headL
 
       underLyingPeerGroup
         .sendMessage(
