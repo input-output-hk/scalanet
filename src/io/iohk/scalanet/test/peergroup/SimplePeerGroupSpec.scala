@@ -43,13 +43,14 @@ class SimplePeerGroupSpec extends FlatSpec {
         "Bob"
       ) { (alice, bob) =>
         val message = "HI!! Alice"
+
         val messageReceivedF = alice.messageChannel[String].headL.runToFuture
 
         bob.sendMessage("Alice", message).runToFuture.futureValue
 
         val messageReceived = messageReceivedF.futureValue
+        messageReceived shouldBe (bob.processAddress, message)
 
-        messageReceived shouldBe message
 
         val aliceMessage = "HI!! Bob"
         val messageReceivedByBobF = bob.messageChannel[String].headL.runToFuture
@@ -57,8 +58,8 @@ class SimplePeerGroupSpec extends FlatSpec {
         alice.sendMessage("Bob", aliceMessage).runToFuture.futureValue
 
         val messageReceivedByBob = messageReceivedByBobF.futureValue
+        messageReceivedByBob shouldBe (alice.processAddress, aliceMessage)
 
-        messageReceivedByBob shouldBe aliceMessage
       }
     }
   }
@@ -109,7 +110,7 @@ class SimplePeerGroupSpec extends FlatSpec {
       )
       .toList
     val futures: Seq[Future[Unit]] = otherPeerGroups.map(pg => pg.initialize().runToFuture)
-    Future.sequence(futures)
+    Future.sequence(futures).futureValue
 
     val peerGroups = bootstrap :: otherPeerGroups
 
