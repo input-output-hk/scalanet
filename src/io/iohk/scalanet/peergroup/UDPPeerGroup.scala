@@ -40,7 +40,7 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
   private val server = new Bootstrap()
     .group(workerGroup)
     .channel(classOf[NioDatagramChannel])
-    .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new AdaptiveRecvByteBufAllocator(65536, 65536, 65536))
+    .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
     .handler(new ChannelInitializer[NioDatagramChannel]() {
       override def initChannel(ch: NioDatagramChannel): Unit = {
         ch.pipeline.addLast(new ServerInboundHandler)
