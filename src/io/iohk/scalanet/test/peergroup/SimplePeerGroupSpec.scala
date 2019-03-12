@@ -23,7 +23,8 @@ class SimplePeerGroupSpec extends FlatSpec {
   it should "send a message to itself" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withASimplePeerGroup(terminalGroup, "Alice") { alice =>
-        // FIXME when this number is increased, the test fails cos the string gets truncated.
+        //Currently Max Size 64 Kilobytes
+        // 64 kilobytes is the theoretical maximum size of a complete IP datagram
         val message = Random.alphanumeric.take(1044).mkString
         val messageReceivedF = alice.messageChannel[String].headL.runToFuture
 
