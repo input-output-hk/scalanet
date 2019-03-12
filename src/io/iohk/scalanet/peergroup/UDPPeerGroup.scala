@@ -26,16 +26,8 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
   private val workerGroup = new NioEventLoopGroup()
 
   /**
-    * 64 kilobytes is the theoretical maximum size of a complete IP datagram, but only 576 bytes are guaranteed to be routed.
-    * On any given network path, the link with the smallest Maximum Transmit Unit
-    * will determine the actual limit. (1500 bytes, less headers is the common maximum,
-    * but it is impossible to predict how many headers there will be so its
-    * safest to limit messages to around 1400 bytes.)
-    *
-    * If you go over the MTU limit, IPv4 will automatically break the datagram up into fragments
-    * and reassemble them at the end, but only up to 64 kilobytes and only if
-    * all fragments make it through. If any fragment is lost, or if any
-    * device decides it doesn't like fragments, then the entire packet is lost
+    * 64 kilobytes is the theoretical maximum size of a complete IP datagram
+    * https://stackoverflow.com/questions/9203403/java-datagrampacket-udp-maximum-send-recv-buffer-size
     */
   private val server = new Bootstrap()
     .group(workerGroup)
