@@ -10,7 +10,7 @@ import io.netty.bootstrap.Bootstrap
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
-import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter, ChannelInitializer}
+import io.netty.channel._
 import monix.eval.Task
 import UDPPeerGroup._
 import io.iohk.decco.{Codec, PartialCodec, TypeCode}
@@ -24,10 +24,22 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
   private val log = LoggerFactory.getLogger(getClass)
 
   private val workerGroup = new NioEventLoopGroup()
-
+  /**
+    * 64 kilobytes is the theoretical maximum size of a complete IP datagram, but only 576 bytes are guaranteed to be routed.
+    * On any given network path, the link with the smallest Maximum Transmit Unit
+    * will determine the actual limit. (1500 bytes, less headers is the common maximum,
+    * but it is impossible to predict how many headers there will be so its
+    * safest to limit messages to around 1400 bytes.)
+    *
+    * If you go over the MTU limit, IPv4 will automatically break the datagram up into fragments
+    * and reassemble them at the end, but only up to 64 kilobytes and only if
+    * all fragments make it through. If any fragment is lost, or if any
+    * device decides it doesn't like fragments, then the entire packet is lost
+    */
   private val server = new Bootstrap()
     .group(workerGroup)
     .channel(classOf[NioDatagramChannel])
+    .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new AdaptiveRecvByteBufAllocator(65536, 65536, 65536))
     .handler(new ChannelInitializer[NioDatagramChannel]() {
       override def initChannel(ch: NioDatagramChannel): Unit = {
         ch.pipeline.addLast(new ServerInboundHandler)
