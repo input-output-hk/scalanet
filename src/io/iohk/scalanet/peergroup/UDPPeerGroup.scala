@@ -24,6 +24,7 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
   private val log = LoggerFactory.getLogger(getClass)
 
   private val workerGroup = new NioEventLoopGroup()
+
   /**
     * 64 kilobytes is the theoretical maximum size of a complete IP datagram, but only 576 bytes are guaranteed to be routed.
     * On any given network path, the link with the smallest Maximum Transmit Unit
