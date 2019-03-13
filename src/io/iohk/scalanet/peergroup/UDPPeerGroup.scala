@@ -1,6 +1,6 @@
 package io.iohk.scalanet.peergroup
 
-import java.net.InetSocketAddress
+import java.net.{InetSocketAddress, StandardSocketOptions}
 import java.nio.ByteBuffer
 import java.nio.channels.DatagramChannel
 
@@ -63,7 +63,7 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
   }
 
   private def writeUdp(address: InetSocketAddress, data: ByteBuffer): Unit = {
-    val udp = DatagramChannel.open()
+    val udp =  DatagramChannel.open().setOption[Integer](StandardSocketOptions.SO_SNDBUF, 65536)
     udp.configureBlocking(true)
     udp.connect(address)
     try {
