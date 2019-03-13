@@ -73,7 +73,7 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
   ): Observable[(InetSocketAddress, MessageType)] = {
     val pduCodec = derivePduCodec[MessageType]
     val messageChannel = new MessageChannel[InetSocketAddress, PDU[MessageType]](this)(pduCodec)
-    decoderTable.decoderWrappers.put(pduCodec.typeCode.id, messageChannel.handleMessage)
+    decoderTable.put(pduCodec.typeCode.id, messageChannel.handleMessage)
     messageChannel.inboundMessages.map {
       case (_, pdu) =>
         (pdu.replyTo, pdu.sdu)

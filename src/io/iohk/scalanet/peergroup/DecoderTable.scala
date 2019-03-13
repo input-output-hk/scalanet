@@ -7,7 +7,7 @@ import scala.collection.mutable
 import scala.collection.JavaConverters._
 
 private[scalanet] class DecoderTable[A]() {
-  val decoderWrappers: mutable.Map[String, A => (Int, ByteBuffer) => Unit] =
+  private val decoderWrappers: mutable.Map[String, A => (Int, ByteBuffer) => Unit] =
     new ConcurrentHashMap[String, A => (Int, ByteBuffer) => Unit]().asScala
 
   def put(typeCode: String, decoderWrapper: A => (Int, ByteBuffer) => Unit): Option[A => (Int, ByteBuffer) => Unit] =

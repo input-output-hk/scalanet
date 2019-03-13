@@ -79,8 +79,9 @@ class SimplePeerGroup[A, AA](
           case (_, enrolled) =>
             routingTable.clear()
             routingTable ++= enrolled.routingTable
-            log.debug(s"Peer address '$processAddress' enrolled into group and installed new routing table:")
-            log.debug(s"${enrolled.routingTable}")
+            log.debug(
+              s"Peer address '$processAddress' enrolled into group and installed new routing table:\n${enrolled.routingTable}"
+            )
         }
         .headL
 
