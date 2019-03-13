@@ -63,7 +63,7 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
   }
 
   private def writeUdp(address: InetSocketAddress, data: ByteBuffer): Unit = {
-    val udp =  DatagramChannel.open().setOption[Integer](StandardSocketOptions.SO_SNDBUF, 65536)
+    val udp = DatagramChannel.open().setOption[Integer](StandardSocketOptions.SO_SNDBUF, 65536)
     udp.configureBlocking(true)
     udp.connect(address)
     try {

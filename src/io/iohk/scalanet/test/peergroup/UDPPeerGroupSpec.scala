@@ -25,7 +25,7 @@ class UDPPeerGroupSpec extends FlatSpec {
   it should "send and receive a large message of message" in withTwoRandomUDPPeerGroups { (pg1, pg2) =>
     // 64 kilobytes is the theoretical maximum size of a complete IP datagram
 
-    val message = Random.alphanumeric.take(1024*5).mkString
+    val message = Random.alphanumeric.take(1024 * 5).mkString
     println(message)
     val pg1Channel = pg1.messageChannel[String]
     val pg2Channel = pg2.messageChannel[String]
@@ -38,7 +38,6 @@ class UDPPeerGroupSpec extends FlatSpec {
     pg2.sendMessage(pg1.config.bindAddress, message).runToFuture
     pg1Msg.futureValue shouldBe (pg2.processAddress, message)
   }
-
 
   it should "send and receive a message" in withTwoRandomUDPPeerGroups { (pg1, pg2) =>
     val pg1Channel = pg1.messageChannel[String]
