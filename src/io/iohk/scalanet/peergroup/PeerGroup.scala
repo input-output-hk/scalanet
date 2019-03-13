@@ -29,7 +29,7 @@ object PeerGroup {
 
     override def messageChannel[MessageType](implicit codec: Codec[MessageType]): Observable[(A, MessageType)] = {
       val messageChannel = new MessageChannel(this)
-      decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)
+      decoderTable.put(codec.typeCode.id, messageChannel.handleMessage)
       messageChannel.inboundMessages
     }
 
