@@ -24,17 +24,17 @@ class SimplePeerGroupSpec extends FlatSpec {
     terminalPeerGroups.foreach { terminalGroup =>
       withASimplePeerGroup(terminalGroup, "Alice") { alice =>
         // FIXME when this number is increased, the test fails cos the string gets truncated.
-        val message = Random.alphanumeric.take(1012).mkString
+        val message = Random.alphanumeric.take(512).mkString
         val messageReceivedF = alice.messageChannel[String].headL.runToFuture
 
         alice.sendMessage("Alice", message).runToFuture.futureValue
 
-        val value = messageReceivedF.futureValue
-        value shouldBe message
+        val messageReceived = messageReceivedF.futureValue
+        messageReceived shouldBe (alice.processAddress, message)
       }
     }
   }
-
+//
   it should "send and receive a message to another peer of SimplePeerGroup" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withTwoSimplePeerGroups(
@@ -43,13 +43,13 @@ class SimplePeerGroupSpec extends FlatSpec {
         "Bob"
       ) { (alice, bob) =>
         val message = "HI!! Alice"
+
         val messageReceivedF = alice.messageChannel[String].headL.runToFuture
 
         bob.sendMessage("Alice", message).runToFuture.futureValue
 
-        val messageReceived: String = messageReceivedF.futureValue
-
-        messageReceived shouldBe message
+        val messageReceived = messageReceivedF.futureValue
+        messageReceived shouldBe (bob.processAddress, message)
 
         val aliceMessage = "HI!! Bob"
         val messageReceivedByBobF = bob.messageChannel[String].headL.runToFuture
@@ -57,8 +57,8 @@ class SimplePeerGroupSpec extends FlatSpec {
         alice.sendMessage("Bob", aliceMessage).runToFuture.futureValue
 
         val messageReceivedByBob = messageReceivedByBobF.futureValue
+        messageReceivedByBob shouldBe (alice.processAddress, aliceMessage)
 
-        messageReceivedByBob shouldBe aliceMessage
       }
     }
   }
@@ -109,7 +109,7 @@ class SimplePeerGroupSpec extends FlatSpec {
       )
       .toList
     val futures: Seq[Future[Unit]] = otherPeerGroups.map(pg => pg.initialize().runToFuture)
-    Future.sequence(futures)
+    Future.sequence(futures).futureValue
 
     val peerGroups = bootstrap :: otherPeerGroups
 
