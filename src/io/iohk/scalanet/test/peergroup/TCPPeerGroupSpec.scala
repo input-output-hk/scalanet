@@ -16,7 +16,7 @@ import scala.util.Random
 
 class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
-  implicit val patienceConfig = PatienceConfig(1 second)
+  implicit val patienceConfig = PatienceConfig(5 seconds)
 
   behavior of "TCPPeerGroup"
 
