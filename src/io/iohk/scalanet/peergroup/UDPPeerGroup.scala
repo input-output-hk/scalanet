@@ -4,6 +4,7 @@ import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.DatagramChannel
 
+import io.iohk.decco.auto._
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.nio.NioEventLoopGroup
@@ -11,11 +12,11 @@ import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
 import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter, ChannelInitializer}
 import monix.eval.Task
-
 import UDPPeerGroup._
-import io.iohk.decco.Codec
+import io.iohk.decco.{Codec, PartialCodec, TypeCode}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import monix.execution.Scheduler
+import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 
 class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends TerminalPeerGroup[InetSocketAddress]() {
@@ -39,7 +40,9 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
   override def sendMessage[MessageType](address: InetSocketAddress, message: MessageType)(
       implicit codec: Codec[MessageType]
   ): Task[Unit] = {
-    Task(writeUdp(address, codec.encode(message)))
+    val pdu = PDU(processAddress, message)
+    val pduCodec = derivePduCodec[MessageType]
+    Task(writeUdp(address, pduCodec.encode(pdu)))
   }
 
   override def shutdown(): Task[Unit] = {
@@ -49,7 +52,8 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
   private class ServerInboundHandler extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val b = msg.asInstanceOf[DatagramPacket]
-      subscribers.notify(b.content().nioBuffer().asReadOnlyBuffer())
+      val remoteAddress: InetSocketAddress = b.sender()
+      subscribers.notify((remoteAddress, b.content().nioBuffer().asReadOnlyBuffer()))
     }
   }
 
@@ -64,6 +68,23 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
     }
   }
 
+  override def messageChannel[MessageType](
+      implicit codec: Codec[MessageType]
+  ): Observable[(InetSocketAddress, MessageType)] = {
+    val pduCodec = derivePduCodec[MessageType]
+    val messageChannel = new MessageChannel[InetSocketAddress, PDU[MessageType]](this)(pduCodec)
+    decoderTable.put(pduCodec.typeCode.id, messageChannel.handleMessage)
+    messageChannel.inboundMessages.map {
+      case (_, pdu) =>
+        (pdu.replyTo, pdu.sdu)
+    }
+  }
+
+  private def derivePduCodec[MessageType](implicit codec: Codec[MessageType]): Codec[PDU[MessageType]] = {
+    implicit val pduTc: TypeCode[PDU[MessageType]] = TypeCode.genTypeCode[PDU, MessageType]
+    implicit val mpc: PartialCodec[MessageType] = codec.partialCodec
+    Codec[PDU[MessageType]]
+  }
   override val processAddress: InetSocketAddress = config.processAddress
 
   override def initialize(): Task[Unit] = Task.unit
@@ -76,6 +97,7 @@ object UDPPeerGroup {
   object Config {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
   }
+  case class PDU[T](replyTo: InetSocketAddress, sdu: T)
 
   def create(
       config: Config

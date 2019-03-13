@@ -21,19 +21,20 @@ class MessageChannelSpec extends FlatSpec {
   behavior of "MessageChannel"
 
   it should "add a message from a peer group to its message stream" in {
+    val address = "Alice"
     val message = "Hello"
     val codec = heapCodec[String]
     val bytes: ByteBuffer = codec.encode(message)
     val headerWidth = 20
     val peerGroup = mock[PeerGroup[String]]
     val messageChannel = new MessageChannel[String, String](peerGroup)
-    val decoderTable = new DecoderTable()
+    val decoderTable = new DecoderTable[String]()
     decoderTable.put(codec.typeCode.id, messageChannel.handleMessage)
 
-    Codec.decodeFrame(decoderTable.entries, 0, bytes)
+    Codec.decodeFrame(decoderTable.entries(address), 0, bytes)
     val messageF = messageChannel.inboundMessages.headL.runToFuture
-    messageChannel.handleMessage(headerWidth, bytes)
+    messageChannel.handleMessage(address)(headerWidth, bytes)
 
-    messageF.futureValue shouldBe message
+    messageF.futureValue shouldBe (address, message)
   }
 }

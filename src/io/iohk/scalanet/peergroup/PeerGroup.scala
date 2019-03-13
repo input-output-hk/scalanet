@@ -12,25 +12,27 @@ sealed trait PeerGroup[A] {
   val processAddress: A
   def initialize(): Task[Unit]
   def sendMessage[MessageType: Codec](address: A, message: MessageType): Task[Unit]
-  def messageChannel[MessageType: Codec]: Observable[MessageType]
+  def messageChannel[MessageType: Codec]: Observable[(A, MessageType)]
   def shutdown(): Task[Unit]
 }
 
 object PeerGroup {
 
   abstract class TerminalPeerGroup[A](implicit scheduler: Scheduler) extends PeerGroup[A] {
-    val subscribers = new Subscribers[ByteBuffer]()
-    val decoderTable: DecoderTable = new DecoderTable()
+    val subscribers = new Subscribers[(A, ByteBuffer)]()
+    val decoderTable = new DecoderTable[A]()
 
-    subscribers.messageStream.foreach { byteBuffer =>
-      Codec.decodeFrame(decoderTable.entries, 0, byteBuffer)
+    subscribers.messageStream.foreach {
+      case (a, byteBuffer) =>
+        Codec.decodeFrame(decoderTable.entries(a), 0, byteBuffer)
     }
 
-    override def messageChannel[MessageType](implicit codec: Codec[MessageType]): Observable[MessageType] = {
+    override def messageChannel[MessageType](implicit codec: Codec[MessageType]): Observable[(A, MessageType)] = {
       val messageChannel = new MessageChannel(this)
-      decoderTable.decoderWrappers.put(codec.typeCode.id, messageChannel.handleMessage)
+      decoderTable.put(codec.typeCode.id, messageChannel.handleMessage)
       messageChannel.inboundMessages
     }
+
   }
 
   abstract class NonTerminalPeerGroup[A, AA](underlyingPeerGroup: PeerGroup[AA]) extends PeerGroup[A]
@@ -52,6 +54,5 @@ object PeerGroup {
     }
 
   private def initializationErrorMsg(config: Any) =
-    s"Failed initialization of ${classOf[TCPPeerGroup]} with config $config. Cause follows."
-
+    s"Failed initialization of peer group member with config $config. Cause follows."
 }

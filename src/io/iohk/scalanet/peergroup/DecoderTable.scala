@@ -6,12 +6,14 @@ import java.util.concurrent.ConcurrentHashMap
 import scala.collection.mutable
 import scala.collection.JavaConverters._
 
-private[scalanet] class DecoderTable() {
-  val decoderWrappers: mutable.Map[String, (Int, ByteBuffer) => Unit] =
-    new ConcurrentHashMap[String, (Int, ByteBuffer) => Unit]().asScala
+private[scalanet] class DecoderTable[A]() {
+  private val decoderWrappers: mutable.Map[String, A => (Int, ByteBuffer) => Unit] =
+    new ConcurrentHashMap[String, A => (Int, ByteBuffer) => Unit]().asScala
 
-  def put(typeCode: String, decoderWrapper: (Int, ByteBuffer) => Unit): Option[(Int, ByteBuffer) => Unit] =
+  def put(typeCode: String, decoderWrapper: A => (Int, ByteBuffer) => Unit): Option[A => (Int, ByteBuffer) => Unit] =
     decoderWrappers.put(typeCode, decoderWrapper)
 
-  def entries: Map[String, (Int, ByteBuffer) => Unit] = decoderWrappers.toMap
+  def entries(address: A): Map[String, (Int, ByteBuffer) => Unit] = {
+    decoderWrappers.mapValues(f => f(address)).toMap
+  }
 }
