@@ -23,8 +23,7 @@ class SimplePeerGroupSpec extends FlatSpec {
   it should "send a message to itself" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withASimplePeerGroup(terminalGroup, "Alice") { alice =>
-        // FIXME when this number is increased, the test fails cos the string gets truncated.
-        val message = Random.alphanumeric.take(512).mkString
+        val message = Random.alphanumeric.take(1044).mkString
         val messageReceivedF = alice.messageChannel[String].headL.runToFuture
 
         alice.sendMessage("Alice", message).runToFuture.futureValue

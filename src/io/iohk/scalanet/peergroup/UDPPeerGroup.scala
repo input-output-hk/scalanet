@@ -1,6 +1,6 @@
 package io.iohk.scalanet.peergroup
 
-import java.net.InetSocketAddress
+import java.net.{InetSocketAddress, StandardSocketOptions}
 import java.nio.ByteBuffer
 import java.nio.channels.DatagramChannel
 
@@ -10,7 +10,7 @@ import io.netty.bootstrap.Bootstrap
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
-import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter, ChannelInitializer}
+import io.netty.channel._
 import monix.eval.Task
 import UDPPeerGroup._
 import io.iohk.decco.{Codec, PartialCodec, TypeCode}
@@ -25,9 +25,14 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
 
   private val workerGroup = new NioEventLoopGroup()
 
+  /**
+    * 64 kilobytes is the theoretical maximum size of a complete IP datagram
+    * https://stackoverflow.com/questions/9203403/java-datagrampacket-udp-maximum-send-recv-buffer-size
+    */
   private val server = new Bootstrap()
     .group(workerGroup)
     .channel(classOf[NioDatagramChannel])
+    .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
     .handler(new ChannelInitializer[NioDatagramChannel]() {
       override def initChannel(ch: NioDatagramChannel): Unit = {
         ch.pipeline.addLast(new ServerInboundHandler)
@@ -58,7 +63,7 @@ class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
   }
 
   private def writeUdp(address: InetSocketAddress, data: ByteBuffer): Unit = {
-    val udp = DatagramChannel.open()
+    val udp = DatagramChannel.open().setOption[Integer](StandardSocketOptions.SO_SNDBUF, 65536)
     udp.configureBlocking(true)
     udp.connect(address)
     try {
