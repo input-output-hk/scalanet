@@ -33,7 +33,7 @@ class SimplePeerGroupSpec extends FlatSpec {
       }
     }
   }
-//
+
   it should "send and receive a message to another peer of SimplePeerGroup" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withTwoSimplePeerGroups(
@@ -93,7 +93,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 
     val bootStrapTerminalGroup = randomTerminalPeerGroup(underlyingTerminalGroup)
     val bootstrap = new SimplePeerGroup(
-      SimplePeerGroup.Config(bootstrapAddress, Map.empty[String, InetSocketAddress]),
+      SimplePeerGroup.Config(bootstrapAddress, Map.empty[String, List[InetSocketAddress]]),
       bootStrapTerminalGroup
     )
     bootstrap.initialize().runToFuture.futureValue
@@ -102,7 +102,7 @@ class SimplePeerGroupSpec extends FlatSpec {
       .map(
         address =>
           new SimplePeerGroup(
-            SimplePeerGroup.Config(address, Map(bootstrapAddress -> bootStrapTerminalGroup.processAddress)),
+            SimplePeerGroup.Config(address, Map(bootstrapAddress -> List(bootStrapTerminalGroup.processAddress))),
             randomTerminalPeerGroup(underlyingTerminalGroup)
           )
       )

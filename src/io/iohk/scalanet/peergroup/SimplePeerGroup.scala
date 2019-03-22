@@ -26,7 +26,7 @@ class SimplePeerGroup[A, AA](
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
+  private val routingTable: mutable.Map[A, List[AA]] = new ConcurrentHashMap[A, List[AA]]().asScala
 
   private implicit val apc: PartialCodec[A] = aCodec.partialCodec
   private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
@@ -37,7 +37,7 @@ class SimplePeerGroup[A, AA](
     .messageChannel[EnrolMe[A, AA]]
     .foreach {
       case (_, enrolMe) =>
-        routingTable += enrolMe.myAddress -> enrolMe.myUnderlyingAddress
+        routingTable += enrolMe.myAddress -> List(enrolMe.myUnderlyingAddress)
         underLyingPeerGroup
           .sendMessage(
             enrolMe.myUnderlyingAddress,
@@ -51,14 +51,17 @@ class SimplePeerGroup[A, AA](
 
   override def sendMessage[MessageType: Codec](address: A, message: MessageType): Task[Unit] = {
     val underLyingAddress = routingTable(address)
-    underLyingPeerGroup.sendMessage(underLyingAddress, message)
+   val tasks =  underLyingAddress.map{ aa =>
+      underLyingPeerGroup.sendMessage(aa, message)
+    }
+    Task.gather(tasks).map(_.toList)
   }
 
   override def messageChannel[MessageType](implicit codec: Codec[MessageType]): Observable[(A, MessageType)] = {
 
     underLyingPeerGroup.messageChannel[MessageType].map {
       case (aa, messageType) => {
-        val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
+        val reverseLookup: mutable.Map[AA, A] = routingTable.swap
         (reverseLookup(aa), messageType)
       }
     }
@@ -67,7 +70,7 @@ class SimplePeerGroup[A, AA](
   override def shutdown(): Task[Unit] = underLyingPeerGroup.shutdown()
 
   override def initialize(): Task[Unit] = {
-    routingTable += processAddress -> underLyingPeerGroup.processAddress
+    routingTable += processAddress -> List(underLyingPeerGroup.processAddress)
 
     if (config.knownPeers.nonEmpty) {
       val (knownPeerAddress, knownPeerAddressUnderlying) = config.knownPeers.head
@@ -85,12 +88,15 @@ class SimplePeerGroup[A, AA](
         }
         .headL
 
-      underLyingPeerGroup
-        .sendMessage(
-          knownPeerAddressUnderlying,
-          EnrolMe(config.processAddress, underLyingPeerGroup.processAddress)
-        )
-        .runToFuture
+      knownPeerAddressUnderlying.foreach{ aa =>
+        underLyingPeerGroup
+          .sendMessage(
+            aa,
+            EnrolMe(config.processAddress, underLyingPeerGroup.processAddress)
+          )
+          .runToFuture
+      }
+
 
       enrolledTask
     } else {
@@ -103,7 +109,7 @@ object SimplePeerGroup {
 
   private[scalanet] case class EnrolMe[A, AA](myAddress: A, myUnderlyingAddress: AA)
 
-  private[scalanet] case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, AA)])
+  private[scalanet] case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, List[AA])])
 
-  case class Config[A, AA](processAddress: A, knownPeers: Map[A, AA])
+  case class Config[A, AA](processAddress: A, knownPeers: Map[A, List[AA]])
 }
