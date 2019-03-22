@@ -51,7 +51,7 @@ class SimplePeerGroup[A, AA](
 
   override def sendMessage[MessageType: Codec](address: A, message: MessageType): Task[Unit] = {
     val underLyingAddress = routingTable(address)
-   val tasks =  underLyingAddress.map{ aa =>
+    val tasks = underLyingAddress.map { aa =>
       underLyingPeerGroup.sendMessage(aa, message)
     }
     Task.gather(tasks).map(_.toList)
@@ -88,7 +88,7 @@ class SimplePeerGroup[A, AA](
         }
         .headL
 
-      knownPeerAddressUnderlying.foreach{ aa =>
+      knownPeerAddressUnderlying.foreach { aa =>
         underLyingPeerGroup
           .sendMessage(
             aa,
@@ -96,7 +96,6 @@ class SimplePeerGroup[A, AA](
           )
           .runToFuture
       }
-
 
       enrolledTask
     } else {
