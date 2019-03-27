@@ -36,14 +36,14 @@ class SimplePeerGroup[A, AA](
   underLyingPeerGroup
     .messageChannel[EnrolMe[A, AA]]
     .foreach {
-      case (_,enrolMe) =>
+      case (_, enrolMe) =>
         enrolMe.multiCastAddresses foreach { a =>
-          routingTable +=  a -> List(enrolMe.myUnderlyingAddress)
+          routingTable += a -> List(enrolMe.myUnderlyingAddress)
         }
         routingTable += enrolMe.myAddress -> List(enrolMe.myUnderlyingAddress)
-            log.debug(
-              s"Processed enrolment message $enrolMe at address '$processAddress' with corresponding routing table update."
-            )
+        log.debug(
+          s"Processed enrolment message $enrolMe at address '$processAddress' with corresponding routing table update."
+        )
         underLyingPeerGroup
           .sendMessage(
             enrolMe.myUnderlyingAddress,
@@ -52,11 +52,13 @@ class SimplePeerGroup[A, AA](
           .runToFuture
     }
 
-    override def sendMessage[MessageType: Codec](address: A, message: MessageType): Task[Unit] = {
+  override def sendMessage[MessageType: Codec](address: A, message: MessageType): Task[Unit] = {
     val underLyingAddress = routingTable(address)
-      Task.sequence(underLyingAddress.map { aa =>
-       underLyingPeerGroup.sendMessage(aa, message)
-      }).map(_ => ())
+    Task
+      .sequence(underLyingAddress.map { aa =>
+        underLyingPeerGroup.sendMessage(aa, message)
+      })
+      .map(_ => ())
   }
 
   override def messageChannel[MessageType](implicit codec: Codec[MessageType]): Observable[(A, MessageType)] = {
@@ -91,14 +93,13 @@ class SimplePeerGroup[A, AA](
         .headL
 
       knownPeerAddressUnderlying.foreach { aa =>
-         underLyingPeerGroup
-           .sendMessage(
-             aa,
-             EnrolMe(processAddress,config.multiCastAddresses ,underLyingPeerGroup.processAddress)
-           )
-           .runToFuture
-       }
-
+        underLyingPeerGroup
+          .sendMessage(
+            aa,
+            EnrolMe(processAddress, config.multiCastAddresses, underLyingPeerGroup.processAddress)
+          )
+          .runToFuture
+      }
 
       enrolledTask
     } else {
@@ -109,9 +110,9 @@ class SimplePeerGroup[A, AA](
 
 object SimplePeerGroup {
 
-  private[scalanet] case class EnrolMe[A, AA](myAddress: A, multiCastAddresses : List[A], myUnderlyingAddress: AA )
+  private[scalanet] case class EnrolMe[A, AA](myAddress: A, multiCastAddresses: List[A], myUnderlyingAddress: AA)
 
   private[scalanet] case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, List[AA])])
 
-  case class Config[A, AA](processAddress: A,multiCastAddresses : List[A],knownPeers: Map[A, List[AA]])
+  case class Config[A, AA](processAddress: A, multiCastAddresses: List[A], knownPeers: Map[A, List[AA]])
 }

@@ -63,7 +63,7 @@ class SimplePeerGroupSpec extends FlatSpec {
   }
 
   trait SimpleTerminalPeerGroups {
-    val terminalPeerGroups = List(TcpTerminalPeerGroup/*, UdpTerminalPeerGroup*/)
+    val terminalPeerGroups = List(TcpTerminalPeerGroup /*, UdpTerminalPeerGroup*/ )
   }
 
   private def withASimplePeerGroup(
@@ -102,14 +102,18 @@ class SimplePeerGroupSpec extends FlatSpec {
       .map(
         address =>
           new SimplePeerGroup(
-            SimplePeerGroup.Config(address, List.empty[String], Map(bootstrapAddress -> List(bootStrapTerminalGroup.processAddress))),
+            SimplePeerGroup.Config(
+              address,
+              List.empty[String],
+              Map(bootstrapAddress -> List(bootStrapTerminalGroup.processAddress))
+            ),
             randomTerminalPeerGroup(underlyingTerminalGroup)
           )
       )
       .toList
 
     val futures: Seq[Future[Unit]] = otherPeerGroups.map(pg => pg.initialize().runToFuture)
-     Future.sequence(futures).futureValue
+    Future.sequence(futures).futureValue
 
     val peerGroups = bootstrap :: otherPeerGroups
 

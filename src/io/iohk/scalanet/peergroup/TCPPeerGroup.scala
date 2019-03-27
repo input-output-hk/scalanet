@@ -48,7 +48,7 @@ class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
     .bind(config.bindAddress)
     .syncUninterruptibly()
 
-   log.info(s"Server bound to address ${config.bindAddress}")
+  log.info(s"Server bound to address ${config.bindAddress}")
 
   override def initialize(): Task[Unit] = Task.unit
 
