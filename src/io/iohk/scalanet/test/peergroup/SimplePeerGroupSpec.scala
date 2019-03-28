@@ -100,6 +100,56 @@ class SimplePeerGroupSpec extends FlatSpec {
     }
   }
 
+
+  it should "send  a message to other 2 peers having MultiCast address of SimplePeerGroup" in new SimpleTerminalPeerGroups {
+    terminalPeerGroups.foreach { terminalGroup =>
+      withThreeSimplePeerGroups(
+        terminalGroup,
+        List("news", "sports"),
+        "Alice",
+        "Bob",
+        "Charlie"
+      ) { (alice, bob ,charlie) =>
+        val message = "HI!! Alice"
+
+        val messageReceivedF = alice.messageChannel[String].headL.runToFuture
+        bob.sendMessage("Alice", message).runToFuture.futureValue
+        val messageReceived = messageReceivedF.futureValue
+        messageReceived shouldBe (bob.processAddress, message)
+
+        val messageReceivedByBobF = bob.messageChannel[String].headL.runToFuture
+        val aliceMessage = "HI!! Bob"
+        alice.sendMessage("Bob", aliceMessage).runToFuture.futureValue
+        val messageReceivedByBob = messageReceivedByBobF.futureValue
+        messageReceivedByBob shouldBe (alice.processAddress, aliceMessage)
+
+        val messageReceivedByBobNewsF = bob.messageChannel[String].headL.runToFuture
+        val messageReceivedByCharlieNewsF = charlie.messageChannel[String].headL.runToFuture
+
+        val messageNews = "Latest News"
+        alice.sendMessage("news", messageNews).runToFuture.futureValue
+        val messageReceivedByBobNews = messageReceivedByBobNewsF.futureValue
+        messageReceivedByBobNews shouldBe (alice.processAddress, messageNews)
+        val messageReceivedByCharlieNews = messageReceivedByCharlieNewsF.futureValue
+        messageReceivedByCharlieNews shouldBe (alice.processAddress, messageNews)
+
+
+        val messageReceivedByBobSportsF = bob.messageChannel[String].headL.runToFuture
+        val messageReceivedByCharlieSportsF = charlie.messageChannel[String].headL.runToFuture
+
+        val messageSports = "Sports Updates"
+        alice.sendMessage("sports", messageSports).runToFuture.futureValue
+
+        val messageReceivedByBobSports = messageReceivedByBobSportsF.futureValue
+        messageReceivedByBobSports shouldBe (alice.processAddress, messageSports)
+
+        val messageReceivedByCharlieSports = messageReceivedByCharlieSportsF.futureValue
+        messageReceivedByCharlieSports shouldBe (alice.processAddress, messageSports)
+
+      }
+    }
+  }
+
   trait SimpleTerminalPeerGroups {
     val terminalPeerGroups = List(TcpTerminalPeerGroup, UdpTerminalPeerGroup)
   }
@@ -125,6 +175,25 @@ class SimplePeerGroupSpec extends FlatSpec {
 
     withSimplePeerGroups(underlyingTerminalGroup, a, multiCastAddresses, b)(groups => testCode(groups(0), groups(1)))
   }
+
+
+  private def withThreeSimplePeerGroups(
+                                       underlyingTerminalGroup: SimpleTerminalPeerGroup,
+                                       multiCastAddresses: List[String],
+                                       a: String,
+                                       b: String,
+                                       c: String
+                                     )(
+                                       testCode: (
+                                         SimplePeerGroup[String, InetSocketAddress],
+                                           SimplePeerGroup[String, InetSocketAddress],
+                                           SimplePeerGroup[String, InetSocketAddress]
+                                         ) => Any
+                                     ): Unit = {
+
+    withSimplePeerGroups(underlyingTerminalGroup, a, multiCastAddresses, b, c)(groups => testCode(groups(0), groups(1), groups(2)))
+  }
+
 
   private def withSimplePeerGroups(
       underlyingTerminalGroup: SimpleTerminalPeerGroup,
