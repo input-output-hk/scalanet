@@ -38,7 +38,9 @@ class SimplePeerGroup[A, AA](
     .foreach {
       case (_, enrolMe) =>
         enrolMe.multiCastAddresses foreach { a =>
-           val existingAddress : List[AA] = if (routingTable.contains(a)) {routingTable(a)} else Nil
+          val existingAddress: List[AA] = if (routingTable.contains(a)) {
+            routingTable(a)
+          } else Nil
           routingTable += a -> (existingAddress ::: List(enrolMe.myUnderlyingAddress))
         }
         routingTable += enrolMe.myAddress -> List(enrolMe.myUnderlyingAddress)

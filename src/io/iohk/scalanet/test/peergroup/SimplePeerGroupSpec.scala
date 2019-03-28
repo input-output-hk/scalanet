@@ -100,7 +100,6 @@ class SimplePeerGroupSpec extends FlatSpec {
     }
   }
 
-
   it should "send  a message to other 2 peers having MultiCast address of SimplePeerGroup" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withThreeSimplePeerGroups(
@@ -109,7 +108,7 @@ class SimplePeerGroupSpec extends FlatSpec {
         "Alice",
         "Bob",
         "Charlie"
-      ) { (alice, bob ,charlie) =>
+      ) { (alice, bob, charlie) =>
         val message = "HI!! Alice"
 
         val messageReceivedF = alice.messageChannel[String].headL.runToFuture
@@ -132,7 +131,6 @@ class SimplePeerGroupSpec extends FlatSpec {
         messageReceivedByBobNews shouldBe (alice.processAddress, messageNews)
         val messageReceivedByCharlieNews = messageReceivedByCharlieNewsF.futureValue
         messageReceivedByCharlieNews shouldBe (alice.processAddress, messageNews)
-
 
         val messageReceivedByBobSportsF = bob.messageChannel[String].headL.runToFuture
         val messageReceivedByCharlieSportsF = charlie.messageChannel[String].headL.runToFuture
@@ -176,24 +174,24 @@ class SimplePeerGroupSpec extends FlatSpec {
     withSimplePeerGroups(underlyingTerminalGroup, a, multiCastAddresses, b)(groups => testCode(groups(0), groups(1)))
   }
 
-
   private def withThreeSimplePeerGroups(
-                                       underlyingTerminalGroup: SimpleTerminalPeerGroup,
-                                       multiCastAddresses: List[String],
-                                       a: String,
-                                       b: String,
-                                       c: String
-                                     )(
-                                       testCode: (
-                                         SimplePeerGroup[String, InetSocketAddress],
-                                           SimplePeerGroup[String, InetSocketAddress],
-                                           SimplePeerGroup[String, InetSocketAddress]
-                                         ) => Any
-                                     ): Unit = {
+      underlyingTerminalGroup: SimpleTerminalPeerGroup,
+      multiCastAddresses: List[String],
+      a: String,
+      b: String,
+      c: String
+  )(
+      testCode: (
+          SimplePeerGroup[String, InetSocketAddress],
+          SimplePeerGroup[String, InetSocketAddress],
+          SimplePeerGroup[String, InetSocketAddress]
+      ) => Any
+  ): Unit = {
 
-    withSimplePeerGroups(underlyingTerminalGroup, a, multiCastAddresses, b, c)(groups => testCode(groups(0), groups(1), groups(2)))
+    withSimplePeerGroups(underlyingTerminalGroup, a, multiCastAddresses, b, c)(
+      groups => testCode(groups(0), groups(1), groups(2))
+    )
   }
-
 
   private def withSimplePeerGroups(
       underlyingTerminalGroup: SimpleTerminalPeerGroup,
