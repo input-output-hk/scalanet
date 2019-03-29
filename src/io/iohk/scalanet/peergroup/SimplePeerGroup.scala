@@ -27,6 +27,7 @@ class SimplePeerGroup[A, AA](
   private val log = LoggerFactory.getLogger(getClass)
 
   private val routingTable: mutable.Map[A, List[AA]] = new ConcurrentHashMap[A, List[AA]]().asScala
+  private val multiCastTable: mutable.Map[A, List[AA]] = new ConcurrentHashMap[A, List[AA]]().asScala
 
   private implicit val apc: PartialCodec[A] = aCodec.partialCodec
   private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
@@ -38,10 +39,10 @@ class SimplePeerGroup[A, AA](
     .foreach {
       case (_, enrolMe) =>
         enrolMe.multiCastAddresses foreach { a =>
-          val existingAddress: List[AA] = if (routingTable.contains(a)) {
-            routingTable(a)
+          val existingAddress: List[AA] = if (multiCastTable.contains(a)) {
+            multiCastTable(a)
           } else Nil
-          routingTable += a -> (existingAddress ::: List(enrolMe.myUnderlyingAddress))
+          multiCastTable += a -> (existingAddress ::: List(enrolMe.myUnderlyingAddress))
         }
         routingTable += enrolMe.myAddress -> List(enrolMe.myUnderlyingAddress)
         log.debug(
@@ -50,13 +51,14 @@ class SimplePeerGroup[A, AA](
         underLyingPeerGroup
           .sendMessage(
             enrolMe.myUnderlyingAddress,
-            Enrolled(enrolMe.myAddress, enrolMe.myUnderlyingAddress, routingTable.toList)
+            Enrolled(enrolMe.myAddress, enrolMe.myUnderlyingAddress, routingTable.toMap, multiCastTable.toMap)
           )
           .runToFuture
     }
 
   override def sendMessage[MessageType: Codec](address: A, message: MessageType): Task[Unit] = {
-    val underLyingAddress = routingTable(address)
+
+    val underLyingAddress = if(routingTable.contains(address)) routingTable(address) else multiCastTable(address)
     Task
       .sequence(underLyingAddress.map { aa =>
         underLyingPeerGroup.sendMessage(aa, message)
@@ -68,7 +70,7 @@ class SimplePeerGroup[A, AA](
 
     underLyingPeerGroup.messageChannel[MessageType].map {
       case (aa, messageType) => {
-        val reverseLookup: mutable.Map[AA, A] = routingTable.swap
+        val reverseLookup: mutable.Map[AA, A] =  routingTable.swap
         (reverseLookup(aa), messageType)
       }
     }
@@ -115,7 +117,7 @@ object SimplePeerGroup {
 
   private[scalanet] case class EnrolMe[A, AA](myAddress: A, multiCastAddresses: List[A], myUnderlyingAddress: AA)
 
-  private[scalanet] case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, List[AA])])
+  private[scalanet] case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: Map[A, List[AA]],multiCastTable: Map[A, List[AA]])
 
   case class Config[A, AA](processAddress: A, multiCastAddresses: List[A], knownPeers: Map[A, List[AA]])
 }
