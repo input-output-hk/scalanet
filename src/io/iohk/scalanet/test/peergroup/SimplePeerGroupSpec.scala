@@ -148,7 +148,6 @@ class SimplePeerGroupSpec extends FlatSpec {
     }
   }
 
-
   trait SimpleTerminalPeerGroups {
     val terminalPeerGroups = List(TcpTerminalPeerGroup, UdpTerminalPeerGroup)
   }

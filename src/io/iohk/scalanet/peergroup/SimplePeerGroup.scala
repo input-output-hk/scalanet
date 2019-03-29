@@ -58,7 +58,7 @@ class SimplePeerGroup[A, AA](
 
   override def sendMessage[MessageType: Codec](address: A, message: MessageType): Task[Unit] = {
 
-    val underLyingAddress = if(routingTable.contains(address)) routingTable(address) else multiCastTable(address)
+    val underLyingAddress = if (routingTable.contains(address)) routingTable(address) else multiCastTable(address)
     Task
       .sequence(underLyingAddress.map { aa =>
         underLyingPeerGroup.sendMessage(aa, message)
@@ -70,7 +70,7 @@ class SimplePeerGroup[A, AA](
 
     underLyingPeerGroup.messageChannel[MessageType].map {
       case (aa, messageType) => {
-        val reverseLookup: mutable.Map[AA, A] =  routingTable.swap
+        val reverseLookup: mutable.Map[AA, A] = routingTable.swap
         (reverseLookup(aa), messageType)
       }
     }
@@ -117,7 +117,12 @@ object SimplePeerGroup {
 
   private[scalanet] case class EnrolMe[A, AA](myAddress: A, multiCastAddresses: List[A], myUnderlyingAddress: AA)
 
-  private[scalanet] case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: Map[A, List[AA]],multiCastTable: Map[A, List[AA]])
+  private[scalanet] case class Enrolled[A, AA](
+      address: A,
+      underlyingAddress: AA,
+      routingTable: Map[A, List[AA]],
+      multiCastTable: Map[A, List[AA]]
+  )
 
   case class Config[A, AA](processAddress: A, multiCastAddresses: List[A], knownPeers: Map[A, List[AA]])
 }
