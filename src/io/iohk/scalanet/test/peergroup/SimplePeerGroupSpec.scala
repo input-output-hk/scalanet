@@ -63,7 +63,7 @@ class SimplePeerGroupSpec extends FlatSpec {
     }
   }
 
-  it should "send  a message to another peers MultiCast address of SimplePeerGroup" in new SimpleTerminalPeerGroups {
+  it should "send a message to another peer's multicast address" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withTwoSimplePeerGroups(
         terminalGroup,
@@ -100,7 +100,7 @@ class SimplePeerGroupSpec extends FlatSpec {
     }
   }
 
-  it should "send  a message to other 2 peers having MultiCast address of SimplePeerGroup" in new SimpleTerminalPeerGroups {
+  it should "send a message to 2 peers sharing a multicast address" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withThreeSimplePeerGroups(
         terminalGroup,
@@ -112,11 +112,12 @@ class SimplePeerGroupSpec extends FlatSpec {
         val message = "HI!! Alice"
 
         val messageReceivedF = alice.messageChannel[String].headL.runToFuture
+        val messageReceivedByBobF = bob.messageChannel[String].headL.runToFuture
+
         bob.sendMessage("Alice", message).runToFuture.futureValue
         val messageReceived = messageReceivedF.futureValue
         messageReceived shouldBe (bob.processAddress, message)
 
-        val messageReceivedByBobF = bob.messageChannel[String].headL.runToFuture
         val aliceMessage = "HI!! Bob"
         alice.sendMessage("Bob", aliceMessage).runToFuture.futureValue
         val messageReceivedByBob = messageReceivedByBobF.futureValue
@@ -137,10 +138,8 @@ class SimplePeerGroupSpec extends FlatSpec {
 
         val messageSports = "Sports Updates"
         alice.sendMessage("sports", messageSports).runToFuture.futureValue
-
         val messageReceivedByBobSports = messageReceivedByBobSportsF.futureValue
         messageReceivedByBobSports shouldBe (alice.processAddress, messageSports)
-
         val messageReceivedByCharlieSports = messageReceivedByCharlieSportsF.futureValue
         messageReceivedByCharlieSports shouldBe (alice.processAddress, messageSports)
 
@@ -204,7 +203,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 
     val bootStrapTerminalGroup = randomTerminalPeerGroup(underlyingTerminalGroup)
     val bootstrap = new SimplePeerGroup(
-      SimplePeerGroup.Config(bootstrapAddress, List.empty[String], Map.empty[String, List[InetSocketAddress]]),
+      SimplePeerGroup.Config(bootstrapAddress, List.empty[String], Map.empty[String, InetSocketAddress]),
       bootStrapTerminalGroup
     )
     bootstrap.initialize().runToFuture.futureValue
@@ -216,7 +215,7 @@ class SimplePeerGroupSpec extends FlatSpec {
             SimplePeerGroup.Config(
               address,
               multiCastAddresses,
-              Map(bootstrapAddress -> List(bootStrapTerminalGroup.processAddress))
+              Map(bootstrapAddress -> bootStrapTerminalGroup.processAddress)
             ),
             randomTerminalPeerGroup(underlyingTerminalGroup)
           )
