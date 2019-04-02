@@ -27,6 +27,7 @@ class SimplePeerGroup[A, AA](
   private val log = LoggerFactory.getLogger(getClass)
 
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
+  private val multiCastTable: mutable.Map[A, List[AA]] = new ConcurrentHashMap[A, List[AA]]().asScala
 
   private implicit val apc: PartialCodec[A] = aCodec.partialCodec
   private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
@@ -38,20 +39,39 @@ class SimplePeerGroup[A, AA](
     .foreach {
       case (_, enrolMe) =>
         routingTable += enrolMe.myAddress -> enrolMe.myUnderlyingAddress
-        underLyingPeerGroup
-          .sendMessage(
-            enrolMe.myUnderlyingAddress,
-            Enrolled(enrolMe.myAddress, enrolMe.myUnderlyingAddress, routingTable.toList)
-          )
-          .runToFuture
-        log.debug(
-          s"Processed enrolment message $enrolMe at address '$processAddress' with corresponding routing table update."
-        )
+        updateMulticastTable(enrolMe)
+        notifyPeer(enrolMe)
     }
 
+  private def updateMulticastTable(enrolMe: EnrolMe[A, AA]): Unit = {
+    enrolMe.multicastAddresses foreach { a =>
+      val existingAddress: List[AA] = if (multiCastTable.contains(a)) {
+        multiCastTable(a)
+      } else Nil
+      multiCastTable += a -> (existingAddress ::: List(enrolMe.myUnderlyingAddress))
+    }
+  }
+
+  private def notifyPeer(enrolMe: EnrolMe[A, AA]) = {
+    underLyingPeerGroup
+      .sendMessage(
+        enrolMe.myUnderlyingAddress,
+        Enrolled(enrolMe.myAddress, enrolMe.myUnderlyingAddress, routingTable.toMap, multiCastTable.toMap)
+      )
+      .runToFuture
+    log.debug(
+      s"Processed enrolment message $enrolMe at address '$processAddress' with corresponding routing table update."
+    )
+  }
+
   override def sendMessage[MessageType: Codec](address: A, message: MessageType): Task[Unit] = {
-    val underLyingAddress = routingTable(address)
-    underLyingPeerGroup.sendMessage(underLyingAddress, message)
+
+    val underLyingAddress = if (routingTable.contains(address)) List(routingTable(address)) else multiCastTable(address)
+    Task
+      .sequence(underLyingAddress.map { aa =>
+        underLyingPeerGroup.sendMessage(aa, message)
+      })
+      .map(_ => ())
   }
 
   override def messageChannel[MessageType](implicit codec: Codec[MessageType]): Observable[(A, MessageType)] = {
@@ -88,7 +108,7 @@ class SimplePeerGroup[A, AA](
       underLyingPeerGroup
         .sendMessage(
           knownPeerAddressUnderlying,
-          EnrolMe(config.processAddress, underLyingPeerGroup.processAddress)
+          EnrolMe(processAddress, config.multicastAddresses, underLyingPeerGroup.processAddress)
         )
         .runToFuture
 
@@ -101,9 +121,14 @@ class SimplePeerGroup[A, AA](
 
 object SimplePeerGroup {
 
-  private[scalanet] case class EnrolMe[A, AA](myAddress: A, myUnderlyingAddress: AA)
+  private[scalanet] case class EnrolMe[A, AA](myAddress: A, multicastAddresses: List[A], myUnderlyingAddress: AA)
 
-  private[scalanet] case class Enrolled[A, AA](address: A, underlyingAddress: AA, routingTable: List[(A, AA)])
+  private[scalanet] case class Enrolled[A, AA](
+      address: A,
+      underlyingAddress: AA,
+      routingTable: Map[A, AA],
+      multiCastTable: Map[A, List[AA]]
+  )
 
-  case class Config[A, AA](processAddress: A, knownPeers: Map[A, AA])
+  case class Config[A, AA](processAddress: A, multicastAddresses: List[A], knownPeers: Map[A, AA])
 }

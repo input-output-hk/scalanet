@@ -19,8 +19,10 @@ import io.netty.handler.codec.bytes.ByteArrayEncoder
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
+import org.slf4j.LoggerFactory
 
 class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends TerminalPeerGroup[InetSocketAddress]() {
+  private val log = LoggerFactory.getLogger(getClass)
 
   private val nettyDecoder = new NettyDecoder()
   private val workerGroup = new NioEventLoopGroup()
@@ -45,6 +47,8 @@ class TCPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends Te
     .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
     .bind(config.bindAddress)
     .syncUninterruptibly()
+
+  log.info(s"Server bound to address ${config.bindAddress}")
 
   override def initialize(): Task[Unit] = Task.unit
 
