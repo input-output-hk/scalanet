@@ -8,11 +8,17 @@ import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
 
+sealed trait Channel[A, M] {
+  def sendMessage(address: A, message: M)(implicit codec: Codec[M]): Task[Unit]
+  def in: Observable[(A, M)]
+}
+
 sealed trait PeerGroup[A] {
   val processAddress: A
   def initialize(): Task[Unit]
-  def sendMessage[MessageType: Codec](address: A, message: MessageType): Task[Unit]
-  def messageChannel[MessageType: Codec]: Observable[(A, MessageType)]
+  def sendMessage[M: Codec](address: A, message: M): Task[Unit]
+  def messageChannel[M: Codec]: Observable[(A, M)]
+  def channel[M: Codec]: Channel[A, M]
   def shutdown(): Task[Unit]
 }
 
