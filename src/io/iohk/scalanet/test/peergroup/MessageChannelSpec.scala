@@ -26,7 +26,7 @@ class MessageChannelSpec extends FlatSpec {
     val codec = heapCodec[String]
     val bytes: ByteBuffer = codec.encode(message)
     val headerWidth = 20
-    val peerGroup = mock[PeerGroup[String]]
+    val peerGroup = mock[PeerGroup[String, String]]
     val messageChannel = new MessageChannel[String, String](peerGroup)
     val decoderTable = new DecoderTable[String]()
     decoderTable.put(codec.typeCode.id, messageChannel.handleMessage)

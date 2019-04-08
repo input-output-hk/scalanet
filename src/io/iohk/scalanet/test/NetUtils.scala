@@ -3,7 +3,8 @@ package io.iohk.scalanet
 import java.net._
 import java.nio.ByteBuffer
 
-import io.iohk.scalanet.peergroup.{TCPPeerGroup, UDPPeerGroup}
+import io.iohk.decco.Codec
+import io.iohk.scalanet.peergroup.{TCPPeerGroup}
 import monix.execution.Scheduler
 
 import scala.util.Random
@@ -74,20 +75,20 @@ object NetUtils {
   case object TcpTerminalPeerGroup extends SimpleTerminalPeerGroup
   case object UdpTerminalPeerGroup extends SimpleTerminalPeerGroup
 
-  def randomTerminalPeerGroup(t: SimpleTerminalPeerGroup)(implicit scheduler: Scheduler) =
+  def randomTerminalPeerGroup(t: SimpleTerminalPeerGroup)(implicit scheduler: Scheduler, codec: Codec[String]) =
     t match {
       case TcpTerminalPeerGroup => randomTCPPeerGroup
-      case UdpTerminalPeerGroup => randomUDPPeerGroup
+      case UdpTerminalPeerGroup => ??? //randomUDPPeerGroup
     }
 
-  def randomTCPPeerGroup(implicit scheduler: Scheduler): TCPPeerGroup =
+  def randomTCPPeerGroup(implicit scheduler: Scheduler, codec: Codec[String]): TCPPeerGroup[String] =
     new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
 
   def withTwoRandomTCPPeerGroups(
-      testCode: (TCPPeerGroup, TCPPeerGroup) => Any
-  )(implicit scheduler: Scheduler): Unit = {
-    val pg1 = randomTCPPeerGroup(scheduler)
-    val pg2 = randomTCPPeerGroup(scheduler)
+      testCode: (TCPPeerGroup[String], TCPPeerGroup[String]) => Any
+  )(implicit scheduler: Scheduler, codec: Codec[String]): Unit = {
+    val pg1 = randomTCPPeerGroup(scheduler, codec)
+    val pg2 = randomTCPPeerGroup(scheduler, codec)
     try {
       testCode(pg1, pg2)
     } finally {
@@ -96,20 +97,20 @@ object NetUtils {
     }
   }
 
-  def randomUDPPeerGroup(implicit scheduler: Scheduler): UDPPeerGroup =
-    new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
+//  def randomUDPPeerGroup(implicit scheduler: Scheduler): UDPPeerGroup =
+//    new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
 
-  def withTwoRandomUDPPeerGroups(
-      testCode: (UDPPeerGroup, UDPPeerGroup) => Any
-  )(implicit scheduler: Scheduler): Unit = {
-    val pg1 = randomUDPPeerGroup
-    val pg2 = randomUDPPeerGroup
-    try {
-      testCode(pg1, pg2)
-    } finally {
-      pg1.shutdown()
-      pg2.shutdown()
-    }
-  }
+//  def withTwoRandomUDPPeerGroups(
+//      testCode: (UDPPeerGroup, UDPPeerGroup) => Any
+//  )(implicit scheduler: Scheduler): Unit = {
+//    val pg1 = randomUDPPeerGroup
+//    val pg2 = randomUDPPeerGroup
+//    try {
+//      testCode(pg1, pg2)
+//    } finally {
+//      pg1.shutdown()
+//      pg2.shutdown()
+//    }
+//  }
 
 }

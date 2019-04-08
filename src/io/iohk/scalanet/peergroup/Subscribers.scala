@@ -8,19 +8,19 @@ import monix.reactive.observers.Subscriber
 import scala.collection.mutable
 import scala.collection.JavaConverters._
 
-private[scalanet] class Subscribers[MessageType] {
-  private val subscriberSet: mutable.Set[Subscriber.Sync[MessageType]] =
-    new CopyOnWriteArraySet[Subscriber.Sync[MessageType]]().asScala
+private[scalanet] class Subscribers[T] {
+  private val subscriberSet: mutable.Set[Subscriber.Sync[T]] =
+    new CopyOnWriteArraySet[Subscriber.Sync[T]]().asScala
 
-  val messageStream: Observable[MessageType] =
-    Observable.create(overflowStrategy = OverflowStrategy.Unbounded)((subscriber: Subscriber.Sync[MessageType]) => {
+  val messageStream: Observable[T] =
+    Observable.create(overflowStrategy = OverflowStrategy.Unbounded)((subscriber: Subscriber.Sync[T]) => {
 
       subscriberSet.add(subscriber)
 
       () => subscriberSet.remove(subscriber)
     })
 
-  def notify(message: MessageType): Unit = {
-    subscriberSet.foreach(_.onNext(message))
+  def notify(t: T): Unit = {
+    subscriberSet.foreach(_.onNext(t))
   }
 }
