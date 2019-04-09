@@ -151,8 +151,10 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
     override def sendMessage(message: M): Task[Unit] = {
       val pdu = PDU(processAddress, message)
-      toTask(nettyChannel
-        .writeAndFlush(Unpooled.wrappedBuffer(pduCodec.encode(pdu))))
+      toTask(
+        nettyChannel
+          .writeAndFlush(Unpooled.wrappedBuffer(pduCodec.encode(pdu)))
+      )
     }
 
     override def in: Observable[M] = messageSubscribers.messageStream

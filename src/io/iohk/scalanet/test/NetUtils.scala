@@ -4,9 +4,11 @@ import java.net._
 import java.nio.ByteBuffer
 
 import io.iohk.decco.Codec
-import io.iohk.scalanet.peergroup.{TCPPeerGroup}
+import io.iohk.scalanet.peergroup.{TCPPeerGroup, UDPPeerGroup}
 import monix.execution.Scheduler
 
+import scala.concurrent.Await
+import scala.concurrent.duration._
 import scala.util.Random
 
 object NetUtils {
@@ -81,8 +83,11 @@ object NetUtils {
       case UdpTerminalPeerGroup => ??? //randomUDPPeerGroup
     }
 
-  def randomTCPPeerGroup(implicit scheduler: Scheduler, codec: Codec[String]): TCPPeerGroup[String] =
-    new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
+  def randomTCPPeerGroup(implicit scheduler: Scheduler, codec: Codec[String]): TCPPeerGroup[String] = {
+    val pg = new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
+    Await.result(pg.initialize().runToFuture, 10 seconds)
+    pg
+  }
 
   def withTwoRandomTCPPeerGroups(
       testCode: (TCPPeerGroup[String], TCPPeerGroup[String]) => Any
@@ -97,20 +102,22 @@ object NetUtils {
     }
   }
 
-//  def randomUDPPeerGroup(implicit scheduler: Scheduler): UDPPeerGroup =
-//    new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
+  def randomUDPPeerGroup(implicit scheduler: Scheduler, codec: Codec[String]): UDPPeerGroup[String] = {
+    val pg = new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
+    Await.result(pg.initialize().runToFuture, 10 seconds)
+    pg
+  }
 
-//  def withTwoRandomUDPPeerGroups(
-//      testCode: (UDPPeerGroup, UDPPeerGroup) => Any
-//  )(implicit scheduler: Scheduler): Unit = {
-//    val pg1 = randomUDPPeerGroup
-//    val pg2 = randomUDPPeerGroup
-//    try {
-//      testCode(pg1, pg2)
-//    } finally {
-//      pg1.shutdown()
-//      pg2.shutdown()
-//    }
-//  }
-
+  def withTwoRandomUDPPeerGroups(
+      testCode: (UDPPeerGroup[String], UDPPeerGroup[String]) => Any
+  )(implicit scheduler: Scheduler, codec: Codec[String]): Unit = {
+    val pg1 = randomUDPPeerGroup
+    val pg2 = randomUDPPeerGroup
+    try {
+      testCode(pg1, pg2)
+    } finally {
+      pg1.shutdown()
+      pg2.shutdown()
+    }
+  }
 }

@@ -9,7 +9,7 @@ import scala.collection.mutable
 import scala.collection.JavaConverters._
 
 private[scalanet] class Subscribers[T] {
-  private val subscriberSet: mutable.Set[Subscriber.Sync[T]] =
+  val subscriberSet: mutable.Set[Subscriber.Sync[T]] =
     new CopyOnWriteArraySet[Subscriber.Sync[T]]().asScala
 
   val messageStream: Observable[T] =
