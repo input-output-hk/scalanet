@@ -16,7 +16,7 @@ trait Channel[A, M] {
 sealed trait PeerGroup[A, M] {
   def processAddress: A
   def initialize(): Task[Unit]
-  def client(to: A): Channel[A, M] // TODO should be Task[Channel]
+  def client(to: A): Task[Channel[A, M]]
   def server(): Observable[Channel[A, M]]
   def shutdown(): Task[Unit]
 }

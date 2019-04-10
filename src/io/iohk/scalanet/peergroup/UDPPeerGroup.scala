@@ -29,7 +29,8 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private val channelSubscribers = new Subscribers[Channel[InetSocketAddress, M]]
+  private val channelSubscribers =
+    new Subscribers[Channel[InetSocketAddress, M]](s"Channel Subscribers for UDPPeerGroup@'$processAddress'")
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -47,7 +48,7 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
     .handler(new ChannelInitializer[NioDatagramChannel]() {
       override def initChannel(ch: NioDatagramChannel): Unit = {
-        new ChannelImpl(Future(ch), Promise[InetSocketAddress]())
+        new ChannelImpl(ch, Promise[InetSocketAddress]())
       }
     })
 
@@ -56,12 +57,12 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
   override def initialize(): Task[Unit] =
     toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}"))
 
-  override val processAddress: InetSocketAddress = config.processAddress
+  override def processAddress: InetSocketAddress = config.processAddress
 
-  override def client(to: InetSocketAddress): Channel[InetSocketAddress, M] = {
+  override def client(to: InetSocketAddress): Task[Channel[InetSocketAddress, M]] = {
     val cf = bootstrap.connect(to)
-    val ct: Future[NioDatagramChannel] = toTask(cf).map(_ => cf.channel().asInstanceOf[NioDatagramChannel]).runToFuture
-    new ChannelImpl(ct, Promise().complete(Success(to)))
+    val ct: Task[NioDatagramChannel] = toTask(cf).map(_ => cf.channel().asInstanceOf[NioDatagramChannel])
+    ct.map(nettyChannel => new ChannelImpl(nettyChannel, Promise().complete(Success(to))))
   }
 
   override def server(): Observable[Channel[InetSocketAddress, M]] = channelSubscribers.messageStream
@@ -73,22 +74,19 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     } yield ()
 
   private class ChannelImpl(
-      val nettyChannelF: Future[NioDatagramChannel],
+      val nettyChannel: NioDatagramChannel,
       promisedRemoteAddress: Promise[InetSocketAddress]
   )(implicit codec: Codec[M])
       extends ChannelInboundHandlerAdapter
       with Channel[InetSocketAddress, M] {
 
-    nettyChannelF.foreach { nettyChannel =>
-      nettyChannel.pipeline().addLast(this)
-    }
+    nettyChannel.pipeline().addLast(this)
 
     private val messageSubscribersF: Future[Subscribers[M]] = for {
       remoteAddress <- promisedRemoteAddress.future
-      nettyChannel <- nettyChannelF
     } yield {
       log.debug(
-        s"NEW CHANNEL CREATED WITH IS ${nettyChannel.id()} from ${nettyChannel.localAddress()} to $remoteAddress"
+        s"New channel created with id ${nettyChannel.id()} from ${nettyChannel.localAddress()} to $remoteAddress"
       )
       activeChannels.getOrElseUpdate(nettyChannel.id, new Subscribers[M])
     }
@@ -98,18 +96,15 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     override def sendMessage(message: M): Task[Unit] =
       for {
         remoteAddress <- Task.fromFuture(promisedRemoteAddress.future)
-        nettyChannel <- Task.fromFuture(nettyChannelF)
         sendResult <- sendMessage(message, remoteAddress, nettyChannel)
       } yield sendResult
 
     override def in: Observable[M] = Await.result(messageSubscribersF, Duration.Inf).messageStream
 
-    override def close(): Task[Unit] =
-      for {
-        nettyChannel <- Task.fromFuture(nettyChannelF)
-      } yield {
-        activeChannels.remove(nettyChannel.id)
-      }
+    override def close(): Task[Unit] = {
+      activeChannels.remove(nettyChannel.id)
+      Task.unit
+    }
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val datagram = msg.asInstanceOf[DatagramPacket]
@@ -122,12 +117,7 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       val pdu: Either[DecodeFailure, PDU[M]] = pduCodec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
       pdu match {
         case Right(PDU(_, sdu)) =>
-          messageSubscribersF.foreach { messageSubscribers =>
-            log.debug(
-              s"NOTIFYING SUBSCRIBERS OF THE PDU: $pdu. Subscriber count = ${messageSubscribers.subscriberSet.size}"
-            )
-            messageSubscribers.notify(sdu)
-          }
+          messageSubscribersF.foreach(messageSubscribers => messageSubscribers.notify(sdu))
         case Left(failure) =>
           log.info(s"Encountered decode failure $failure in inbound message to UDPPeerGroup@'$processAddress'")
       }

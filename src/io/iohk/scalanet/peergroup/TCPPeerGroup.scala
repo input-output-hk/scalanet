@@ -29,7 +29,7 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
   private val log = LoggerFactory.getLogger(getClass)
 
   private val channelSubscribers =
-    new Subscribers[Channel[InetSocketAddress, M]](s"Channel Subscribers for '$processAddress'")
+    new Subscribers[Channel[InetSocketAddress, M]](s"Channel Subscribers for TCPPeerGroup@'$processAddress'")
 
   private val pduCodec = derivePduCodec
 
@@ -39,6 +39,7 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     .group(workerGroup)
     .channel(classOf[NioSocketChannel])
     .option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
+    .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
 
   private val serverBootstrap = new ServerBootstrap()
     .group(workerGroup)
@@ -50,6 +51,7 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       }
     })
     .option[Integer](ChannelOption.SO_BACKLOG, 128)
+    .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
     .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
 
   private val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
@@ -59,7 +61,9 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
   override def processAddress: InetSocketAddress = config.processAddress
 
-  override def client(to: InetSocketAddress): Channel[InetSocketAddress, M] = new ClientChannelImpl(to)
+  override def client(to: InetSocketAddress): Task[Channel[InetSocketAddress, M]] = {
+    new ClientChannelImpl(to).initialize
+  }
 
   override def server(): Observable[Channel[InetSocketAddress, M]] = channelSubscribers.messageStream
 
@@ -91,7 +95,8 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
     private val subscribers = new Subscribers[M]
 
-    clientBootstrap
+    private val bootstrap: Bootstrap = clientBootstrap
+      .clone()
       .handler(new ChannelInitializer[SocketChannel]() {
         def initChannel(ch: SocketChannel): Unit = {
           ch.pipeline()
@@ -110,7 +115,8 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
             .addLast(new MessageNotifier(subscribers))
         }
       })
-      .connect(to)
+
+    def initialize: Task[ClientChannelImpl] = toTask(bootstrap.connect(to)).map(_ => this)
 
     override def sendMessage(message: M): Task[Unit] = {
 

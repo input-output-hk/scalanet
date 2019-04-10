@@ -6,9 +6,11 @@ import io.iohk.scalanet.NetUtils._
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
-import org.scalatest.concurrent.ScalaFutures._
 import io.iohk.decco.auto._
 import monix.execution.Scheduler.Implicits.global
+
+import org.scalatest.concurrent.ScalaFutures._
+import io.iohk.scalanet.TaskValues._
 
 import scala.util.Random
 
@@ -25,7 +27,7 @@ class UDPPeerGroupSpec extends FlatSpec {
     val bobReceived: Future[String] = bob.server().flatMap(channel => channel.in).headL.runToFuture
     bob.server().foreach(channel => channel.sendMessage(bobsMessage).runToFuture)
 
-    val aliceClient = alice.client(bob.processAddress)
+    val aliceClient = alice.client(bob.processAddress).evaluated
     val aliceReceived = aliceClient.in.headL.runToFuture
     aliceClient.sendMessage(alicesMessage).runToFuture
 
