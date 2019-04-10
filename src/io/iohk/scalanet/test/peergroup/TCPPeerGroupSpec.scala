@@ -17,17 +17,22 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   behavior of "TCPPeerGroup"
 
-  it should "send a message to a TCPPeerGroup" in
+  it should "send and receive a message" in
     withTwoRandomTCPPeerGroups { (alice, bob) =>
-      val message: String = Random.nextString(1024 * 1024 * 10)
+      println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
+      val alicesMessage = Random.alphanumeric.take(1024 * 5).mkString
+      val bobsMessage = Random.alphanumeric.take(1024 * 5).mkString
 
-      val bobReceivedF: Future[String] = bob.server().flatMap(channel => channel.in).headL.runToFuture
+      val bobReceived: Future[String] = bob.server().flatMap(channel => channel.in).headL.runToFuture
+      bob.server().foreach(channel => channel.sendMessage(bobsMessage).runToFuture)
 
-      alice.client(bob.processAddress).sendMessage(message).runToFuture
-      val bobReceived = bobReceivedF.futureValue
+      val aliceClient = alice.client(bob.processAddress)
+      val aliceReceived = aliceClient.in.headL.runToFuture
+      aliceClient.sendMessage(alicesMessage).runToFuture
 
-      bobReceived shouldBe message
-    }
+      bobReceived.futureValue shouldBe alicesMessage
+      aliceReceived.futureValue shouldBe bobsMessage
+   }
 
   it should "shutdown a TCPPeerGroup properly" in {
     val tcpPeerGroup = randomTCPPeerGroup

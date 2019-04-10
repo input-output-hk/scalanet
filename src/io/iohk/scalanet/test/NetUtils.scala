@@ -80,7 +80,7 @@ object NetUtils {
   def randomTerminalPeerGroup(t: SimpleTerminalPeerGroup)(implicit scheduler: Scheduler, codec: Codec[String]) =
     t match {
       case TcpTerminalPeerGroup => randomTCPPeerGroup
-      case UdpTerminalPeerGroup => ??? //randomUDPPeerGroup
+      case UdpTerminalPeerGroup => randomUDPPeerGroup
     }
 
   def randomTCPPeerGroup(implicit scheduler: Scheduler, codec: Codec[String]): TCPPeerGroup[String] = {

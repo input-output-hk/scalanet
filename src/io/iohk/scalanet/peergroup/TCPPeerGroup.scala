@@ -28,7 +28,7 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private val channelSubscribers = new Subscribers[Channel[InetSocketAddress, M]]
+  private val channelSubscribers = new Subscribers[Channel[InetSocketAddress, M]](s"Channel Subscribers for '$processAddress'")
 
   private val pduCodec = derivePduCodec
 
@@ -56,7 +56,7 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
   override def initialize(): Task[Unit] =
     toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}"))
 
-  override val processAddress: InetSocketAddress = config.processAddress
+  override def processAddress: InetSocketAddress = config.processAddress
 
   override def client(to: InetSocketAddress): Channel[InetSocketAddress, M] = new ClientChannelImpl(to)
 
@@ -88,11 +88,14 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     private val deactivation = Promise[Unit]()
     private val deactivationF = deactivation.future
 
+    private val subscribers = new Subscribers[M]
+
     clientBootstrap
       .handler(new ChannelInitializer[SocketChannel]() {
         def initChannel(ch: SocketChannel): Unit = {
           ch.pipeline()
             .addLast("frameEncoder", new LengthFieldPrepender(4))
+            .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
             .addLast(new ByteArrayEncoder())
             .addLast(new ChannelInboundHandlerAdapter() {
               override def channelActive(ctx: ChannelHandlerContext): Unit = {
@@ -103,6 +106,7 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
                 deactivation.complete(Success(()))
               }
             })
+            .addLast(new MessageNotifier(subscribers))
         }
       })
       .connect(to)
@@ -117,7 +121,7 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       Task.fromFuture(f)
     }
 
-    override def in: Observable[M] = ???
+    override def in: Observable[M] = subscribers.messageStream
 
     override def close(): Task[Unit] = {
       activationF.foreach(ctx => ctx.close())
@@ -131,8 +135,8 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       pdu match {
         case Right(PDU(_, sdu)) =>
           messageSubscribers.notify(sdu)
-        case _ =>
-          ???
+        case Left(failure) =>
+          log.info(s"Encountered decode failure $failure in inbound message to TCPPeerGroup@'$processAddress'")
       }
     }
   }
@@ -145,6 +149,7 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     nettyChannel
       .pipeline()
       .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
+      .addLast("frameEncoder", new LengthFieldPrepender(4))
       .addLast(new MessageNotifier(messageSubscribers))
 
     override val to: InetSocketAddress = nettyChannel.remoteAddress()

@@ -72,8 +72,12 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       _ <- toTask(workerGroup.shutdownGracefully())
     } yield ()
 
-  private class ChannelImpl(val nettyChannelF: Future[NioDatagramChannel], promisedRemoteAddress: Promise[InetSocketAddress])(implicit codec: Codec[M])
-      extends ChannelInboundHandlerAdapter with Channel[InetSocketAddress, M] {
+  private class ChannelImpl(
+      val nettyChannelF: Future[NioDatagramChannel],
+      promisedRemoteAddress: Promise[InetSocketAddress]
+  )(implicit codec: Codec[M])
+      extends ChannelInboundHandlerAdapter
+      with Channel[InetSocketAddress, M] {
 
     nettyChannelF.foreach { nettyChannel =>
       nettyChannel.pipeline().addLast(this)
@@ -83,49 +87,53 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       remoteAddress <- promisedRemoteAddress.future
       nettyChannel <- nettyChannelF
     } yield {
-      log.debug(s"NEW CHANNEL CREATED WITH IS ${nettyChannel.id()} from ${nettyChannel.localAddress()} to $remoteAddress")
+      log.debug(
+        s"NEW CHANNEL CREATED WITH IS ${nettyChannel.id()} from ${nettyChannel.localAddress()} to $remoteAddress"
+      )
       activeChannels.getOrElseUpdate(nettyChannel.id, new Subscribers[M])
     }
 
     override def to: InetSocketAddress = Await.result(promisedRemoteAddress.future, Duration.Inf)
 
-    override def sendMessage(message: M): Task[Unit] = for {
-      remoteAddress <- Task.fromFuture(promisedRemoteAddress.future)
-      nettyChannel <- Task.fromFuture(nettyChannelF)
-      sendResult <- sendMessage(message, remoteAddress, nettyChannel)
-    } yield sendResult
+    override def sendMessage(message: M): Task[Unit] =
+      for {
+        remoteAddress <- Task.fromFuture(promisedRemoteAddress.future)
+        nettyChannel <- Task.fromFuture(nettyChannelF)
+        sendResult <- sendMessage(message, remoteAddress, nettyChannel)
+      } yield sendResult
 
     override def in: Observable[M] = Await.result(messageSubscribersF, Duration.Inf).messageStream
 
-    override def close(): Task[Unit] = for {
-      nettyChannel <- Task.fromFuture(nettyChannelF)
-    } yield {
-      activeChannels.remove(nettyChannel.id)
-    }
+    override def close(): Task[Unit] =
+      for {
+        nettyChannel <- Task.fromFuture(nettyChannelF)
+      } yield {
+        activeChannels.remove(nettyChannel.id)
+      }
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val datagram = msg.asInstanceOf[DatagramPacket]
       val remoteAddress = datagram.sender()
-      if ( ! promisedRemoteAddress.isCompleted) {
+      if (!promisedRemoteAddress.isCompleted) {
         promisedRemoteAddress.complete(Success(remoteAddress))
         channelSubscribers.notify(this)
       }
 
       val pdu: Either[DecodeFailure, PDU[M]] = pduCodec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
-      println(s"MANAGED TO DECODE A PDU: $pdu")
       pdu match {
         case Right(PDU(_, sdu)) =>
           messageSubscribersF.foreach { messageSubscribers =>
-            log.debug(s"NOTIFYING SUBSCRIBERS OF THE PDU: $pdu. Subscriber count = ${messageSubscribers.subscriberSet.size}")
+            log.debug(
+              s"NOTIFYING SUBSCRIBERS OF THE PDU: $pdu. Subscriber count = ${messageSubscribers.subscriberSet.size}"
+            )
             messageSubscribers.notify(sdu)
           }
-        case _ =>
-          ???
+        case Left(failure) =>
+          log.info(s"Encountered decode failure $failure in inbound message to UDPPeerGroup@'$processAddress'")
       }
     }
 
     private def sendMessage(message: M, to: InetSocketAddress, nettyChannel: NioDatagramChannel): Task[Unit] = {
-      log.debug(s"IN CHANNEL SEND MESSAGE, SENDING to $to. ChannelId is ${nettyChannel.id()} ")
       val pdu = PDU(processAddress, message)
       val nettyBuffer = Unpooled.wrappedBuffer(pduCodec.encode(pdu))
       toTask(nettyChannel.writeAndFlush(new DatagramPacket(nettyBuffer, to, processAddress)))

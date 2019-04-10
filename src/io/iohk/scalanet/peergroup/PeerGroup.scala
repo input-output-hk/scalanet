@@ -14,7 +14,7 @@ trait Channel[A, M] {
 }
 
 sealed trait PeerGroup[A, M] {
-  val processAddress: A
+  def processAddress: A
   def initialize(): Task[Unit]
   def client(to: A): Channel[A, M] // TODO should be Task[Channel]
   def server(): Observable[Channel[A, M]]
