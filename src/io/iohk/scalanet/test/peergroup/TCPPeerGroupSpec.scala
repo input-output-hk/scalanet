@@ -32,7 +32,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
       bobReceived.futureValue shouldBe alicesMessage
       aliceReceived.futureValue shouldBe bobsMessage
-   }
+    }
 
   it should "shutdown a TCPPeerGroup properly" in {
     val tcpPeerGroup = randomTCPPeerGroup

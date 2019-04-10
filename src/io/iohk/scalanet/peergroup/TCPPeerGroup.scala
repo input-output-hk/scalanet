@@ -28,7 +28,8 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private val channelSubscribers = new Subscribers[Channel[InetSocketAddress, M]](s"Channel Subscribers for '$processAddress'")
+  private val channelSubscribers =
+    new Subscribers[Channel[InetSocketAddress, M]](s"Channel Subscribers for '$processAddress'")
 
   private val pduCodec = derivePduCodec
 
