@@ -20,7 +20,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   behavior of "TCPPeerGroup"
 
   it should "send and receive a message" in
-    withTwoRandomTCPPeerGroups { (alice, bob) =>
+    withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
       println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
       val alicesMessage = Random.alphanumeric.take(1024 * 5).mkString
       val bobsMessage = Random.alphanumeric.take(1024 * 5).mkString
@@ -37,7 +37,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     }
 
   it should "shutdown a TCPPeerGroup properly" in {
-    val tcpPeerGroup = randomTCPPeerGroup
+    val tcpPeerGroup = randomTCPPeerGroup[String]
     isListening(tcpPeerGroup.config.bindAddress) shouldBe true
 
     tcpPeerGroup.shutdown().runToFuture.futureValue

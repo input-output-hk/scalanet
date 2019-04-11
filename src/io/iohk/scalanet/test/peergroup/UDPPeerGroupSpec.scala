@@ -20,7 +20,7 @@ class UDPPeerGroupSpec extends FlatSpec {
 
   behavior of "UDPPeerGroup"
 
-  it should "send and receive a large message" in withTwoRandomUDPPeerGroups { (alice, bob) =>
+  it should "send and receive a large message" in withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
     val alicesMessage = Random.alphanumeric.take(1024 * 5).mkString
     val bobsMessage = Random.alphanumeric.take(1024 * 5).mkString
 
@@ -36,7 +36,7 @@ class UDPPeerGroupSpec extends FlatSpec {
   }
 
   it should "shutdown cleanly" in {
-    val pg1 = randomUDPPeerGroup
+    val pg1 = randomUDPPeerGroup[String]
     isListeningUDP(pg1.config.bindAddress) shouldBe true
 
     pg1.shutdown().runToFuture.futureValue

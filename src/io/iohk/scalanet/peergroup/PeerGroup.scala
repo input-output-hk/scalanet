@@ -13,7 +13,7 @@ trait Channel[A, M] {
   def close(): Task[Unit]
 }
 
-sealed trait PeerGroup[A, M] {
+trait PeerGroup[A, M] {
   def processAddress: A
   def initialize(): Task[Unit]
   def client(to: A): Task[Channel[A, M]]
@@ -24,8 +24,6 @@ sealed trait PeerGroup[A, M] {
 object PeerGroup {
 
   abstract class TerminalPeerGroup[A, M](implicit scheduler: Scheduler, codec: Codec[M]) extends PeerGroup[A, M]
-
-  abstract class NonTerminalPeerGroup[A, AA, M, MM](underlyingPeerGroup: PeerGroup[AA, MM]) extends PeerGroup[A, M]
 
   def create[PG](pg: => PG, config: Any): Either[InitializationError, PG] =
     try {
