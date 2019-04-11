@@ -46,9 +46,13 @@ class SimplePeerGroup[A, AA, M](
   override def initialize(): Task[Unit] = {
     routingTable += processAddress -> underLyingPeerGroup.processAddress
 
-    underLyingPeerGroup.server().flatMap(channel => channel.in).collect {
-      case Left(e: EnrolMe[A, AA]) => e
-    }.foreach(handleEnrollment)
+    underLyingPeerGroup
+      .server()
+      .flatMap(channel => channel.in)
+      .collect {
+        case Left(e: EnrolMe[A, AA]) => e
+      }
+      .foreach(handleEnrollment)
 
     if (config.knownPeers.nonEmpty) {
       val (knownPeerAddress, knownPeerAddressUnderlying) = config.knownPeers.head
@@ -83,7 +87,7 @@ class SimplePeerGroup[A, AA, M](
   }
 
   private class ChannelImpl(val to: A, underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]])
-    extends Channel[A, M] {
+      extends Channel[A, M] {
 
     override def sendMessage(message: M): Task[Unit] = underlyingChannel.sendMessage(Right(message))
 

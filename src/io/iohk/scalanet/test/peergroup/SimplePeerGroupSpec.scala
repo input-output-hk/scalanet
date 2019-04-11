@@ -43,19 +43,21 @@ class SimplePeerGroupSpec extends FlatSpec {
         "Alice",
         "Bob"
       ) { (alice, bob) =>
-
         val alicesMessage = "Hi, Bob"
         val bobsMessage = "Hi, Alice"
 
-        val aliceReceived = alice.server().flatMap{ channel =>
-          channel.sendMessage(alicesMessage).runToFuture
-          channel.in
-        }.headL.runToFuture
+        val aliceReceived = alice
+          .server()
+          .flatMap { channel =>
+            channel.sendMessage(alicesMessage).runToFuture
+            channel.in
+          }
+          .headL
+          .runToFuture
 
         val bobsClient: Channel[String, String] = bob.client(alice.processAddress).evaluated
         val bobReceived = bobsClient.in.headL.runToFuture
         bobsClient.sendMessage(bobsMessage).runToFuture
-
 
         aliceReceived.futureValue shouldBe bobsMessage
         bobReceived.futureValue shouldBe alicesMessage
