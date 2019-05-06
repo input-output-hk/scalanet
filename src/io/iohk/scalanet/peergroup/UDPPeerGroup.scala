@@ -35,7 +35,6 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
   private val activeChannels = new ConcurrentHashMap[ChannelId, Subscribers[M]]().asScala
 
-
   /**
     * 64 kilobytes is the theoretical maximum size of a complete IP datagram
     * https://stackoverflow.com/questions/9203403/java-datagrampacket-udp-maximum-send-recv-buffer-size
@@ -114,7 +113,9 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
       codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer()).map { m =>
         messageSubscribersF.foreach { messageSubscribers =>
-          log.debug(s"ChannelId ${ctx.channel().id()}  remote : ${ctx.channel().remoteAddress()} local : ${ctx.channel().localAddress()} NOTIFYING SUBSCRIBERS OF THE Message: $m. Subscriber count = ${messageSubscribers.subscriberSet.size}")
+          log.debug(
+            s"ChannelId ${ctx.channel().id()}  remote : ${ctx.channel().remoteAddress()} local : ${ctx.channel().localAddress()} NOTIFYING SUBSCRIBERS OF THE Message: $m. Subscriber count = ${messageSubscribers.subscriberSet.size}"
+          )
           messageSubscribers.notify(m)
         }
       }
@@ -126,7 +127,6 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     }
 
   }
-
 
   private def toTask(f: util.concurrent.Future[_]): Task[Unit] = {
     val promisedCompletion = Promise[Unit]()

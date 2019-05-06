@@ -1,6 +1,5 @@
 package io.iohk.scalanet.peergroup
 
-
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import io.iohk.scalanet.NetUtils._

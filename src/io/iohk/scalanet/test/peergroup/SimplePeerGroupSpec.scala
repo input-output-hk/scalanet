@@ -23,7 +23,6 @@ class SimplePeerGroupSpec extends FlatSpec {
   behavior of "SimplePeerGroup"
 //
 
-
   it should "send and receive a message to another peer of SimplePeerGroup" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withTwoSimplePeerGroups(
@@ -41,14 +40,14 @@ class SimplePeerGroupSpec extends FlatSpec {
             channel.sendMessage(alicesMessage).runToFuture
             channel.in
           }
-          .headL.runToFuture
+          .headL
+          .runToFuture
 
         val bobsClient: Channel[String, String] = bob.client(alice.processAddress).evaluated
 
         val bobReceived = bobsClient.in.headL.runToFuture
 
         bobsClient.sendMessage(bobsMessage).runToFuture
-
 
         aliceReceived.futureValue shouldBe bobsMessage
         bobReceived.futureValue shouldBe alicesMessage
@@ -57,7 +56,6 @@ class SimplePeerGroupSpec extends FlatSpec {
     }
   }
 
-
   it should "send a message to itself" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withASimplePeerGroup(terminalGroup, "Alice") { alice =>
@@ -65,12 +63,11 @@ class SimplePeerGroupSpec extends FlatSpec {
         val aliceReceived = alice.server().flatMap(_.in).headL.runToFuture
         val aliceClient: Channel[String, String] = alice.client(alice.processAddress).evaluated
         aliceClient.sendMessage(message).runToFuture
-        aliceReceived.futureValue shouldBe  message
+        aliceReceived.futureValue shouldBe message
 
       }
     }
   }
-
 
   it should "send a message to another peer's multicast address" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
@@ -83,25 +80,28 @@ class SimplePeerGroupSpec extends FlatSpec {
         val bobsMessage = "HI Alice"
         val alicesMessage = "HI Bob"
 
-          val aliceReceived = alice
-            .server()
-            .flatMap { channel =>
-              channel.sendMessage(alicesMessage).runToFuture
-              channel.in
-            }.headL.runToFuture
+        val aliceReceived = alice
+          .server()
+          .flatMap { channel =>
+            channel.sendMessage(alicesMessage).runToFuture
+            channel.in
+          }
+          .headL
+          .runToFuture
 
-
-          val bobsClient: Channel[String, String] = bob.client(alice.processAddress).evaluated
-          bobsClient.sendMessage(bobsMessage).runToFuture
-          val bobReceived = bobsClient.in.headL.runToFuture
-          aliceReceived.futureValue shouldBe bobsMessage
-         // bobReceived.futureValue shouldBe alicesMessage
+        val bobsClient: Channel[String, String] = bob.client(alice.processAddress).evaluated
+        bobsClient.sendMessage(bobsMessage).runToFuture
+        val bobReceived = bobsClient.in.headL.runToFuture
+        aliceReceived.futureValue shouldBe bobsMessage
+        // bobReceived.futureValue shouldBe alicesMessage
 
         val bobReceivedNews = bob
           .server()
           .flatMap { channel =>
             channel.in
-          }.headL.runToFuture
+          }
+          .headL
+          .runToFuture
         val messageNews = "Latest News"
         val aliceClient: Channel[String, String] = alice.client(bob.processAddress).evaluated
         aliceClient.sendMessage(messageNews).runToFuture
@@ -112,9 +112,10 @@ class SimplePeerGroupSpec extends FlatSpec {
           .server()
           .flatMap { channel =>
             channel.in
-          }.headL.runToFuture
+          }
+          .headL
+          .runToFuture
         val messageSports = "Sports Updates"
-
 
         val aliceClientNews: Channel[String, String] = alice.client(bob.processAddress).evaluated
 
@@ -124,7 +125,6 @@ class SimplePeerGroupSpec extends FlatSpec {
       }
     }
   }
-
 
 //
 //  it should "send a message to 2 peers sharing a multicast address" in new SimpleTerminalPeerGroups {
@@ -175,7 +175,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 //  }
 
   trait SimpleTerminalPeerGroups {
-    val terminalPeerGroups = List(TcpTerminalPeerGroup /*, UdpTerminalPeerGroup*/)
+    val terminalPeerGroups = List(TcpTerminalPeerGroup /*, UdpTerminalPeerGroup*/ )
   }
 
   private def withASimplePeerGroup(

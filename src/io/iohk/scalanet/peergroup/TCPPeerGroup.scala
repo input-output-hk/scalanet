@@ -77,7 +77,6 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     Task.fromFuture(promisedCompletion.future)
   }
 
-
   private class ClientChannelImpl(val to: InetSocketAddress)(implicit codec: Codec[M])
       extends Channel[InetSocketAddress, M] {
 
@@ -115,10 +114,14 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     override def sendMessage(message: M): Task[Unit] = {
 
       val f: Future[Unit] =
-        activationF.map(ctx => {
-          println(s"****My Remote Address :${ctx.channel().remoteAddress()}  *******${ctx.channel().id()}*****Client*********My Local Address  ${ctx.channel().localAddress()}" )
-          ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
-        }).map(_ => ())
+        activationF
+          .map(ctx => {
+            println(
+              s"****My Remote Address :${ctx.channel().remoteAddress()}  *******${ctx.channel().id()}*****Client*********My Local Address  ${ctx.channel().localAddress()}"
+            )
+            ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
+          })
+          .map(_ => ())
 
       Task.fromFuture(f)
     }
@@ -134,7 +137,10 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
   private class MessageNotifier(val messageSubscribers: Subscribers[M]) extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      println(s"******remote*${ctx.channel().remoteAddress()}***local***${ctx.channel().localAddress()}**message tcp channel read *********${codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())}")
+      println(
+        s"******remote*${ctx.channel().remoteAddress()}***local***${ctx.channel().localAddress()}**message tcp channel read *********${codec
+          .decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())}"
+      )
       codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer()).map(messageSubscribers.notify)
     }
   }
@@ -152,7 +158,8 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     //def getInetSocketAddress = new InetSocketAddress(nettyChannel.remoteAddress().getAddress, config.remoteHostConfig(nettyChannel.remoteAddress().getAddress))
 
     override val to: InetSocketAddress = {
-      println(s"*My remote  Address: ${nettyChannel.remoteAddress()}  **********${nettyChannel.id()}****Server*******My Local Address:  ${nettyChannel.localAddress()}" )
+      println(s"*My remote  Address: ${nettyChannel.remoteAddress()}  **********${nettyChannel
+        .id()}****Server*******My Local Address:  ${nettyChannel.localAddress()}")
 
       nettyChannel.remoteAddress()
     }
@@ -161,8 +168,7 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       toTask({
         nettyChannel
           .writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
-      }
-      )
+      })
     }
 
     override def in: Observable[M] = messageSubscribers.messageStream
@@ -175,10 +181,15 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 }
 
 object TCPPeerGroup {
-  case class Config(bindAddress: InetSocketAddress, processAddress: InetSocketAddress,remoteHostConfig: Map[InetAddress, Int]=Map.empty[InetAddress,Int])
+  case class Config(
+      bindAddress: InetSocketAddress,
+      processAddress: InetSocketAddress,
+      remoteHostConfig: Map[InetAddress, Int] = Map.empty[InetAddress, Int]
+  )
   object Config {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
-    def apply(bindAddress: InetSocketAddress,remoteHostConfig: Map[InetAddress, Int]): Config = Config(bindAddress, bindAddress,remoteHostConfig)
+    def apply(bindAddress: InetSocketAddress, remoteHostConfig: Map[InetAddress, Int]): Config =
+      Config(bindAddress, bindAddress, remoteHostConfig)
   }
 
 }

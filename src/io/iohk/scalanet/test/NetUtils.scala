@@ -102,7 +102,7 @@ object NetUtils {
   )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
 //    val pg1 = randomTCPPeerGroup(scheduler, codec)
 //    val pg2 = randomTCPPeerGroup(scheduler, codec)
-    val(pg1,pg2) =  random2TCPPeerGroup(scheduler,codec)
+    val (pg1, pg2) = random2TCPPeerGroup(scheduler, codec)
     try {
       testCode(pg1, pg2)
     } finally {
@@ -118,15 +118,14 @@ object NetUtils {
     val remoteHostConfig = Map[InetAddress, Int](address.getAddress -> address2.getPort)
     val remoteHostConfig2 = Map[InetAddress, Int](address2.getAddress -> address.getPort)
 
-    val pg1 = new TCPPeerGroup(TCPPeerGroup.Config(address,remoteHostConfig))
-    val pg2 = new TCPPeerGroup(TCPPeerGroup.Config(address2,remoteHostConfig2))
+    val pg1 = new TCPPeerGroup(TCPPeerGroup.Config(address, remoteHostConfig))
+    val pg2 = new TCPPeerGroup(TCPPeerGroup.Config(address2, remoteHostConfig2))
 
     Await.result(pg1.initialize().runToFuture, 10 seconds)
     Await.result(pg2.initialize().runToFuture, 10 seconds)
 
-    (pg1 , pg2)
+    (pg1, pg2)
   }
-
 
   def withTwoRandomUDPPeerGroups[M](
       testCode: (UDPPeerGroup[M], UDPPeerGroup[M]) => Any

@@ -35,10 +35,9 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
       aliceReceived.futureValue shouldBe bobsMessage
     }
 
-
   it should "send and receive a large message" in withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
     println(s"Alice is ${alice.processAddress}, Bob is ${bob.processAddress}")
-    val alicesMessage = "Hi Bob"//Random.alphanumeric.take(1024 * 4).mkString
+    val alicesMessage = "Hi Bob" //Random.alphanumeric.take(1024 * 4).mkString
     val bobsMessage = "Hi Alice" //Random.alphanumeric.take(1024 * 4).mkString
 
     val bobReceived: Future[String] = bob.server().flatMap(channel => channel.in).headL.runToFuture
@@ -51,9 +50,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     bobReceived.futureValue shouldBe alicesMessage
     aliceReceived.futureValue shouldBe bobsMessage
 
-
   }
-
 
   it should "shutdown a TCPPeerGroup properly" in {
     val tcpPeerGroup = randomTCPPeerGroup[String]
