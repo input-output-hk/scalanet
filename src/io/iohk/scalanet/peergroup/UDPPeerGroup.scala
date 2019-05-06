@@ -3,8 +3,7 @@ package io.iohk.scalanet.peergroup
 import java.net.InetSocketAddress
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.decco.auto._
-import io.iohk.decco.{Codec, DecodeFailure, PartialCodec, TypeCode}
+import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.iohk.scalanet.peergroup.UDPPeerGroup._
 import io.netty.bootstrap.Bootstrap
@@ -34,9 +33,8 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
   private val workerGroup = new NioEventLoopGroup()
 
-  private val pduCodec = derivePduCodec
-
   private val activeChannels = new ConcurrentHashMap[ChannelId, Subscribers[M]]().asScala
+
 
   /**
     * 64 kilobytes is the theoretical maximum size of a complete IP datagram
@@ -114,27 +112,21 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
         channelSubscribers.notify(this)
       }
 
-      val pdu: Either[DecodeFailure, PDU[M]] = pduCodec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
-      pdu match {
-        case Right(PDU(_, sdu)) =>
-          messageSubscribersF.foreach(messageSubscribers => messageSubscribers.notify(sdu))
-        case Left(failure) =>
-          log.info(s"Encountered decode failure $failure in inbound message to UDPPeerGroup@'$processAddress'")
+      codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer()).map { m =>
+        messageSubscribersF.foreach { messageSubscribers =>
+          log.debug(s"ChannelId ${ctx.channel().id()}  remote : ${ctx.channel().remoteAddress()} local : ${ctx.channel().localAddress()} NOTIFYING SUBSCRIBERS OF THE Message: $m. Subscriber count = ${messageSubscribers.subscriberSet.size}")
+          messageSubscribers.notify(m)
+        }
       }
     }
 
     private def sendMessage(message: M, to: InetSocketAddress, nettyChannel: NioDatagramChannel): Task[Unit] = {
-      val pdu = PDU(processAddress, message)
-      val nettyBuffer = Unpooled.wrappedBuffer(pduCodec.encode(pdu))
+      val nettyBuffer = Unpooled.wrappedBuffer(codec.encode(message))
       toTask(nettyChannel.writeAndFlush(new DatagramPacket(nettyBuffer, to, processAddress)))
     }
+
   }
 
-  private def derivePduCodec[MessageType](implicit codec: Codec[MessageType]): Codec[PDU[MessageType]] = {
-    implicit val pduTc: TypeCode[PDU[MessageType]] = TypeCode.genTypeCode[PDU, MessageType]
-    implicit val mpc: PartialCodec[MessageType] = codec.partialCodec
-    Codec[PDU[MessageType]]
-  }
 
   private def toTask(f: util.concurrent.Future[_]): Task[Unit] = {
     val promisedCompletion = Promise[Unit]()
@@ -150,5 +142,4 @@ object UDPPeerGroup {
   object Config {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
   }
-  case class PDU[T](replyTo: InetSocketAddress, sdu: T)
 }

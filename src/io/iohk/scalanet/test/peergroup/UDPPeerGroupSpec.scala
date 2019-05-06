@@ -1,5 +1,6 @@
 package io.iohk.scalanet.peergroup
 
+
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import io.iohk.scalanet.NetUtils._
@@ -21,8 +22,8 @@ class UDPPeerGroupSpec extends FlatSpec {
   behavior of "UDPPeerGroup"
 
   it should "send and receive a large message" in withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
-    val alicesMessage = Random.alphanumeric.take(1024 * 5).mkString
-    val bobsMessage = Random.alphanumeric.take(1024 * 5).mkString
+    val alicesMessage = Random.alphanumeric.take(1024 * 4).mkString
+    val bobsMessage = Random.alphanumeric.take(1024 * 4).mkString
 
     val bobReceived: Future[String] = bob.server().flatMap(channel => channel.in).headL.runToFuture
     bob.server().foreach(channel => channel.sendMessage(bobsMessage).runToFuture)

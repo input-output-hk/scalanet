@@ -33,12 +33,22 @@ class SimplePeerGroup[A, AA, M](
   override def processAddress: A = config.processAddress
 
   override def client(to: A): Task[Channel[A, M]] =
-    underLyingPeerGroup.client(routingTable(to)).map(underlyingChannel => new ChannelImpl(to, underlyingChannel))
+    underLyingPeerGroup.client(routingTable(to)).map{
+      underlyingChannel =>
+      println("***underlyingChannel*******" + underlyingChannel)
+        new ChannelImpl(to, underlyingChannel)
+    }
 
-  override def server(): Observable[Channel[A, M]] = underLyingPeerGroup.server().map {
-    underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]] =>
-      val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
-      new ChannelImpl(reverseLookup(underlyingChannel.to), underlyingChannel)
+  override def server(): Observable[Channel[A, M]] = {
+   underLyingPeerGroup.server().map {underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]] =>
+     //    val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
+      //
+      //new ChannelImpl(reverseLookup(underlyingChannel.to), underlyingChannel)
+        println("***processAddress*******" + processAddress)
+        new ChannelImpl(processAddress, underlyingChannel)
+
+    }
+
   }
 
   override def shutdown(): Task[Unit] = underLyingPeerGroup.shutdown()
@@ -91,9 +101,12 @@ class SimplePeerGroup[A, AA, M](
 
     override def sendMessage(message: M): Task[Unit] = underlyingChannel.sendMessage(Right(message))
 
-    override def in: Observable[M] = underlyingChannel.in.collect {
-      case Right(message) =>
+    override def in: Observable[M] = {
+        underlyingChannel.in.collect {
+        case Right(message) =>
+        println( underlyingChannel+ "*******In Underline channel**********" + message)
         message
+      }
     }
 
     override def close(): Task[Unit] =

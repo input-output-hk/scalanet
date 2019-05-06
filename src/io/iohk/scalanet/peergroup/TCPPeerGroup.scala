@@ -1,11 +1,10 @@
 package io.iohk.scalanet.peergroup
 
-import java.net.InetSocketAddress
+import java.net.{InetAddress, InetSocketAddress}
 
-import io.iohk.decco.{Codec, DecodeFailure, PartialCodec, TypeCode}
-import io.iohk.decco.auto._
+import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
-import io.iohk.scalanet.peergroup.TCPPeerGroup.{Config, PDU}
+import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
 import io.netty.channel._
@@ -30,8 +29,6 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
   private val channelSubscribers =
     new Subscribers[Channel[InetSocketAddress, M]](s"Channel Subscribers for TCPPeerGroup@'$processAddress'")
-
-  private val pduCodec = derivePduCodec
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -69,6 +66,7 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
   override def shutdown(): Task[Unit] =
     for {
+
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
     } yield ()
@@ -79,11 +77,6 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     Task.fromFuture(promisedCompletion.future)
   }
 
-  private def derivePduCodec(implicit codec: Codec[M]): Codec[PDU[M]] = {
-    implicit val pduTc: TypeCode[PDU[M]] = TypeCode.genTypeCode[PDU, M]
-    implicit val mpc: PartialCodec[M] = codec.partialCodec
-    Codec[PDU[M]]
-  }
 
   private class ClientChannelImpl(val to: InetSocketAddress)(implicit codec: Codec[M])
       extends Channel[InetSocketAddress, M] {
@@ -113,6 +106,7 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
               }
             })
             .addLast(new MessageNotifier(subscribers))
+
         }
       })
 
@@ -120,10 +114,11 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
     override def sendMessage(message: M): Task[Unit] = {
 
-      val pdu = PDU(processAddress, message)
-
       val f: Future[Unit] =
-        activationF.map(ctx => ctx.writeAndFlush(Unpooled.wrappedBuffer(pduCodec.encode(pdu)))).map(_ => ())
+        activationF.map(ctx => {
+          println(s"****My Remote Address :${ctx.channel().remoteAddress()}  *******${ctx.channel().id()}*****Client*********My Local Address  ${ctx.channel().localAddress()}" )
+          ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
+        }).map(_ => ())
 
       Task.fromFuture(f)
     }
@@ -134,17 +129,13 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       activationF.foreach(ctx => ctx.close())
       Task.fromFuture(deactivationF)
     }
+
   }
 
   private class MessageNotifier(val messageSubscribers: Subscribers[M]) extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      val pdu: Either[DecodeFailure, PDU[M]] = pduCodec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
-      pdu match {
-        case Right(PDU(_, sdu)) =>
-          messageSubscribers.notify(sdu)
-        case Left(failure) =>
-          log.info(s"Encountered decode failure $failure in inbound message to TCPPeerGroup@'$processAddress'")
-      }
+      println(s"******remote*${ctx.channel().remoteAddress()}***local***${ctx.channel().localAddress()}**message tcp channel read *********${codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())}")
+      codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer()).map(messageSubscribers.notify)
     }
   }
 
@@ -158,14 +149,19 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
       .addLast("frameEncoder", new LengthFieldPrepender(4))
       .addLast(new MessageNotifier(messageSubscribers))
+    //def getInetSocketAddress = new InetSocketAddress(nettyChannel.remoteAddress().getAddress, config.remoteHostConfig(nettyChannel.remoteAddress().getAddress))
 
-    override val to: InetSocketAddress = nettyChannel.remoteAddress()
+    override val to: InetSocketAddress = {
+      println(s"*My remote  Address: ${nettyChannel.remoteAddress()}  **********${nettyChannel.id()}****Server*******My Local Address:  ${nettyChannel.localAddress()}" )
+
+      nettyChannel.remoteAddress()
+    }
 
     override def sendMessage(message: M): Task[Unit] = {
-      val pdu = PDU(processAddress, message)
-      toTask(
+      toTask({
         nettyChannel
-          .writeAndFlush(Unpooled.wrappedBuffer(pduCodec.encode(pdu)))
+          .writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
+      }
       )
     }
 
@@ -174,16 +170,15 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     override def close(): Task[Unit] = {
       toTask(nettyChannel.close())
     }
+
   }
 }
 
 object TCPPeerGroup {
-
-  case class Config(bindAddress: InetSocketAddress, processAddress: InetSocketAddress)
-
+  case class Config(bindAddress: InetSocketAddress, processAddress: InetSocketAddress,remoteHostConfig: Map[InetAddress, Int]=Map.empty[InetAddress,Int])
   object Config {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
+    def apply(bindAddress: InetSocketAddress,remoteHostConfig: Map[InetAddress, Int]): Config = Config(bindAddress, bindAddress,remoteHostConfig)
   }
 
-  case class PDU[T](replyTo: InetSocketAddress, sdu: T)
 }
