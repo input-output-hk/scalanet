@@ -23,12 +23,12 @@ import scala.concurrent.{Future, Promise}
 import scala.util.Success
 
 class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: Codec[M])
-    extends TerminalPeerGroup[InetSocketAddress, M]() {
+    extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
   private val channelSubscribers =
-    new Subscribers[Channel[InetSocketAddress, M]](s"Channel Subscribers for TCPPeerGroup@'$processAddress'")
+    new Subscribers[Channel[InetMultiAddress, M]](s"Channel Subscribers for TCPPeerGroup@'$processAddress'")
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -45,6 +45,8 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       override def initChannel(ch: SocketChannel): Unit = {
         val newChannel = new ServerChannelImpl(ch)
         channelSubscribers.notify(newChannel)
+        log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}. " +
+          s"Notified ${channelSubscribers.subscriberSet.size} subscribers.")
       }
     })
     .option[Integer](ChannelOption.SO_BACKLOG, 128)
@@ -56,13 +58,13 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
   override def initialize(): Task[Unit] =
     toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}"))
 
-  override def processAddress: InetSocketAddress = config.processAddress
+  override def processAddress: InetMultiAddress = config.processAddress
 
-  override def client(to: InetSocketAddress): Task[Channel[InetSocketAddress, M]] = {
-    new ClientChannelImpl(to).initialize
+  override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
+    new ClientChannelImpl(to.inetSocketAddress).initialize
   }
 
-  override def server(): Observable[Channel[InetSocketAddress, M]] = channelSubscribers.messageStream
+  override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubscribers.messageStream
 
   override def shutdown(): Task[Unit] =
     for {
@@ -77,8 +79,10 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     Task.fromFuture(promisedCompletion.future)
   }
 
-  private class ClientChannelImpl(val to: InetSocketAddress)(implicit codec: Codec[M])
-      extends Channel[InetSocketAddress, M] {
+  private class ClientChannelImpl(inetSocketAddress: InetSocketAddress)(implicit codec: Codec[M])
+      extends Channel[InetMultiAddress, M] {
+
+    val to: InetMultiAddress = InetMultiAddress(inetSocketAddress)
 
     private val activation = Promise[ChannelHandlerContext]()
     private val activationF = activation.future
@@ -109,15 +113,16 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
         }
       })
 
-    def initialize: Task[ClientChannelImpl] = toTask(bootstrap.connect(to)).map(_ => this)
+    def initialize: Task[ClientChannelImpl] = toTask(bootstrap.connect(inetSocketAddress)).map(_ => this)
 
     override def sendMessage(message: M): Task[Unit] = {
 
       val f: Future[Unit] =
         activationF
           .map(ctx => {
-            println(
-              s"****My Remote Address :${ctx.channel().remoteAddress()}  *******${ctx.channel().id()}*****Client*********My Local Address  ${ctx.channel().localAddress()}"
+            log.debug(
+              s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
+                s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
             )
             ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
           })
@@ -137,16 +142,16 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
   private class MessageNotifier(val messageSubscribers: Subscribers[M]) extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      println(
-        s"******remote*${ctx.channel().remoteAddress()}***local***${ctx.channel().localAddress()}**message tcp channel read *********${codec
-          .decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())}"
+      log.debug(
+        s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
+          s"to local address ${ctx.channel().localAddress()}"
       )
-      codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer()).map(messageSubscribers.notify)
+      codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer()).foreach(messageSubscribers.notify)
     }
   }
 
   private class ServerChannelImpl(val nettyChannel: SocketChannel)(implicit codec: Codec[M])
-      extends Channel[InetSocketAddress, M] {
+      extends Channel[InetMultiAddress, M] {
 
     private val messageSubscribers = new Subscribers[M]
 
@@ -155,14 +160,8 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
       .addLast("frameEncoder", new LengthFieldPrepender(4))
       .addLast(new MessageNotifier(messageSubscribers))
-    //def getInetSocketAddress = new InetSocketAddress(nettyChannel.remoteAddress().getAddress, config.remoteHostConfig(nettyChannel.remoteAddress().getAddress))
 
-    override val to: InetSocketAddress = {
-      println(s"*My remote  Address: ${nettyChannel.remoteAddress()}  **********${nettyChannel
-        .id()}****Server*******My Local Address:  ${nettyChannel.localAddress()}")
-
-      nettyChannel.remoteAddress()
-    }
+    override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
       toTask({
@@ -182,14 +181,12 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
 object TCPPeerGroup {
   case class Config(
-      bindAddress: InetSocketAddress,
-      processAddress: InetSocketAddress,
-      remoteHostConfig: Map[InetAddress, Int] = Map.empty[InetAddress, Int]
+                     bindAddress: InetSocketAddress,
+                     processAddress: InetMultiAddress,
+                     remoteHostConfig: Map[InetAddress, Int] = Map.empty[InetAddress, Int]
   )
   object Config {
-    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
-    def apply(bindAddress: InetSocketAddress, remoteHostConfig: Map[InetAddress, Int]): Config =
-      Config(bindAddress, bindAddress, remoteHostConfig)
+    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, new InetMultiAddress(bindAddress))
   }
 
 }

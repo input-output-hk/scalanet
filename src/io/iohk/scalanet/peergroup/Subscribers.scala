@@ -19,7 +19,6 @@ private[scalanet] class Subscribers[T](id: String = "") {
     })
 
   def notify(t: T): Unit = {
-    println("********notification******" + t)
     subscriberSet.foreach(_.onNext(t))
   }
 }

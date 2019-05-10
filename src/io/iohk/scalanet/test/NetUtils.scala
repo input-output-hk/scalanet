@@ -4,7 +4,7 @@ import java.net._
 import java.nio.ByteBuffer
 
 import io.iohk.decco.Codec
-import io.iohk.scalanet.peergroup.{PeerGroup, TCPPeerGroup, UDPPeerGroup}
+import io.iohk.scalanet.peergroup.{InetMultiAddress, PeerGroup, TCPPeerGroup, UDPPeerGroup}
 import monix.execution.Scheduler
 
 import scala.concurrent.Await
@@ -79,7 +79,7 @@ object NetUtils {
 
   def randomTerminalPeerGroup[M](
       t: SimpleTerminalPeerGroup
-  )(implicit scheduler: Scheduler, codec: Codec[M]): PeerGroup[InetSocketAddress, M] =
+  )(implicit scheduler: Scheduler, codec: Codec[M]): PeerGroup[InetMultiAddress, M] =
     t match {
       case TcpTerminalPeerGroup => randomTCPPeerGroup
       case UdpTerminalPeerGroup => randomUDPPeerGroup
@@ -115,11 +115,8 @@ object NetUtils {
     val address = aRandomAddress()
     val address2 = aRandomAddress()
 
-    val remoteHostConfig = Map[InetAddress, Int](address.getAddress -> address2.getPort)
-    val remoteHostConfig2 = Map[InetAddress, Int](address2.getAddress -> address.getPort)
-
-    val pg1 = new TCPPeerGroup(TCPPeerGroup.Config(address, remoteHostConfig))
-    val pg2 = new TCPPeerGroup(TCPPeerGroup.Config(address2, remoteHostConfig2))
+    val pg1 = new TCPPeerGroup(TCPPeerGroup.Config(address))
+    val pg2 = new TCPPeerGroup(TCPPeerGroup.Config(address2))
 
     Await.result(pg1.initialize().runToFuture, 10 seconds)
     Await.result(pg2.initialize().runToFuture, 10 seconds)
