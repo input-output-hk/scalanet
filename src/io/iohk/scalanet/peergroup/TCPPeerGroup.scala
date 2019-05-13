@@ -2,7 +2,7 @@ package io.iohk.scalanet.peergroup
 
 import java.net.{InetAddress, InetSocketAddress}
 
-import io.iohk.decco.Codec
+import io.iohk.decco.{Codec, DecodeFailure}
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.iohk.scalanet.peergroup.TCPPeerGroup.Config
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
@@ -45,8 +45,7 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       override def initChannel(ch: SocketChannel): Unit = {
         val newChannel = new ServerChannelImpl(ch)
         channelSubscribers.notify(newChannel)
-        log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}. " +
-          s"Notified ${channelSubscribers.subscriberSet.size} subscribers.")
+        log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })
     .option[Integer](ChannelOption.SO_BACKLOG, 128)
@@ -142,11 +141,13 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
   private class MessageNotifier(val messageSubscribers: Subscribers[M]) extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
+      val messageE: Either[DecodeFailure, M] = codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
       log.debug(
         s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
-          s"to local address ${ctx.channel().localAddress()}"
+          s"to local address ${ctx.channel().localAddress()}, ${messageE.getOrElse("decode failed")}"
       )
-      codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer()).foreach(messageSubscribers.notify)
+
+      messageE.foreach(messageSubscribers.notify)
     }
   }
 

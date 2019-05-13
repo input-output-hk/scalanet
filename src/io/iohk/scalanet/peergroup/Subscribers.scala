@@ -1,24 +1,13 @@
 package io.iohk.scalanet.peergroup
 
-import java.util.concurrent.CopyOnWriteArraySet
+import monix.execution.Scheduler
+import monix.reactive.subjects.{ReplaySubject}
 
-import monix.reactive.{Observable, OverflowStrategy}
-import monix.reactive.observers.Subscriber
+private[scalanet] class Subscribers[T](id: String = "")(implicit scheduler: Scheduler) {
 
-import scala.collection.mutable
-import scala.collection.JavaConverters._
-
-private[scalanet] class Subscribers[T](id: String = "") {
-  val subscriberSet: mutable.Set[Subscriber.Sync[T]] =
-    new CopyOnWriteArraySet[Subscriber.Sync[T]]().asScala
-
-  val messageStream: Observable[T] =
-    Observable.create(overflowStrategy = OverflowStrategy.Unbounded)((subscriber: Subscriber.Sync[T]) => {
-      subscriberSet.add(subscriber)
-      () => subscriberSet.remove(subscriber)
-    })
+  val messageStream = ReplaySubject[T]()
 
   def notify(t: T): Unit = {
-    subscriberSet.foreach(_.onNext(t))
+    messageStream.onNext(t)
   }
 }

@@ -115,8 +115,7 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
         messageSubscribersF.foreach { messageSubscribers =>
           log.debug(
             s"Processing inbound message from remote address remote ${ctx.channel().remoteAddress()} " +
-              s"to local address ${ctx.channel().localAddress()} via channel id ChannelId ${ctx.channel().id()}. " +
-              s"Notifying ${messageSubscribers.subscriberSet.size} subscribers."
+              s"to local address ${ctx.channel().localAddress()} via channel id ChannelId ${ctx.channel().id()}."
           )
           messageSubscribers.notify(m)
         }
