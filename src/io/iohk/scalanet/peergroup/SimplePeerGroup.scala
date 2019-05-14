@@ -40,7 +40,10 @@ class SimplePeerGroup[A, AA, M](
   override def server(): Observable[Channel[A, M]] = {
     underLyingPeerGroup.server().map { underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]] =>
       val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
-      new ChannelImpl(reverseLookup(underlyingChannel.to), underlyingChannel)
+      val a = reverseLookup(underlyingChannel.to)
+      debug(s"Received new server channel from $a " +
+        s"with underlying id ${underlyingChannel.asInstanceOf[TCPPeerGroup.ServerChannelImpl[Either[ControlMessage[A, AA], M]]].nettyChannel.id()}")
+      new ChannelImpl(a, underlyingChannel)
     }
   }
 
@@ -68,7 +71,7 @@ class SimplePeerGroup[A, AA, M](
           case Left(e: Enrolled[A, AA]) =>
             routingTable.clear()
             routingTable ++= e.routingTable
-            log.debug(
+            debug(
               s"Peer address '$processAddress' enrolled into group and installed new routing table:\n${e.routingTable}"
             )
         }
@@ -99,7 +102,7 @@ class SimplePeerGroup[A, AA, M](
     override def in: Observable[M] = {
       underlyingChannel.in.collect {
         case Right(message) =>
-          log.debug(s"Processing inbound message from remote address $to to local address $processAddress, $message")
+          debug(s"Processing inbound message from remote address $to to local address $processAddress, $message")
           message
       }
     }
@@ -126,11 +129,15 @@ class SimplePeerGroup[A, AA, M](
     }
   }
 
-  private def notifyPeer(address: A, underlyingAddress: AA) = {
+  private def notifyPeer(address: A, underlyingAddress: AA): Unit = {
     val enrolledReply = Enrolled(address, underlyingAddress, routingTable.toMap, multiCastTable.toMap)
     underLyingPeerGroup
       .client(underlyingAddress)
       .foreach(channel => channel.sendMessage(Left(enrolledReply)).runToFuture)
+  }
+
+  private def debug(logMsg: String): Unit = {
+    log.debug(s"@$processAddress $logMsg")
   }
 }
 

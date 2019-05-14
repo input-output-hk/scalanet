@@ -1,7 +1,7 @@
 package io.iohk.scalanet.peergroup
 
 import io.iohk.decco._
-import io.iohk.scalanet.peergroup.SimplestPeerGroup.Config
+import io.iohk.scalanet.peergroup.SimplestPeerGroup.{Config, ControlMessage}
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
@@ -9,11 +9,13 @@ import org.slf4j.LoggerFactory
 
 /**
   * Trivial example of a higher-level peer group.
-  * There is no enrollment process. Instances must be configured with a static table of all known peers.
+  * Demonstrates the mapping of addresses and messages to an underlying transport
+  * where control messages may be sent in addition to those from the user.
+  * There is no enrollment process. Instances are configured with a static table of all known peers.
   */
 class SimplestPeerGroup[A, AA, M](
                                    val config: Config[A, AA],
-                                   underLyingPeerGroup: PeerGroup[AA, M]
+                                   underLyingPeerGroup: PeerGroup[AA, Either[ControlMessage[A, AA], M]]
                                  )(
                                    implicit aCodec: Codec[A],
                                    aaCodec: Codec[AA],
@@ -45,16 +47,16 @@ class SimplestPeerGroup[A, AA, M](
     Task.unit
   }
 
-  private class ChannelImpl(val to: A, underlyingChannel: Channel[AA, M])
+  private class ChannelImpl(val to: A, underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]])
     extends Channel[A, M] {
 
     override def sendMessage(message: M): Task[Unit] = {
-      underlyingChannel.sendMessage(message)
+      underlyingChannel.sendMessage(Right(message))
     }
 
     override def in: Observable[M] = {
       underlyingChannel.in.collect {
-        case message =>
+        case Right(message) =>
           log.debug(s"Processing inbound message from remote address $to to local address $processAddress, $message")
           message
       }
@@ -66,5 +68,11 @@ class SimplestPeerGroup[A, AA, M](
 }
 
 object SimplestPeerGroup {
+
+  sealed trait ControlMessage[A, AA]
+
+  // Not used. Included because codec derivation does not work for empty sealed traits.
+  case class CM1[A, AA]() extends ControlMessage[A, AA]
+
   case class Config[A, AA](processAddress: A, knownPeers: Map[A, AA])
 }
