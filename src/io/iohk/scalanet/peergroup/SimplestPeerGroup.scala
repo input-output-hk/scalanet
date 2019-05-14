@@ -9,8 +9,11 @@ import org.slf4j.LoggerFactory
 
 /**
   * Trivial example of a higher-level peer group.
-  * Demonstrates the mapping of addresses and messages to an underlying transport
-  * where control messages may be sent in addition to those from the user.
+  * Demonstrates
+  * 1. the mapping of addresses to an underlying address scheme.
+  * 2. the mapping of channel and message notifications from an underlying peer group.
+  * 3. The use of Either to support both user and internal/control message protocols on
+  *    the same underlying peer group.
   * There is no enrollment process. Instances are configured with a static table of all known peers.
   */
 class SimplestPeerGroup[A, AA, M](
