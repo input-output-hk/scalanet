@@ -17,6 +17,7 @@ import io.netty.util
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
+import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
 
 import scala.concurrent.{Future, Promise}
@@ -27,8 +28,9 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private val channelSubscribers =
-    new Subscribers[Channel[InetMultiAddress, M]](s"Channel Subscribers for TCPPeerGroup@'$processAddress'")
+  private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
+
+//    new Subscribers[Channel[InetMultiAddress, M]](s"Channel Subscribers for TCPPeerGroup@'$processAddress'")
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -44,7 +46,7 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
         val newChannel = new ServerChannelImpl[M](ch)
-        channelSubscribers.notify(newChannel)
+        channelSubject.onNext(newChannel)
         log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })
@@ -63,10 +65,10 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap).initialize
   }
 
-  override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubscribers.messageStream
+  override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
 
   override def shutdown(): Task[Unit] = {
-    channelSubscribers.onComplete()
+    channelSubject.onComplete()
     for {
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
@@ -92,13 +94,14 @@ object TCPPeerGroup {
 
     log.debug(s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}")
 
-    private val messageSubscribers = new Subscribers[M](s"Subscribers for ServerChannelImpl@${nettyChannel.id}")
+    private val messageSubject = ReplaySubject[M]()
+      //new Subscribers[M](s"Subscribers for ServerChannelImpl@${nettyChannel.id}")
 
     nettyChannel
       .pipeline()
       .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
       .addLast("frameEncoder", new LengthFieldPrepender(4))
-      .addLast(new MessageNotifier(messageSubscribers))
+      .addLast(new MessageNotifier(messageSubject))
 
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
@@ -109,10 +112,10 @@ object TCPPeerGroup {
       })
     }
 
-    override def in: Observable[M] = messageSubscribers.messageStream
+    override def in: Observable[M] = messageSubject
 
     override def close(): Task[Unit] = {
-      messageSubscribers.onComplete()
+      messageSubject.onComplete()
       toTask(nettyChannel.close())
     }
   }
@@ -129,7 +132,7 @@ object TCPPeerGroup {
     private val deactivation = Promise[Unit]()
     private val deactivationF = deactivation.future
 
-    private val subscribers = new Subscribers[M]
+    private val messageSubject = ReplaySubject[M]()
 
     private val bootstrap: Bootstrap = clientBootstrap
       .clone()
@@ -150,7 +153,7 @@ object TCPPeerGroup {
                 deactivation.complete(Success(()))
               }
             })
-            .addLast(new MessageNotifier[M](subscribers))
+            .addLast(new MessageNotifier[M](messageSubject))
         }
       })
 
@@ -172,21 +175,21 @@ object TCPPeerGroup {
       Task.fromFuture(f)
     }
 
-    override def in: Observable[M] = subscribers.messageStream
+    override def in: Observable[M] = messageSubject
 
     override def close(): Task[Unit] = {
-      subscribers.onComplete()
+      messageSubject.onComplete()
       activationF.foreach(ctx => ctx.close())
       Task.fromFuture(deactivationF)
     }
   }
 
-  private class MessageNotifier[M](val messageSubscribers: Subscribers[M])(implicit codec: Codec[M]) extends ChannelInboundHandlerAdapter {
+  private class MessageNotifier[M](val messageSubject: Subject[M, M])(implicit codec: Codec[M]) extends ChannelInboundHandlerAdapter {
 
     private val log = LoggerFactory.getLogger(getClass)
 
     override def channelInactive(channelHandlerContext: ChannelHandlerContext): Unit =
-      messageSubscribers.onComplete()
+      messageSubject.onComplete()
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val messageE: Either[DecodeFailure, M] = codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
@@ -196,7 +199,7 @@ object TCPPeerGroup {
       )
 
       messageE.foreach { message =>
-        messageSubscribers.notify(message)
+        messageSubject.onNext(message)
       }
     }
   }

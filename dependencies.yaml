@@ -6,17 +6,10 @@ dependencies:
     monix:
       version: "3.0.0-RC2"
       lang: scala
-    monix-cats:
-      version: "2.3.3"
-      lang: scala
   io.netty:
     netty-all:
       version: "4.1.28.Final"
       lang: java
-  org.typelevel:
-    cats-core:
-      version: "1.6.0"
-      lang: scala
   com.chuusai:
     shapeless:
       lang: scala

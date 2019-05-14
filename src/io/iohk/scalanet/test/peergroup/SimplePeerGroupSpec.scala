@@ -43,7 +43,6 @@ class SimplePeerGroupSpec extends FlatSpec {
 
         val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
         aliceClient.sendMessage(alicesMessage).evaluated
-//        aliceClient.close()
 
         bobReceived.futureValue shouldBe alicesMessage
         aliceReceived.futureValue shouldBe bobsMessage

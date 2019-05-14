@@ -9,7 +9,6 @@ private[scalanet] class Subscribers[T](id: String = "")(implicit scheduler: Sche
 
 //  import monix.reactive.subjects.PublishSubject
 //  val messageStream = PublishSubject[T]()
-
   def notify(t: T): Unit = {
     messageStream.onNext(t)
   }
