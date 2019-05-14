@@ -2,7 +2,7 @@
 
 ROOT=`pwd`
 
-BAZEL_DEPS_REPO="https://github.com/marcesquerra/bazel-deps.git"
+BAZEL_DEPS_REPO="https://github.com/input-output-hk/bazel-deps.git"
 BAZEL_DEPS_COMMIT="b9baec69bdbaae53743a7c0b69828a9c66f6a624"
 IDENTIFIER="$BAZEL_DEPS_REPO|$BAZEL_DEPS_COMMIT"
 
