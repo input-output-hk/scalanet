@@ -21,6 +21,19 @@ class SimplePeerGroupSpec extends FlatSpec {
 
   behavior of "SimplePeerGroup"
 
+  it should "send a message to itself" in new SimpleTerminalPeerGroups {
+    terminalPeerGroups.foreach { terminalGroup =>
+      withASimplePeerGroup(terminalGroup, "Alice") { alice =>
+        val message = Random.alphanumeric.take(1044).mkString
+        val aliceReceived = alice.server().mergeMap(_.in).headL.runToFuture
+        val aliceClient: Channel[String, String] = alice.client(alice.processAddress).evaluated
+        aliceClient.sendMessage(message).runToFuture
+        aliceReceived.futureValue shouldBe message
+      }
+    }
+  }
+
+
   it should "send and receive a message to another peer of SimplePeerGroup" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withTwoSimplePeerGroups(
@@ -46,17 +59,7 @@ class SimplePeerGroupSpec extends FlatSpec {
     }
   }
 
-  it should "send a message to itself" in new SimpleTerminalPeerGroups {
-    terminalPeerGroups.foreach { terminalGroup =>
-      withASimplePeerGroup(terminalGroup, "Alice") { alice =>
-        val message = Random.alphanumeric.take(1044).mkString
-        val aliceReceived = alice.server().mergeMap(_.in).headL.runToFuture
-        val aliceClient: Channel[String, String] = alice.client(alice.processAddress).evaluated
-        aliceClient.sendMessage(message).runToFuture
-        aliceReceived.futureValue shouldBe message
-      }
-    }
-  }
+
 
   it should "send a message to another peer's multicast address" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
@@ -103,11 +106,9 @@ class SimplePeerGroupSpec extends FlatSpec {
         val bobClient = bob.client(alice.processAddress).evaluated
 
         bobClient.sendMessage(messageNews).evaluated
-
         aliceReceivedNews.futureValue shouldBe messageNews
 
         bobClient.sendMessage(messageSports).evaluated
-
         aliceMessageSports.futureValue shouldBe messageSports
 
       }
