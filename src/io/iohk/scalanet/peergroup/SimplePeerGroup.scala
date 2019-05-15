@@ -32,17 +32,22 @@ class SimplePeerGroup[A, AA, M](
 
   override def processAddress: A = config.processAddress
 
-  override def client(to: A): Task[Channel[A, M]] =
-    underLyingPeerGroup.client(routingTable(to)).map { underlyingChannel =>
-      new ChannelImpl(to, underlyingChannel)
-    }
+  override def client(to: A): Task[Channel[A, M]] = {
+    val underlyingAddresses: List[AA] = if (routingTable.contains(to)) List(routingTable(to)) else multiCastTable(to)
+
+    val underlyingChannels: Task[List[Channel[AA, Either[ControlMessage[A, AA], M]]]] =
+      Task.sequence(underlyingAddresses.map { aa =>
+        underLyingPeerGroup.client(aa)
+      })
+    underlyingChannels.map(new ChannelImpl(to, _))
+  }
 
   override def server(): Observable[Channel[A, M]] = {
     underLyingPeerGroup.server().map { underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]] =>
       val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
       val a = reverseLookup(underlyingChannel.to)
       debug(s"Received new server channel from $a")
-      new ChannelImpl(a, underlyingChannel)
+      new ChannelImpl(a, List(underlyingChannel))
     }
   }
 
@@ -91,14 +96,14 @@ class SimplePeerGroup[A, AA, M](
     }
   }
 
-  private class ChannelImpl(val to: A, underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]])
+  private class ChannelImpl(val to: A, underlyingChannel: List[Channel[AA, Either[ControlMessage[A, AA], M]]])
       extends Channel[A, M] {
 
     override def sendMessage(message: M): Task[Unit] = {
       debug(
         s" ++++++SimplePeerGroup sendMessage  message from local address $processAddress to remote address $to  , $message"
       )
-      underlyingChannel.sendMessage(Right(message))
+      Task.sequence(underlyingChannel.map(_.sendMessage(Right(message)))).map(_ => ())
     }
 
     override def in: Observable[M] = {
@@ -106,17 +111,30 @@ class SimplePeerGroup[A, AA, M](
         s" ++++++IN++++++++SimplePeerGroup Processing inbound message from remote address $to to local address $processAddress"
       )
 
-      underlyingChannel.in.collect {
-        case Right(message) =>
-          debug(
-            s" ++++++SimplePeerGroup Processing inbound message from remote address $to to local address $processAddress, $message"
-          )
-          message
-      }
+      Observable
+        .fromIterable(underlyingChannel.map {
+          _.in.collect {
+            case Right(message) =>
+              debug(
+                s" ++++++SimplePeerGroup Processing inbound message from remote address $to to local address $processAddress, $message"
+              )
+              message
+          }
+        })
+        .merge
+
+//      underlyingChannel.foldLeft(Observable.empty)(x => x)
+//      underlyingChannel.in.collect {
+//        case Right(message) =>
+//          debug(
+//            s" ++++++SimplePeerGroup Processing inbound message from remote address $to to local address $processAddress, $message"
+//          )
+//          message
+//      }
     }
 
     override def close(): Task[Unit] =
-      underlyingChannel.close()
+      Task.sequence(underlyingChannel.map(_.close())).map(_ => ())
   }
 
   private def handleEnrollment(enrolMe: EnrolMe[A, AA]): Unit = {
