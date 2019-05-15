@@ -32,18 +32,16 @@ class SimplePeerGroupSpec extends FlatSpec {
         val alicesMessage = "hi bob, from alice"
         val bobsMessage = "hi alice, from bob"
 
-        val bobReceived: Future[String] = bob
-          .server()
+        val bobReceived: Future[String] = bob.server()
           .flatMap(channel => channel.in)
           .filter(msg => msg == alicesMessage)
-          .headL
-          .runToFuture
-
-        val aliceClient = alice.client(bob.processAddress).evaluated
-        val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
+          .headL.runToFuture
 
         bob.server().foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
+        val aliceClient = alice.client(bob.processAddress).evaluated
+
+        val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
         aliceClient.sendMessage(alicesMessage).evaluated
 
         bobReceived.futureValue shouldBe alicesMessage
@@ -169,7 +167,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 //  }
 
   trait SimpleTerminalPeerGroups {
-    val terminalPeerGroups = List(UdpTerminalPeerGroup /*, UdpTerminalPeerGroup*/ )
+    val terminalPeerGroups = List(TcpTerminalPeerGroup , UdpTerminalPeerGroup )
   }
 
   private def withASimplePeerGroup(
