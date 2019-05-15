@@ -14,13 +14,13 @@ import org.slf4j.LoggerFactory
   * There is no enrollment process. Instances are configured with a static table of all known peers.
   */
 class SimplestPeerGroup[A, AA, M](
-                                   val config: Config[A, AA],
-                                   underLyingPeerGroup: PeerGroup[AA, Either[ControlMessage[A, AA], M]]
-                                 )(
-                                   implicit aCodec: Codec[A],
-                                   aaCodec: Codec[AA],
-                                   scheduler: Scheduler
-                                 ) extends PeerGroup[A, M] {
+    val config: Config[A, AA],
+    underLyingPeerGroup: PeerGroup[AA, Either[ControlMessage[A, AA], M]]
+)(
+    implicit aCodec: Codec[A],
+    aaCodec: Codec[AA],
+    scheduler: Scheduler
+) extends PeerGroup[A, M] {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -48,7 +48,7 @@ class SimplestPeerGroup[A, AA, M](
   }
 
   private class ChannelImpl(val to: A, underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]])
-    extends Channel[A, M] {
+      extends Channel[A, M] {
 
     override def sendMessage(message: M): Task[Unit] = {
       underlyingChannel.sendMessage(Right(message))
