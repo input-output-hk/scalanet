@@ -53,7 +53,7 @@ class SimplePeerGroup[A, AA, M](
 
     underLyingPeerGroup
       .server()
-      .flatMap(channel => channel.in)
+      .mergeMap(channel => channel.in)
       .collect {
         case Left(e: EnrolMe[A, AA]) => e
       }
@@ -65,7 +65,7 @@ class SimplePeerGroup[A, AA, M](
 
       val enrolledTask: Task[Unit] = underLyingPeerGroup
         .server()
-        .flatMap(channel => channel.in)
+        .mergeMap(channel => channel.in)
         .collect {
           case Left(e: Enrolled[A, AA]) =>
             routingTable.clear()

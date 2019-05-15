@@ -24,7 +24,7 @@ class UDPPeerGroupSpec extends FlatSpec {
     val alicesMessage = Random.alphanumeric.take(1024 * 4).mkString
     val bobsMessage = Random.alphanumeric.take(1024 * 4).mkString
 
-    val bobReceived: Future[String] = bob.server().flatMap(channel => channel.in).headL.runToFuture
+    val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runToFuture
     bob.server().foreach(channel => channel.sendMessage(bobsMessage).runToFuture)
 
     val aliceClient = alice.client(bob.processAddress).evaluated

@@ -27,7 +27,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
       val bobsMessage = Random.alphanumeric.take(1024).mkString
 
       bob.server().foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runToFuture
-      val bobReceived: Future[String] = bob.server().flatMap(channel => channel.in).headL.runToFuture
+      val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
       val aliceReceived = aliceClient.in.headL.runToFuture
