@@ -41,8 +41,7 @@ class SimplePeerGroup[A, AA, M](
     underLyingPeerGroup.server().map { underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]] =>
       val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
       val a = reverseLookup(underlyingChannel.to)
-//      debug(s"Received new server channel from $a " +
-//        s"with underlying id ${underlyingChannel.asInstanceOf[UDPPeerGroup.ChannelImpl[Either[ControlMessage[A, AA], M]]].nettyChannel.id()}")
+      debug(s"Received new server channel from $a")
       new ChannelImpl(a, underlyingChannel)
     }
   }
@@ -54,7 +53,7 @@ class SimplePeerGroup[A, AA, M](
 
     underLyingPeerGroup
       .server()
-      .flatMap(channel => channel.in)
+      .mergeMap(channel => channel.in)
       .collect {
         case Left(e: EnrolMe[A, AA]) => e
       }
@@ -66,7 +65,7 @@ class SimplePeerGroup[A, AA, M](
 
       val enrolledTask: Task[Unit] = underLyingPeerGroup
         .server()
-        .flatMap(channel => channel.in)
+        .mergeMap(channel => channel.in)
         .collect {
           case Left(e: Enrolled[A, AA]) =>
             routingTable.clear()

@@ -32,11 +32,7 @@ class SimplePeerGroupSpec extends FlatSpec {
         val alicesMessage = "hi bob, from alice"
         val bobsMessage = "hi alice, from bob"
 
-        val bobReceived: Future[String] = bob.server()
-          .flatMap(channel => channel.in)
-          .filter(msg => msg == alicesMessage)
-          .headL.runToFuture
-
+        val bobReceived = bob.server().mergeMap(_.in).headL.runToFuture
         bob.server().foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
         val aliceClient = alice.client(bob.processAddress).evaluated
@@ -49,19 +45,19 @@ class SimplePeerGroupSpec extends FlatSpec {
       }
     }
   }
-//
+
   it should "send a message to itself" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withASimplePeerGroup(terminalGroup, "Alice") { alice =>
         val message = Random.alphanumeric.take(1044).mkString
-        val aliceReceived = alice.server().flatMap(_.in).headL.runToFuture
+        val aliceReceived = alice.server().mergeMap(_.in).headL.runToFuture
         val aliceClient: Channel[String, String] = alice.client(alice.processAddress).evaluated
         aliceClient.sendMessage(message).runToFuture
         aliceReceived.futureValue shouldBe message
       }
     }
   }
-//
+
 //  it should "send a message to another peer's multicast address" in new SimpleTerminalPeerGroups {
 //    terminalPeerGroups.foreach { terminalGroup =>
 //      withTwoSimplePeerGroups(
@@ -75,7 +71,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 //
 //        val aliceReceived = alice
 //          .server()
-//          .flatMap { channel =>
+//          .mergeMap { channel =>
 //            channel.sendMessage(alicesMessage).runToFuture
 //            channel.in
 //          }
@@ -86,13 +82,12 @@ class SimplePeerGroupSpec extends FlatSpec {
 //        bobsClient.sendMessage(bobsMessage).runToFuture
 //        val bobReceived = bobsClient.in.headL.runToFuture
 //        aliceReceived.futureValue shouldBe bobsMessage
-//        bobReceived.futureValue shouldBe alicesMessage
 //
 //        val bobReceivedNews = bob
 //          .server()
-//          .flatMap { channel =>
+//          .mergeMap { channel =>
 //            channel.in
-//          }
+//          }.drop(1)
 //          .headL
 //          .runToFuture
 //        val messageNews = "Latest News"
@@ -103,7 +98,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 //
 //        val bobReceivedSports = bob
 //          .server()
-//          .flatMap { channel =>
+//          .mergeMap { channel =>
 //            channel.in
 //          }
 //          .headL
@@ -167,7 +162,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 //  }
 
   trait SimpleTerminalPeerGroups {
-    val terminalPeerGroups = List(TcpTerminalPeerGroup , UdpTerminalPeerGroup )
+    val terminalPeerGroups = List(TcpTerminalPeerGroup, UdpTerminalPeerGroup)
   }
 
   private def withASimplePeerGroup(
