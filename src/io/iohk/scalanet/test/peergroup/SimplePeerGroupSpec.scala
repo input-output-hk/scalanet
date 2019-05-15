@@ -37,11 +37,11 @@ class SimplePeerGroupSpec extends FlatSpec {
           .filter(msg => msg == alicesMessage)
           .headL.runToFuture
 
+        val aliceClient = alice.client(bob.processAddress).evaluated
+        val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
+
         bob.server().foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
-        val aliceClient = alice.client(bob.processAddress).evaluated
-
-        val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
         aliceClient.sendMessage(alicesMessage).evaluated
 
         bobReceived.futureValue shouldBe alicesMessage
@@ -49,7 +49,7 @@ class SimplePeerGroupSpec extends FlatSpec {
       }
     }
   }
-
+//
   it should "send a message to itself" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withASimplePeerGroup(terminalGroup, "Alice") { alice =>
@@ -61,62 +61,63 @@ class SimplePeerGroupSpec extends FlatSpec {
       }
     }
   }
-
-  it should "send a message to another peer's multicast address" in new SimpleTerminalPeerGroups {
-    terminalPeerGroups.foreach { terminalGroup =>
-      withTwoSimplePeerGroups(
-        terminalGroup,
-        List("news", "sports"),
-        "Alice",
-        "Bob"
-      ) { (alice, bob) =>
-        val bobsMessage = "HI Alice"
-        val alicesMessage = "HI Bob"
-
-        val aliceReceived = alice
-          .server()
-          .flatMap { channel =>
-            channel.sendMessage(alicesMessage).runToFuture
-            channel.in
-          }
-          .headL
-          .runToFuture
-
-        val bobsClient: Channel[String, String] = bob.client(alice.processAddress).evaluated
-        bobsClient.sendMessage(bobsMessage).runToFuture
-        val bobReceived = bobsClient.in.headL.runToFuture
-        aliceReceived.futureValue shouldBe bobsMessage
-
-        val bobReceivedNews = bob
-          .server()
-          .flatMap { channel =>
-            channel.in
-          }
-          .headL
-          .runToFuture
-        val messageNews = "Latest News"
-        val aliceClient: Channel[String, String] = alice.client(bob.processAddress).evaluated
-        aliceClient.sendMessage(messageNews).runToFuture
-
-        bobReceivedNews.futureValue shouldBe messageNews
-
-        val bobReceivedSports = bob
-          .server()
-          .flatMap { channel =>
-            channel.in
-          }
-          .headL
-          .runToFuture
-        val messageSports = "Sports Updates"
-
-        val aliceClientNews: Channel[String, String] = alice.client(bob.processAddress).evaluated
-
-        aliceClientNews.sendMessage(messageSports).runToFuture
-        bobReceivedSports.futureValue shouldBe messageSports
-
-      }
-    }
-  }
+//
+//  it should "send a message to another peer's multicast address" in new SimpleTerminalPeerGroups {
+//    terminalPeerGroups.foreach { terminalGroup =>
+//      withTwoSimplePeerGroups(
+//        terminalGroup,
+//        List("news", "sports"),
+//        "Alice",
+//        "Bob"
+//      ) { (alice, bob) =>
+//        val bobsMessage = "HI Alice"
+//        val alicesMessage = "HI Bob"
+//
+//        val aliceReceived = alice
+//          .server()
+//          .flatMap { channel =>
+//            channel.sendMessage(alicesMessage).runToFuture
+//            channel.in
+//          }
+//          .headL
+//          .runToFuture
+//
+//        val bobsClient: Channel[String, String] = bob.client(alice.processAddress).evaluated
+//        bobsClient.sendMessage(bobsMessage).runToFuture
+//        val bobReceived = bobsClient.in.headL.runToFuture
+//        aliceReceived.futureValue shouldBe bobsMessage
+//        bobReceived.futureValue shouldBe alicesMessage
+//
+//        val bobReceivedNews = bob
+//          .server()
+//          .flatMap { channel =>
+//            channel.in
+//          }
+//          .headL
+//          .runToFuture
+//        val messageNews = "Latest News"
+//        val aliceClient: Channel[String, String] = alice.client(bob.processAddress).evaluated
+//        aliceClient.sendMessage(messageNews).runToFuture
+//
+//        bobReceivedNews.futureValue shouldBe messageNews
+//
+//        val bobReceivedSports = bob
+//          .server()
+//          .flatMap { channel =>
+//            channel.in
+//          }
+//          .headL
+//          .runToFuture
+//        val messageSports = "Sports Updates"
+//
+//        val aliceClientNews: Channel[String, String] = alice.client(bob.processAddress).evaluated
+//
+//        aliceClientNews.sendMessage(messageSports).runToFuture
+//        bobReceivedSports.futureValue shouldBe messageSports
+//
+//      }
+//    }
+//  }
 
 //  it should "send a message to 2 peers sharing a multicast address" in new SimpleTerminalPeerGroups {
 //    terminalPeerGroups.foreach { terminalGroup =>
@@ -166,7 +167,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 //  }
 
   trait SimpleTerminalPeerGroups {
-    val terminalPeerGroups = List(TcpTerminalPeerGroup/*, UdpTerminalPeerGroup*/)
+    val terminalPeerGroups = List(UdpTerminalPeerGroup/*, UdpTerminalPeerGroup*/)
   }
 
   private def withASimplePeerGroup(

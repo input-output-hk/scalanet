@@ -32,8 +32,9 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     new Subscribers[Channel[InetMultiAddress, M]](s"Channel Subscribers for UDPPeerGroup@'$processAddress'")
 
   private val workerGroup = new NioEventLoopGroup()
+  private val activeChannels = new ConcurrentHashMap[InetSocketAddress, Subscribers[M]]().asScala
 
-  private val activeChannels = new ConcurrentHashMap[ChannelId, Subscribers[M]]().asScala
+ // private val activeChannels = new ConcurrentHashMap[ChannelId, Subscribers[M]]().asScala
 
   /**
     * 64 kilobytes is the theoretical maximum size of a complete IP datagram
@@ -70,7 +71,7 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       _ <- toTask(workerGroup.shutdownGracefully())
     } yield ()
 
-  private class ChannelImpl(
+  private [scalanet] class ChannelImpl(
       val nettyChannel: NioDatagramChannel,
       promisedRemoteAddress: Promise[InetMultiAddress]
   )(implicit codec: Codec[M])
@@ -85,7 +86,11 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       log.debug(
         s"New channel created with id ${nettyChannel.id()} from ${nettyChannel.localAddress()} to $remoteAddress"
       )
-      activeChannels.getOrElseUpdate(nettyChannel.id, new Subscribers[M])
+
+      val x = new Subscribers[M]
+      activeChannels.getOrElseUpdate(remoteAddress.inetSocketAddress, x)
+
+     // activeChannels.getOrElseUpdate(nettyChannel.id, x)
     }
 
     override def to: InetMultiAddress = Await.result(promisedRemoteAddress.future, Duration.Inf)
@@ -96,20 +101,32 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
         sendResult <- sendMessage(message, remoteAddress, nettyChannel)
       } yield sendResult
 
-    override def in: Observable[M] = Await.result(messageSubscribersF, Duration.Inf).messageStream
+    override def in: Observable[M] ={
+
+      log.debug(
+        s"Processing Observable inbound message from remote address remote ${nettyChannel.remoteAddress()} " +
+          s"to local address ${nettyChannel.localAddress()} via channel id ChannelId ${nettyChannel.id()}."
+      )
+      Await.result(messageSubscribersF, Duration.Inf).messageStream
+    }
 
     override def close(): Task[Unit] = {
-      activeChannels.remove(nettyChannel.id)
+      activeChannels.remove(nettyChannel.remoteAddress())
       Task.unit
     }
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val datagram = msg.asInstanceOf[DatagramPacket]
       val remoteAddress = datagram.sender()
+      log.debug(
+        s"Processing ******channelRead message from remote address remote ${ctx.channel().remoteAddress()} " +
+          s"to local address ${ctx.channel().localAddress()} via channel id ChannelId ${ctx.channel().id()}."
+      )
       if (!promisedRemoteAddress.isCompleted) {
         promisedRemoteAddress.complete(Success(new InetMultiAddress(remoteAddress)))
         channelSubscribers.notify(this)
       }
+     // if (activeChannels2.contains(remoteAddress)) channelSubscribers.notify(this)
 
       codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer()).map { m =>
         messageSubscribersF.foreach { messageSubscribers =>
@@ -123,6 +140,11 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     }
 
     private def sendMessage(message: M, to: InetMultiAddress, nettyChannel: NioDatagramChannel): Task[Unit] = {
+
+      log.debug(
+        s"sendMessage message to remote address remote ${to.inetSocketAddress} " +
+          s"from local address ${processAddress.inetSocketAddress} via channel id ChannelId ${nettyChannel.id()}."
+      )
       val nettyBuffer = Unpooled.wrappedBuffer(codec.encode(message))
       toTask(nettyChannel.writeAndFlush(new DatagramPacket(nettyBuffer, to.inetSocketAddress, processAddress.inetSocketAddress)))
     }

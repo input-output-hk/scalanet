@@ -41,8 +41,8 @@ class SimplePeerGroup[A, AA, M](
     underLyingPeerGroup.server().map { underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]] =>
       val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
       val a = reverseLookup(underlyingChannel.to)
-      debug(s"Received new server channel from $a " +
-        s"with underlying id ${underlyingChannel.asInstanceOf[TCPPeerGroup.ServerChannelImpl[Either[ControlMessage[A, AA], M]]].nettyChannel.id()}")
+//      debug(s"Received new server channel from $a " +
+//        s"with underlying id ${underlyingChannel.asInstanceOf[UDPPeerGroup.ChannelImpl[Either[ControlMessage[A, AA], M]]].nettyChannel.id()}")
       new ChannelImpl(a, underlyingChannel)
     }
   }
@@ -96,13 +96,16 @@ class SimplePeerGroup[A, AA, M](
       extends Channel[A, M] {
 
     override def sendMessage(message: M): Task[Unit] = {
+      debug(s" ++++++SimplePeerGroup sendMessage  message from local address $processAddress to remote address $to  , $message")
       underlyingChannel.sendMessage(Right(message))
     }
 
     override def in: Observable[M] = {
+      debug(s" ++++++IN++++++++SimplePeerGroup Processing inbound message from remote address $to to local address $processAddress")
+
       underlyingChannel.in.collect {
         case Right(message) =>
-          debug(s"Processing inbound message from remote address $to to local address $processAddress, $message")
+          debug(s" ++++++SimplePeerGroup Processing inbound message from remote address $to to local address $processAddress, $message")
           message
       }
     }
