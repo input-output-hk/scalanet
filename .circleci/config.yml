@@ -19,20 +19,20 @@ jobs:
           name: install zip
           command: apt-get update && apt-get install -y --no-install-recommends zip
 
-      - run:
-          name: install bazel-remote-proxy
-          command: |
-            # if go is already installed
-            # go install github.com/notnoopci/bazel-remote-proxy
-
-            # otherwise download latest artifact
-            DOWNLOAD_URL="$(curl -sSL \
-               https://circleci.com/api/v1.1/project/github/notnoopci/bazel-remote-proxy/latest/artifacts?branch=master \
-               | grep -o -e "https://[^\"]*/bazel-remote-proxy-$(uname -s)_$(uname -m)" \
-            )"
-
-            curl -o ~/bazel-remote-proxy "$DOWNLOAD_URL"
-            chmod +x ~/bazel-remote-proxy
+      # - run:
+      #     name: install bazel-remote-proxy
+      #     command: |
+      #       # if go is already installed
+      #       # go install github.com/notnoopci/bazel-remote-proxy
+      #
+      #       # otherwise download latest artifact
+      #       DOWNLOAD_URL="$(curl -sSL \
+      #          https://circleci.com/api/v1.1/project/github/notnoopci/bazel-remote-proxy/latest/artifacts?branch=master \
+      #          | grep -o -e "https://[^\"]*/bazel-remote-proxy-$(uname -s)_$(uname -m)" \
+      #       )"
+      #
+      #       curl -o ~/bazel-remote-proxy "$DOWNLOAD_URL"
+      #       chmod +x ~/bazel-remote-proxy
 
       - run:
           name: install bazel
