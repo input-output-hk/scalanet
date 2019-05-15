@@ -33,7 +33,6 @@ class SimplePeerGroupSpec extends FlatSpec {
     }
   }
 
-
   it should "send and receive a message to another peer of SimplePeerGroup" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withTwoSimplePeerGroups(
@@ -58,8 +57,6 @@ class SimplePeerGroupSpec extends FlatSpec {
       }
     }
   }
-
-
 
   it should "send a message to another peer's multicast address" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
