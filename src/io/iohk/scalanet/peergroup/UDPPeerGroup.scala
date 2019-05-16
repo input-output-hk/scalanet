@@ -87,10 +87,8 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
         s"New channel created with id ${nettyChannel.id()} from ${nettyChannel.localAddress()} to $remoteAddress"
       )
 
-      val x = new Subscribers[M]
-      activeChannels.getOrElseUpdate(remoteAddress.inetSocketAddress, x)
+      activeChannels.getOrElseUpdate(remoteAddress.inetSocketAddress, new Subscribers[M])
 
-      // activeChannels.getOrElseUpdate(nettyChannel.id, x)
     }
 
     override def to: InetMultiAddress = Await.result(promisedRemoteAddress.future, Duration.Inf)
@@ -102,7 +100,6 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       } yield sendResult
 
     override def in: Observable[M] = {
-
       log.debug(
         s"Processing Observable inbound message from remote address remote ${nettyChannel.remoteAddress()} " +
           s"to local address ${nettyChannel.localAddress()} via channel id ChannelId ${nettyChannel.id()}."
@@ -118,15 +115,11 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val datagram = msg.asInstanceOf[DatagramPacket]
       val remoteAddress = datagram.sender()
-      log.debug(
-        s"Processing ******channelRead message from remote address remote ${ctx.channel().remoteAddress()} " +
-          s"to local address ${ctx.channel().localAddress()} via channel id ChannelId ${ctx.channel().id()}."
-      )
+
       if (!promisedRemoteAddress.isCompleted) {
         promisedRemoteAddress.complete(Success(new InetMultiAddress(remoteAddress)))
         channelSubscribers.notify(this)
       }
-      // if (activeChannels2.contains(remoteAddress)) channelSubscribers.notify(this)
 
       codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer()).map { m =>
         messageSubscribersF.foreach { messageSubscribers =>

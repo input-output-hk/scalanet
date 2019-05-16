@@ -101,36 +101,24 @@ class SimplePeerGroup[A, AA, M](
 
     override def sendMessage(message: M): Task[Unit] = {
       debug(
-        s" ++++++SimplePeerGroup sendMessage  message from local address $processAddress to remote address $to  , $message"
+        s"message from local address $processAddress to remote address $to  , $message"
       )
       Task.sequence(underlyingChannel.map(_.sendMessage(Right(message)))).map(_ => ())
     }
 
     override def in: Observable[M] = {
-      debug(
-        s" ++++++IN++++++++SimplePeerGroup Processing inbound message from remote address $to to local address $processAddress"
-      )
-
       Observable
         .fromIterable(underlyingChannel.map {
           _.in.collect {
             case Right(message) =>
               debug(
-                s" ++++++SimplePeerGroup Processing inbound message from remote address $to to local address $processAddress, $message"
+                s"Processing inbound message from remote address $to to local address $processAddress, $message"
               )
               message
           }
         })
         .merge
 
-//      underlyingChannel.foldLeft(Observable.empty)(x => x)
-//      underlyingChannel.in.collect {
-//        case Right(message) =>
-//          debug(
-//            s" ++++++SimplePeerGroup Processing inbound message from remote address $to to local address $processAddress, $message"
-//          )
-//          message
-//      }
     }
 
     override def close(): Task[Unit] =
