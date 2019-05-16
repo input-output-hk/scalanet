@@ -6,6 +6,9 @@ import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
 
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
+
 trait Channel[A, M] {
   def to: A
   def sendMessage(message: M): Task[Unit]
@@ -25,16 +28,20 @@ object PeerGroup {
 
   abstract class TerminalPeerGroup[A, M](implicit scheduler: Scheduler, codec: Codec[M]) extends PeerGroup[A, M]
 
-  def create[PG](pg: => PG, config: Any): Either[InitializationError, PG] =
+  def create[PG <: PeerGroup[_, _]](pg: => PG, config: Any)(
+      implicit scheduler: Scheduler
+  ): Either[InitializationError, PG] =
     try {
+      Await.result(pg.initialize().runToFuture, Duration.Inf)
       Right(pg)
     } catch {
       case t: Throwable =>
         Left(InitializationError(initializationErrorMsg(config), t))
     }
 
-  def createOrThrow[PG](pg: => PG, config: Any): PG =
+  def createOrThrow[PG <: PeerGroup[_, _]](pg: => PG, config: Any)(implicit scheduler: Scheduler): PG =
     try {
+      Await.result(pg.initialize().runToFuture, Duration.Inf)
       pg
     } catch {
       case t: Throwable =>
