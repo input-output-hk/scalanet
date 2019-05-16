@@ -27,37 +27,48 @@ class SimplestPeerGroupSpec extends FlatSpec {
       val alicesMessage = "hi bob, from alice"
       val bobsMessage = "hi alice, from bob"
 
-      val bobReceived: Future[String] = bob.server()
-        .mergeMap { channel => channel.in }
-        .filter { msg => msg == alicesMessage }
-        .headL.runToFuture
+      val bobReceived: Future[String] = bob
+        .server()
+        .mergeMap { channel =>
+          channel.in
+        }
+        .filter { msg =>
+          msg == alicesMessage
+        }
+        .headL
+        .runToFuture
 
       bob.server().foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
       val aliceClient = alice.client(bob.processAddress).evaluated
-      val aliceReceived = aliceClient.in.filter { msg => msg == bobsMessage }.headL.runToFuture
+      val aliceReceived = aliceClient.in
+        .filter { msg =>
+          msg == bobsMessage
+        }
+        .headL
+        .runToFuture
       aliceClient.sendMessage(alicesMessage).evaluated
 
       aliceReceived.futureValue shouldBe bobsMessage
       bobReceived.futureValue shouldBe alicesMessage
     }
 
-  private def withTwoSimplestPeerGroups(
-                                         a: String,
-                                         b: String)(
-                                         testCode: (
-                                           SimplestPeerGroup[String, InetMultiAddress, String],
-                                             SimplestPeerGroup[String, InetMultiAddress, String]
-                                           ) => Any
-                                       ): Unit = {
+  private def withTwoSimplestPeerGroups(a: String, b: String)(
+      testCode: (
+          SimplestPeerGroup[String, InetMultiAddress, String],
+          SimplestPeerGroup[String, InetMultiAddress, String]
+      ) => Any
+  ): Unit = {
 
     val underlying1 = randomTCPPeerGroup[Either[SimplestPeerGroup.ControlMessage[String, InetMultiAddress], String]]
     val underlying2 = randomTCPPeerGroup[Either[SimplestPeerGroup.ControlMessage[String, InetMultiAddress], String]]
 
     val routingTable = Map(a -> underlying1.processAddress, b -> underlying2.processAddress)
 
-    val simplest1 = new SimplestPeerGroup[String, InetMultiAddress, String](SimplestPeerGroup.Config(a, routingTable), underlying1)
-    val simplest2 = new SimplestPeerGroup[String, InetMultiAddress, String](SimplestPeerGroup.Config(b, routingTable), underlying2)
+    val simplest1 =
+      new SimplestPeerGroup[String, InetMultiAddress, String](SimplestPeerGroup.Config(a, routingTable), underlying1)
+    val simplest2 =
+      new SimplestPeerGroup[String, InetMultiAddress, String](SimplestPeerGroup.Config(b, routingTable), underlying2)
 
     simplest1.initialize().evaluated
     simplest2.initialize().evaluated

@@ -20,7 +20,7 @@ class UDPPeerGroupSpec extends FlatSpec {
 
   behavior of "UDPPeerGroup"
 
-  it should "send and receive a large message" in withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
+  it should "send and receive a message" in withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
     val alicesMessage = Random.alphanumeric.take(1024 * 4).mkString
     val bobsMessage = Random.alphanumeric.take(1024 * 4).mkString
 

@@ -78,24 +78,28 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
 object TCPPeerGroup {
   case class Config(
-                     bindAddress: InetSocketAddress,
-                     processAddress: InetMultiAddress,
-                     remoteHostConfig: Map[InetAddress, Int] = Map.empty[InetAddress, Int]
+      bindAddress: InetSocketAddress,
+      processAddress: InetMultiAddress,
+      remoteHostConfig: Map[InetAddress, Int] = Map.empty[InetAddress, Int]
   )
 
   object Config {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, new InetMultiAddress(bindAddress))
   }
 
-  private[scalanet] class ServerChannelImpl[M](val nettyChannel: SocketChannel)(implicit codec: Codec[M], scheduler: Scheduler)
-    extends Channel[InetMultiAddress, M] {
+  private[scalanet] class ServerChannelImpl[M](val nettyChannel: SocketChannel)(
+      implicit codec: Codec[M],
+      scheduler: Scheduler
+  ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
 
-    log.debug(s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}")
+    log.debug(
+      s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
+    )
 
     private val messageSubject = ReplaySubject[M]()
-      //new Subscribers[M](s"Subscribers for ServerChannelImpl@${nettyChannel.id}")
+    //new Subscribers[M](s"Subscribers for ServerChannelImpl@${nettyChannel.id}")
 
     nettyChannel
       .pipeline()
@@ -120,8 +124,10 @@ object TCPPeerGroup {
     }
   }
 
-  private class ClientChannelImpl[M](inetSocketAddress: InetSocketAddress, clientBootstrap: Bootstrap)(implicit codec: Codec[M], scheduler: Scheduler)
-    extends Channel[InetMultiAddress, M] {
+  private class ClientChannelImpl[M](inetSocketAddress: InetSocketAddress, clientBootstrap: Bootstrap)(
+      implicit codec: Codec[M],
+      scheduler: Scheduler
+  ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
 
@@ -144,8 +150,10 @@ object TCPPeerGroup {
             .addLast(new ByteArrayEncoder())
             .addLast(new ChannelInboundHandlerAdapter() {
               override def channelActive(ctx: ChannelHandlerContext): Unit = {
-                log.debug(s"Creating client channel from ${ctx.channel().localAddress()} " +
-                  s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}")
+                log.debug(
+                  s"Creating client channel from ${ctx.channel().localAddress()} " +
+                    s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
+                )
                 activation.complete(Success(ctx))
               }
 
@@ -184,7 +192,8 @@ object TCPPeerGroup {
     }
   }
 
-  private class MessageNotifier[M](val messageSubject: Subject[M, M])(implicit codec: Codec[M]) extends ChannelInboundHandlerAdapter {
+  private class MessageNotifier[M](val messageSubject: Subject[M, M])(implicit codec: Codec[M])
+      extends ChannelInboundHandlerAdapter {
 
     private val log = LoggerFactory.getLogger(getClass)
 
