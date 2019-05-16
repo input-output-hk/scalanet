@@ -30,8 +30,6 @@ class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
 
   private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
 
-//    new Subscribers[Channel[InetMultiAddress, M]](s"Channel Subscribers for TCPPeerGroup@'$processAddress'")
-
   private val workerGroup = new NioEventLoopGroup()
 
   private val clientBootstrap = new Bootstrap()
@@ -93,13 +91,11 @@ object TCPPeerGroup {
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
+    private val messageSubject = ReplaySubject[M]()
 
     log.debug(
       s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
     )
-
-    private val messageSubject = ReplaySubject[M]()
-    //new Subscribers[M](s"Subscribers for ServerChannelImpl@${nettyChannel.id}")
 
     nettyChannel
       .pipeline()
