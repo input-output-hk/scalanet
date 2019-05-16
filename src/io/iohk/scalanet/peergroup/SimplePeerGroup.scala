@@ -32,17 +32,22 @@ class SimplePeerGroup[A, AA, M](
 
   override def processAddress: A = config.processAddress
 
-  override def client(to: A): Task[Channel[A, M]] =
-    underLyingPeerGroup.client(routingTable(to)).map { underlyingChannel =>
-      new ChannelImpl(to, underlyingChannel)
-    }
+  override def client(to: A): Task[Channel[A, M]] = {
+    val underlyingAddresses: List[AA] = if (routingTable.contains(to)) List(routingTable(to)) else multiCastTable(to)
+
+    val underlyingChannels: Task[List[Channel[AA, Either[ControlMessage[A, AA], M]]]] =
+      Task.gatherUnordered(underlyingAddresses.map { aa =>
+        underLyingPeerGroup.client(aa)
+      })
+    underlyingChannels.map(new ChannelImpl(to, _))
+  }
 
   override def server(): Observable[Channel[A, M]] = {
     underLyingPeerGroup.server().map { underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]] =>
       val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
       val a = reverseLookup(underlyingChannel.to)
       debug(s"Received new server channel from $a")
-      new ChannelImpl(a, underlyingChannel)
+      new ChannelImpl(a, List(underlyingChannel))
     }
   }
 
@@ -91,23 +96,33 @@ class SimplePeerGroup[A, AA, M](
     }
   }
 
-  private class ChannelImpl(val to: A, underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]])
+  private class ChannelImpl(val to: A, underlyingChannel: List[Channel[AA, Either[ControlMessage[A, AA], M]]])
       extends Channel[A, M] {
 
     override def sendMessage(message: M): Task[Unit] = {
-      underlyingChannel.sendMessage(Right(message))
+      debug(
+        s"message from local address $processAddress to remote address $to  , $message"
+      )
+      Task.gatherUnordered(underlyingChannel.map(_.sendMessage(Right(message)))).map(_ => ())
     }
 
     override def in: Observable[M] = {
-      underlyingChannel.in.collect {
-        case Right(message) =>
-          debug(s"Processing inbound message from remote address $to to local address $processAddress, $message")
-          message
-      }
+      Observable
+        .fromIterable(underlyingChannel.map {
+          _.in.collect {
+            case Right(message) =>
+              debug(
+                s"Processing inbound message from remote address $to to local address $processAddress, $message"
+              )
+              message
+          }
+        })
+        .merge
+
     }
 
     override def close(): Task[Unit] =
-      underlyingChannel.close()
+      Task.gatherUnordered(underlyingChannel.map(_.close())).map(_ => ())
   }
 
   private def handleEnrollment(enrolMe: EnrolMe[A, AA]): Unit = {

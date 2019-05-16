@@ -29,7 +29,7 @@ class SimplestPeerGroupSpec extends FlatSpec {
 
       val bobReceived: Future[String] = bob
         .server()
-        .mergeMap { channel =>
+        .flatMap { channel =>
           channel.in
         }
         .filter { msg =>
