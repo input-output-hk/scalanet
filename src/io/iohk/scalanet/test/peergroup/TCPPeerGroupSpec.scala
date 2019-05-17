@@ -3,7 +3,6 @@ package io.iohk.scalanet.peergroup
 import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.TaskValues._
-//import monix.eval.Task
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures

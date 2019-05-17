@@ -15,16 +15,25 @@ import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepende
 import io.netty.handler.codec.bytes.ByteArrayEncoder
 import io.netty.util
 import monix.eval.Task
-import monix.execution.Scheduler
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
 
-import scala.concurrent.{Future, Promise}
+import scala.concurrent.Promise
 import scala.util.Success
 
-class TCPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: Codec[M])
-    extends TerminalPeerGroup[InetMultiAddress, M]() {
+/**
+  * PeerGroup implementation on top of TCP.
+  * FIXME currently this class makes use of netty's LengthFieldPrepender to perform packet reassembly. This means
+  * the encoded bytes provided by the callers codec are not identical to the bytes put on the wire (since a
+  * length field is prepended to the byte stream). This class therefore cannot be used to talk to general services
+  * that are not instances of TCPPeerGroup.
+  *
+  * @param config bind address etc. See the companion object.
+  * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
+  * @tparam M the message type.
+  */
+class TCPPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -86,8 +95,7 @@ object TCPPeerGroup {
   }
 
   private[scalanet] class ServerChannelImpl[M](val nettyChannel: SocketChannel)(
-      implicit codec: Codec[M],
-      scheduler: Scheduler
+      implicit codec: Codec[M]
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
@@ -121,8 +129,7 @@ object TCPPeerGroup {
   }
 
   private class ClientChannelImpl[M](inetSocketAddress: InetSocketAddress, clientBootstrap: Bootstrap)(
-      implicit codec: Codec[M],
-      scheduler: Scheduler
+      implicit codec: Codec[M]
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
@@ -150,11 +157,11 @@ object TCPPeerGroup {
                   s"Creating client channel from ${ctx.channel().localAddress()} " +
                     s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
                 )
-                activation.complete(Success(ctx))
+                activation.success(ctx)
               }
 
               override def channelInactive(ctx: ChannelHandlerContext): Unit = {
-                deactivation.complete(Success(()))
+                deactivation.success(())
               }
             })
             .addLast(new MessageNotifier[M](messageSubject))
@@ -165,26 +172,26 @@ object TCPPeerGroup {
 
     override def sendMessage(message: M): Task[Unit] = {
 
-      val f: Future[Unit] =
-        activationF
-          .map(ctx => {
-            log.debug(
-              s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
-                s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
-            )
-            ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
-          })
-          .map(_ => ())
-
-      Task.fromFuture(f)
+      Task
+        .fromFuture(activationF)
+        .map(ctx => {
+          log.debug(
+            s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
+              s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
+          )
+          ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
+        })
+        .map(_ => ())
     }
 
     override def in: Observable[M] = messageSubject
 
     override def close(): Task[Unit] = {
       messageSubject.onComplete()
-      activationF.foreach(ctx => ctx.close())
-      Task.fromFuture(deactivationF)
+      Task
+        .fromFuture(activationF)
+        .flatMap(ctx => toTask(ctx.close()))
+        .flatMap(_ => Task.fromFuture(deactivationF))
     }
   }
 

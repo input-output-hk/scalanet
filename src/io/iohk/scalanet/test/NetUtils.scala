@@ -100,8 +100,6 @@ object NetUtils {
   def withTwoRandomTCPPeerGroups[M](
       testCode: (TCPPeerGroup[M], TCPPeerGroup[M]) => Any
   )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
-//    val pg1 = randomTCPPeerGroup(scheduler, codec)
-//    val pg2 = randomTCPPeerGroup(scheduler, codec)
     val (pg1, pg2) = random2TCPPeerGroup(scheduler, codec)
     try {
       testCode(pg1, pg2)

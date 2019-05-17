@@ -13,6 +13,12 @@ import monix.execution.Scheduler
 import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 
+/**
+  * Another fairly trivial example of a higher-level peer group. This class
+  * builds on SimplestPeerGroup providing to provide additionally:
+  * 1. a simple enrollment process to discover and register with other nodes on the network.
+  * 2. a basic multicasting implementation
+  */
 class SimplePeerGroup[A, AA, M](
     val config: Config[A, AA],
     underLyingPeerGroup: PeerGroup[AA, Either[ControlMessage[A, AA], M]]

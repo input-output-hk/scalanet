@@ -15,7 +15,6 @@ import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
 import io.netty.{channel, util}
 import monix.eval.Task
-import monix.execution.Scheduler
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
@@ -24,8 +23,14 @@ import scala.collection.JavaConverters._
 import scala.concurrent.Promise
 import scala.util.Success
 
-class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: Codec[M])
-    extends TerminalPeerGroup[InetMultiAddress, M]() {
+/**
+  * PeerGroup implementation on top of UDP.
+  *
+  * @param config bind address etc. See the companion object.
+  * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
+  * @tparam M the message type.
+  */
+class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -154,9 +159,9 @@ class UDPPeerGroup[M](val config: Config)(implicit scheduler: Scheduler, codec: 
       val localAddress = nettyChannel.localAddress()
       log.debug(s"Generated local address for new client is $localAddress")
       val channelId = getChannelId(to.inetSocketAddress, localAddress)
-      if (activeChannels.contains(channelId)) {
-        log.warn(s"HOUSTON, WE HAVE A MULTIPLEXING PROBLEM")
-      }
+
+      assert(!activeChannels.contains(channelId), s"HOUSTON, WE HAVE A MULTIPLEXING PROBLEM")
+
       val channel = new ChannelImpl(nettyChannel, localAddress, to.inetSocketAddress, ReplaySubject[M]())
       activeChannels.put(channelId, channel)
       channel
