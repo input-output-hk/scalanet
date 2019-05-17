@@ -5,21 +5,21 @@ load("@bazel_tools//tools/build_defs/repo:java.bzl", "java_import_external")
 
 def maven_dependencies():
   java_import_external(
-      name = "org___typelevel_and_machinist__2___12__EXTERNAL",
+      name = "org___typelevel_and_cats_ds_kernel__2___12__EXTERNAL",
       licenses = ["notice"],
       jar_urls = [
-          "https://repo1.maven.org/maven2/org/typelevel/machinist_2.12/0.6.6/machinist_2.12-0.6.6.jar"
+          "https://repo1.maven.org/maven2/org/typelevel/cats-kernel_2.12/1.3.1/cats-kernel_2.12-1.3.1.jar"
       ],
-      jar_sha256 = "e1f56da37a817ff9b20e36870ac39b64277155e82cd2cde25d76d10af14b8a96",
+      jar_sha256 = "85da929c1292c09fa109eb3cb94f79c3a8242b838547eaa1e0341c35c9a1a31c",
       neverlink=0
   )
   java_import_external(
-      name = "org___typelevel_and_machinist__2___12__EXTERNAL__NEVERLINK",
+      name = "org___typelevel_and_cats_ds_kernel__2___12__EXTERNAL__NEVERLINK",
       licenses = ["notice"],
       jar_urls = [
-          "https://repo1.maven.org/maven2/org/typelevel/machinist_2.12/0.6.6/machinist_2.12-0.6.6.jar"
+          "https://repo1.maven.org/maven2/org/typelevel/cats-kernel_2.12/1.3.1/cats-kernel_2.12-1.3.1.jar"
       ],
-      jar_sha256 = "e1f56da37a817ff9b20e36870ac39b64277155e82cd2cde25d76d10af14b8a96",
+      jar_sha256 = "85da929c1292c09fa109eb3cb94f79c3a8242b838547eaa1e0341c35c9a1a31c",
       neverlink=1
   )
 
@@ -39,6 +39,25 @@ def maven_dependencies():
           "https://repo1.maven.org/maven2/io/monix/monix-eval_2.12/3.0.0-RC2/monix-eval_2.12-3.0.0-RC2.jar"
       ],
       jar_sha256 = "1bf3c991433aa4e9df698f94b0ff8cce20e3de45d13b55f78a95cbf5f31e306f",
+      neverlink=1
+  )
+
+  java_import_external(
+      name = "org___typelevel_and_cats_ds_macros__2___12__EXTERNAL",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/typelevel/cats-macros_2.12/1.3.1/cats-macros_2.12-1.3.1.jar"
+      ],
+      jar_sha256 = "1285803f27b7f5d966cd16a4d66e03e87f660e72a50baf6be42e43d9161f8742",
+      neverlink=0
+  )
+  java_import_external(
+      name = "org___typelevel_and_cats_ds_macros__2___12__EXTERNAL__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/typelevel/cats-macros_2.12/1.3.1/cats-macros_2.12-1.3.1.jar"
+      ],
+      jar_sha256 = "1285803f27b7f5d966cd16a4d66e03e87f660e72a50baf6be42e43d9161f8742",
       neverlink=1
   )
 
@@ -119,21 +138,21 @@ def maven_dependencies():
   )
 
   java_import_external(
-      name = "org___typelevel_and_cats_ds_core__2___12__EXTERNAL",
+      name = "org___typelevel_and_machinist__2___12__EXTERNAL",
       licenses = ["notice"],
       jar_urls = [
-          "https://repo1.maven.org/maven2/org/typelevel/cats-core_2.12/1.6.0/cats-core_2.12-1.6.0.jar"
+          "https://repo1.maven.org/maven2/org/typelevel/machinist_2.12/0.6.5/machinist_2.12-0.6.5.jar"
       ],
-      jar_sha256 = "659c8df533e73dcc3d728bca8646e670ec8db376ba9679610fba88f3cf91105e",
+      jar_sha256 = "9b449314637d967b8acf1bcb744b605e118fe6ac6c7d08e8db68b7f39267d8e5",
       neverlink=0
   )
   java_import_external(
-      name = "org___typelevel_and_cats_ds_core__2___12__EXTERNAL__NEVERLINK",
+      name = "org___typelevel_and_machinist__2___12__EXTERNAL__NEVERLINK",
       licenses = ["notice"],
       jar_urls = [
-          "https://repo1.maven.org/maven2/org/typelevel/cats-core_2.12/1.6.0/cats-core_2.12-1.6.0.jar"
+          "https://repo1.maven.org/maven2/org/typelevel/machinist_2.12/0.6.5/machinist_2.12-0.6.5.jar"
       ],
-      jar_sha256 = "659c8df533e73dcc3d728bca8646e670ec8db376ba9679610fba88f3cf91105e",
+      jar_sha256 = "9b449314637d967b8acf1bcb744b605e118fe6ac6c7d08e8db68b7f39267d8e5",
       neverlink=1
   )
 
@@ -290,25 +309,6 @@ def maven_dependencies():
   )
 
   java_import_external(
-      name = "com___github___mpilquist_and_simulacrum__2___12__EXTERNAL",
-      licenses = ["notice"],
-      jar_urls = [
-          "https://repo1.maven.org/maven2/com/github/mpilquist/simulacrum_2.12/0.10.0/simulacrum_2.12-0.10.0.jar"
-      ],
-      jar_sha256 = "ab973ec7cf3ac1cbe11a3d866aae7b567bb4b2a7f038b9ee21ba3ce6b177613e",
-      neverlink=0
-  )
-  java_import_external(
-      name = "com___github___mpilquist_and_simulacrum__2___12__EXTERNAL__NEVERLINK",
-      licenses = ["notice"],
-      jar_urls = [
-          "https://repo1.maven.org/maven2/com/github/mpilquist/simulacrum_2.12/0.10.0/simulacrum_2.12-0.10.0.jar"
-      ],
-      jar_sha256 = "ab973ec7cf3ac1cbe11a3d866aae7b567bb4b2a7f038b9ee21ba3ce6b177613e",
-      neverlink=1
-  )
-
-  java_import_external(
       name = "org___scalacheck_and_scalacheck__2___12__EXTERNAL",
       licenses = ["notice"],
       jar_urls = [
@@ -366,25 +366,6 @@ def maven_dependencies():
   )
 
   java_import_external(
-      name = "org___typelevel_and_cats_ds_kernel__2___12__EXTERNAL",
-      licenses = ["notice"],
-      jar_urls = [
-          "https://repo1.maven.org/maven2/org/typelevel/cats-kernel_2.12/1.6.0/cats-kernel_2.12-1.6.0.jar"
-      ],
-      jar_sha256 = "65250bc92ea5d49cb5ca55f3869cfc8e5f90689cc983bfaff2c9b7db165f3013",
-      neverlink=0
-  )
-  java_import_external(
-      name = "org___typelevel_and_cats_ds_kernel__2___12__EXTERNAL__NEVERLINK",
-      licenses = ["notice"],
-      jar_urls = [
-          "https://repo1.maven.org/maven2/org/typelevel/cats-kernel_2.12/1.6.0/cats-kernel_2.12-1.6.0.jar"
-      ],
-      jar_sha256 = "65250bc92ea5d49cb5ca55f3869cfc8e5f90689cc983bfaff2c9b7db165f3013",
-      neverlink=1
-  )
-
-  java_import_external(
       name = "io___monix_and_monix_ds_reactive__2___12__EXTERNAL",
       licenses = ["notice"],
       jar_urls = [
@@ -400,25 +381,6 @@ def maven_dependencies():
           "https://repo1.maven.org/maven2/io/monix/monix-reactive_2.12/3.0.0-RC2/monix-reactive_2.12-3.0.0-RC2.jar"
       ],
       jar_sha256 = "306e2e8d2b01427e5a7409075d98f6133c0afbe1c053e94abf251ce03db8a41b",
-      neverlink=1
-  )
-
-  java_import_external(
-      name = "org___typelevel_and_cats_ds_macros__2___12__EXTERNAL",
-      licenses = ["notice"],
-      jar_urls = [
-          "https://repo1.maven.org/maven2/org/typelevel/cats-macros_2.12/1.6.0/cats-macros_2.12-1.6.0.jar"
-      ],
-      jar_sha256 = "b9bb2c24f6af1279b051c0fd257e0420d2b407bb0d50febfee52a4b6d1a09aa0",
-      neverlink=0
-  )
-  java_import_external(
-      name = "org___typelevel_and_cats_ds_macros__2___12__EXTERNAL__NEVERLINK",
-      licenses = ["notice"],
-      jar_urls = [
-          "https://repo1.maven.org/maven2/org/typelevel/cats-macros_2.12/1.6.0/cats-macros_2.12-1.6.0.jar"
-      ],
-      jar_sha256 = "b9bb2c24f6af1279b051c0fd257e0420d2b407bb0d50febfee52a4b6d1a09aa0",
       neverlink=1
   )
 
@@ -556,21 +518,21 @@ def maven_dependencies():
   )
 
   java_import_external(
-      name = "io___monix_and_monix_ds_types__2___12__EXTERNAL",
+      name = "org___typelevel_and_cats_ds_core__2___12__EXTERNAL",
       licenses = ["notice"],
       jar_urls = [
-          "https://repo1.maven.org/maven2/io/monix/monix-types_2.12/2.3.3/monix-types_2.12-2.3.3.jar"
+          "https://repo1.maven.org/maven2/org/typelevel/cats-core_2.12/1.3.1/cats-core_2.12-1.3.1.jar"
       ],
-      jar_sha256 = "619624432339bc30999a5faef08eecbd0bb85759bd4971451d587e667e0b7a0b",
+      jar_sha256 = "39d276d66e2f58bc9f6fd07f0778e512e25bdc31ff7aa169ad8c88f24a33794b",
       neverlink=0
   )
   java_import_external(
-      name = "io___monix_and_monix_ds_types__2___12__EXTERNAL__NEVERLINK",
+      name = "org___typelevel_and_cats_ds_core__2___12__EXTERNAL__NEVERLINK",
       licenses = ["notice"],
       jar_urls = [
-          "https://repo1.maven.org/maven2/io/monix/monix-types_2.12/2.3.3/monix-types_2.12-2.3.3.jar"
+          "https://repo1.maven.org/maven2/org/typelevel/cats-core_2.12/1.3.1/cats-core_2.12-1.3.1.jar"
       ],
-      jar_sha256 = "619624432339bc30999a5faef08eecbd0bb85759bd4971451d587e667e0b7a0b",
+      jar_sha256 = "39d276d66e2f58bc9f6fd07f0778e512e25bdc31ff7aa169ad8c88f24a33794b",
       neverlink=1
   )
 
@@ -628,25 +590,6 @@ def maven_dependencies():
           "https://repo1.maven.org/maven2/io/monix/monix-catnap_2.12/3.0.0-RC2/monix-catnap_2.12-3.0.0-RC2.jar"
       ],
       jar_sha256 = "f3dfd136c7a10a0713f6530671e01fcae6ae1191285adc48e496877d2672d867",
-      neverlink=1
-  )
-
-  java_import_external(
-      name = "io___monix_and_monix_ds_cats__2___12__EXTERNAL",
-      licenses = ["notice"],
-      jar_urls = [
-          "https://repo1.maven.org/maven2/io/monix/monix-cats_2.12/2.3.3/monix-cats_2.12-2.3.3.jar"
-      ],
-      jar_sha256 = "faac662bbd57ca8e59c4ac58353267b18a8c41a550bde394ac44622d80ae82f1",
-      neverlink=0
-  )
-  java_import_external(
-      name = "io___monix_and_monix_ds_cats__2___12__EXTERNAL__NEVERLINK",
-      licenses = ["notice"],
-      jar_urls = [
-          "https://repo1.maven.org/maven2/io/monix/monix-cats_2.12/2.3.3/monix-cats_2.12-2.3.3.jar"
-      ],
-      jar_sha256 = "faac662bbd57ca8e59c4ac58353267b18a8c41a550bde394ac44622d80ae82f1",
       neverlink=1
   )
 

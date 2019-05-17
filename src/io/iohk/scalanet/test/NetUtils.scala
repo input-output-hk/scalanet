@@ -3,9 +3,12 @@ package io.iohk.scalanet
 import java.net._
 import java.nio.ByteBuffer
 
-import io.iohk.scalanet.peergroup.{TCPPeerGroup, UDPPeerGroup}
+import io.iohk.decco.Codec
+import io.iohk.scalanet.peergroup.{InetMultiAddress, PeerGroup, TCPPeerGroup, UDPPeerGroup}
 import monix.execution.Scheduler
 
+import scala.concurrent.Await
+import scala.concurrent.duration._
 import scala.util.Random
 
 object NetUtils {
@@ -74,20 +77,30 @@ object NetUtils {
   case object TcpTerminalPeerGroup extends SimpleTerminalPeerGroup
   case object UdpTerminalPeerGroup extends SimpleTerminalPeerGroup
 
-  def randomTerminalPeerGroup(t: SimpleTerminalPeerGroup)(implicit scheduler: Scheduler) =
+  def randomTerminalPeerGroup[M](
+      t: SimpleTerminalPeerGroup
+  )(implicit scheduler: Scheduler, codec: Codec[M]): PeerGroup[InetMultiAddress, M] =
     t match {
       case TcpTerminalPeerGroup => randomTCPPeerGroup
       case UdpTerminalPeerGroup => randomUDPPeerGroup
     }
 
-  def randomTCPPeerGroup(implicit scheduler: Scheduler): TCPPeerGroup =
-    new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
+  def randomTCPPeerGroup[M](implicit scheduler: Scheduler, codec: Codec[M]): TCPPeerGroup[M] = {
+    val pg = new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
+    Await.result(pg.initialize().runToFuture, 10 seconds)
+    pg
+  }
 
-  def withTwoRandomTCPPeerGroups(
-      testCode: (TCPPeerGroup, TCPPeerGroup) => Any
-  )(implicit scheduler: Scheduler): Unit = {
-    val pg1 = randomTCPPeerGroup(scheduler)
-    val pg2 = randomTCPPeerGroup(scheduler)
+  def randomUDPPeerGroup[M](implicit scheduler: Scheduler, codec: Codec[M]): UDPPeerGroup[M] = {
+    val pg = new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
+    Await.result(pg.initialize().runToFuture, 10 seconds)
+    pg
+  }
+
+  def withTwoRandomTCPPeerGroups[M](
+      testCode: (TCPPeerGroup[M], TCPPeerGroup[M]) => Any
+  )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
+    val (pg1, pg2) = random2TCPPeerGroup(scheduler, codec)
     try {
       testCode(pg1, pg2)
     } finally {
@@ -96,12 +109,22 @@ object NetUtils {
     }
   }
 
-  def randomUDPPeerGroup(implicit scheduler: Scheduler): UDPPeerGroup =
-    new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
+  def random2TCPPeerGroup[M](implicit scheduler: Scheduler, codec: Codec[M]): (TCPPeerGroup[M], TCPPeerGroup[M]) = {
+    val address = aRandomAddress()
+    val address2 = aRandomAddress()
 
-  def withTwoRandomUDPPeerGroups(
-      testCode: (UDPPeerGroup, UDPPeerGroup) => Any
-  )(implicit scheduler: Scheduler): Unit = {
+    val pg1 = new TCPPeerGroup(TCPPeerGroup.Config(address))
+    val pg2 = new TCPPeerGroup(TCPPeerGroup.Config(address2))
+
+    Await.result(pg1.initialize().runToFuture, 10 seconds)
+    Await.result(pg2.initialize().runToFuture, 10 seconds)
+
+    (pg1, pg2)
+  }
+
+  def withTwoRandomUDPPeerGroups[M](
+      testCode: (UDPPeerGroup[M], UDPPeerGroup[M]) => Any
+  )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
     val pg1 = randomUDPPeerGroup
     val pg2 = randomUDPPeerGroup
     try {
@@ -111,5 +134,4 @@ object NetUtils {
       pg2.shutdown()
     }
   }
-
 }
