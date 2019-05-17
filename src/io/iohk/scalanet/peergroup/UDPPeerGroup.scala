@@ -1,115 +1,204 @@
 package io.iohk.scalanet.peergroup
 
-import java.net.{InetSocketAddress, StandardSocketOptions}
+import java.net.InetSocketAddress
 import java.nio.ByteBuffer
-import java.nio.channels.DatagramChannel
+import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.decco.auto._
+import io.iohk.decco.{Codec, DecodeFailure}
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
+import io.iohk.scalanet.peergroup.UDPPeerGroup._
 import io.netty.bootstrap.Bootstrap
+import io.netty.buffer.Unpooled
+import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
-import io.netty.channel._
+import io.netty.{channel, util}
 import monix.eval.Task
-import UDPPeerGroup._
-import io.iohk.decco.{Codec, PartialCodec, TypeCode}
-import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
-import monix.execution.Scheduler
 import monix.reactive.Observable
+import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
 
-class UDPPeerGroup(val config: Config)(implicit scheduler: Scheduler) extends TerminalPeerGroup[InetSocketAddress]() {
+import scala.collection.JavaConverters._
+import scala.concurrent.Promise
+import scala.util.Success
+
+/**
+  * PeerGroup implementation on top of UDP.
+  *
+  * @param config bind address etc. See the companion object.
+  * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
+  * @tparam M the message type.
+  */
+class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
+  private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
+
   private val workerGroup = new NioEventLoopGroup()
+
+  private val activeChannels = new ConcurrentHashMap[Seq[Byte], ChannelImpl]().asScala
 
   /**
     * 64 kilobytes is the theoretical maximum size of a complete IP datagram
     * https://stackoverflow.com/questions/9203403/java-datagrampacket-udp-maximum-send-recv-buffer-size
     */
-  private val server = new Bootstrap()
+  private val clientBootstrap = new Bootstrap()
     .group(workerGroup)
     .channel(classOf[NioDatagramChannel])
     .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
     .handler(new ChannelInitializer[NioDatagramChannel]() {
-      override def initChannel(ch: NioDatagramChannel): Unit = {
-        ch.pipeline.addLast(new ServerInboundHandler)
+      override def initChannel(nettyChannel: NioDatagramChannel): Unit = {
+        nettyChannel
+          .pipeline()
+          .addLast(new channel.ChannelInboundHandlerAdapter() {
+            override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
+              val datagram = msg.asInstanceOf[DatagramPacket]
+              val remoteAddress = datagram.sender()
+              val localAddress = datagram.recipient()
+              val messageE: Either[DecodeFailure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
+              log.info(s"Client channel read message $messageE with remote $remoteAddress and local $localAddress")
+
+              val channelId = getChannelId(remoteAddress, localAddress)
+
+              if (!activeChannels.contains(channelId)) {
+                throw new IllegalStateException(s"Missing channel instance for channelId $channelId")
+              }
+
+              val channel = activeChannels(channelId)
+              messageE.foreach(message => channel.messageSubject.onNext(message))
+            }
+          })
       }
     })
-    .bind(config.bindAddress)
-    .syncUninterruptibly()
-  log.info(s"Server bound to address ${config.bindAddress}")
 
-  override def sendMessage[MessageType](address: InetSocketAddress, message: MessageType)(
-      implicit codec: Codec[MessageType]
-  ): Task[Unit] = {
-    val pdu = PDU(processAddress, message)
-    val pduCodec = derivePduCodec[MessageType]
-    Task(writeUdp(address, pduCodec.encode(pdu)))
+  private val serverBootstrap = new Bootstrap()
+    .group(workerGroup)
+    .channel(classOf[NioDatagramChannel])
+    .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
+    .handler(new ChannelInitializer[NioDatagramChannel]() {
+      override def initChannel(nettyChannel: NioDatagramChannel): Unit = {
+        nettyChannel
+          .pipeline()
+          .addLast(new ChannelInboundHandlerAdapter() {
+            override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
+
+              val datagram = msg.asInstanceOf[DatagramPacket]
+              val remoteAddress = datagram.sender()
+              val localAddress = processAddress.inetSocketAddress //datagram.recipient()
+
+              val messageE: Either[DecodeFailure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
+
+              log.debug(s"Server read $messageE")
+              val nettyChannel: NioDatagramChannel = ctx.channel().asInstanceOf[NioDatagramChannel]
+              val channelId = getChannelId(remoteAddress, localAddress)
+
+              if (activeChannels.contains(channelId)) {
+                log.debug(s"Channel with id $channelId found in active channels table.")
+                val channel = activeChannels(channelId)
+                messageE.foreach(message => channel.messageSubject.onNext(message))
+              } else {
+                val channel = new ChannelImpl(nettyChannel, localAddress, remoteAddress, ReplaySubject[M]())
+                log.debug(s"Channel with id $channelId NOT found in active channels table. Creating a new one")
+                activeChannels.put(channelId, channel)
+                channelSubject.onNext(channel)
+                messageE.foreach(message => channel.messageSubject.onNext(message))
+              }
+            }
+          })
+      }
+    })
+
+  class ChannelImpl(
+      val nettyChannel: NioDatagramChannel,
+      localAddress: InetSocketAddress,
+      remoteAddress: InetSocketAddress,
+      val messageSubject: Subject[M, M]
+  ) extends Channel[InetMultiAddress, M] {
+
+    log.debug(
+      s"Setting up new channel from local address $localAddress " +
+        s"to remote address $remoteAddress. Netty channelId is ${nettyChannel.id()}. " +
+        s"My channelId is ${getChannelId(remoteAddress, localAddress)}"
+    )
+
+    override val to: InetMultiAddress = InetMultiAddress(remoteAddress)
+
+    override def sendMessage(message: M): Task[Unit] = sendMessage(message, localAddress, remoteAddress, nettyChannel)
+
+    override def in: Observable[M] = messageSubject
+
+    override def close(): Task[Unit] = {
+      messageSubject.onComplete()
+      Task.unit
+    }
+
+    private def sendMessage(
+        message: M,
+        sender: InetSocketAddress,
+        recipient: InetSocketAddress,
+        nettyChannel: NioDatagramChannel
+    ): Task[Unit] = {
+      val nettyBuffer = Unpooled.wrappedBuffer(codec.encode(message))
+      toTask(nettyChannel.writeAndFlush(new DatagramPacket(nettyBuffer, recipient, sender)))
+    }
   }
+
+  private val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
+
+  override def initialize(): Task[Unit] =
+    toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}"))
+
+  override def processAddress: InetMultiAddress = config.processAddress
+
+  override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
+    val cf = clientBootstrap.connect(to.inetSocketAddress)
+    val ct: Task[NioDatagramChannel] = toTask(cf).map(_ => cf.channel().asInstanceOf[NioDatagramChannel])
+    ct.map { nettyChannel =>
+      val localAddress = nettyChannel.localAddress()
+      log.debug(s"Generated local address for new client is $localAddress")
+      val channelId = getChannelId(to.inetSocketAddress, localAddress)
+
+      assert(!activeChannels.contains(channelId), s"HOUSTON, WE HAVE A MULTIPLEXING PROBLEM")
+
+      val channel = new ChannelImpl(nettyChannel, localAddress, to.inetSocketAddress, ReplaySubject[M]())
+      activeChannels.put(channelId, channel)
+      channel
+    }
+  }
+
+  override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
 
   override def shutdown(): Task[Unit] = {
-    Task(server.channel().close().await())
+    channelSubject.onComplete()
+    for {
+      _ <- toTask(serverBind.channel().close())
+      _ <- toTask(workerGroup.shutdownGracefully())
+    } yield ()
   }
 
-  private class ServerInboundHandler extends ChannelInboundHandlerAdapter {
-    override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      val b = msg.asInstanceOf[DatagramPacket]
-      val remoteAddress: InetSocketAddress = b.sender()
-      subscribers.notify((remoteAddress, b.content().nioBuffer().asReadOnlyBuffer()))
-    }
+  private def toTask(f: util.concurrent.Future[_]): Task[Unit] = {
+    val promisedCompletion = Promise[Unit]()
+    f.addListener((_: util.concurrent.Future[_]) => promisedCompletion.complete(Success(())))
+    Task.fromFuture(promisedCompletion.future)
   }
 
-  private def writeUdp(address: InetSocketAddress, data: ByteBuffer): Unit = {
-    val udp = DatagramChannel.open().setOption[Integer](StandardSocketOptions.SO_SNDBUF, 65536)
-    udp.configureBlocking(true)
-    udp.connect(address)
-    try {
-      udp.write(data)
-    } finally {
-      udp.close()
-    }
+  private def getChannelId(remoteAddress: InetSocketAddress, localAddress: InetSocketAddress): Seq[Byte] = {
+    val b = ByteBuffer.allocate(16)
+    b.put(remoteAddress.getAddress.getAddress)
+    b.putInt(remoteAddress.getPort)
+    b.put(localAddress.getAddress.getAddress)
+    b.putInt(localAddress.getPort)
+    b.array().toIndexedSeq
   }
-
-  override def messageChannel[MessageType](
-      implicit codec: Codec[MessageType]
-  ): Observable[(InetSocketAddress, MessageType)] = {
-    val pduCodec = derivePduCodec[MessageType]
-    val messageChannel = new MessageChannel[InetSocketAddress, PDU[MessageType]](this)(pduCodec)
-    decoderTable.put(pduCodec.typeCode.id, messageChannel.handleMessage)
-    messageChannel.inboundMessages.map {
-      case (_, pdu) =>
-        (pdu.replyTo, pdu.sdu)
-    }
-  }
-
-  private def derivePduCodec[MessageType](implicit codec: Codec[MessageType]): Codec[PDU[MessageType]] = {
-    implicit val pduTc: TypeCode[PDU[MessageType]] = TypeCode.genTypeCode[PDU, MessageType]
-    implicit val mpc: PartialCodec[MessageType] = codec.partialCodec
-    Codec[PDU[MessageType]]
-  }
-  override val processAddress: InetSocketAddress = config.processAddress
-
-  override def initialize(): Task[Unit] = Task.unit
 }
 
 object UDPPeerGroup {
 
-  case class Config(bindAddress: InetSocketAddress, processAddress: InetSocketAddress)
+  case class Config(bindAddress: InetSocketAddress, processAddress: InetMultiAddress)
 
   object Config {
-    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
+    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, InetMultiAddress(bindAddress))
   }
-  case class PDU[T](replyTo: InetSocketAddress, sdu: T)
-
-  def create(
-      config: Config
-  )(implicit scheduler: Scheduler): Either[InitializationError, UDPPeerGroup] =
-    PeerGroup.create(new UDPPeerGroup(config), config)
-
-  def createOrThrow(config: Config)(implicit scheduler: Scheduler): UDPPeerGroup =
-    PeerGroup.createOrThrow(new UDPPeerGroup(config), config)
-
 }

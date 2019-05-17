@@ -1,9 +1,8 @@
 package io.iohk.scalanet.peergroup
 
-import java.net.InetSocketAddress
-
 import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils._
+import io.iohk.scalanet.peergroup.SimplePeerGroup.ControlMessage
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures._
@@ -12,11 +11,13 @@ import org.scalatest.concurrent.ScalaFutures
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import io.iohk.scalanet.TaskValues._
+
 import scala.util.Random
 
 class SimplePeerGroupSpec extends FlatSpec {
 
-  implicit val patienceConfig = ScalaFutures.PatienceConfig(timeout = 1 second, interval = 100 millis)
+  implicit val patienceConfig = ScalaFutures.PatienceConfig(timeout = 5 second, interval = 1000 millis)
 
   behavior of "SimplePeerGroup"
 
@@ -24,12 +25,10 @@ class SimplePeerGroupSpec extends FlatSpec {
     terminalPeerGroups.foreach { terminalGroup =>
       withASimplePeerGroup(terminalGroup, "Alice") { alice =>
         val message = Random.alphanumeric.take(1044).mkString
-        val messageReceivedF = alice.messageChannel[String].headL.runToFuture
-
-        alice.sendMessage("Alice", message).runToFuture.futureValue
-
-        val messageReceived = messageReceivedF.futureValue
-        messageReceived shouldBe (alice.processAddress, message)
+        val aliceReceived = alice.server().mergeMap(_.in).headL.runToFuture
+        val aliceClient: Channel[String, String] = alice.client(alice.processAddress).evaluated
+        aliceClient.sendMessage(message).runToFuture
+        aliceReceived.futureValue shouldBe message
       }
     }
   }
@@ -42,23 +41,19 @@ class SimplePeerGroupSpec extends FlatSpec {
         "Alice",
         "Bob"
       ) { (alice, bob) =>
-        val message = "HI!! Alice"
+        val alicesMessage = "hi bob, from alice"
+        val bobsMessage = "hi alice, from bob"
 
-        val messageReceivedF = alice.messageChannel[String].headL.runToFuture
+        val bobReceived = bob.server().mergeMap(_.in).headL.runToFuture
+        bob.server().foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
-        bob.sendMessage("Alice", message).runToFuture.futureValue
+        val aliceClient = alice.client(bob.processAddress).evaluated
 
-        val messageReceived = messageReceivedF.futureValue
-        messageReceived shouldBe (bob.processAddress, message)
+        val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
+        aliceClient.sendMessage(alicesMessage).evaluated
 
-        val aliceMessage = "HI!! Bob"
-        val messageReceivedByBobF = bob.messageChannel[String].headL.runToFuture
-
-        alice.sendMessage("Bob", aliceMessage).runToFuture.futureValue
-
-        val messageReceivedByBob = messageReceivedByBobF.futureValue
-        messageReceivedByBob shouldBe (alice.processAddress, aliceMessage)
-
+        bobReceived.futureValue shouldBe alicesMessage
+        aliceReceived.futureValue shouldBe bobsMessage
       }
     }
   }
@@ -71,30 +66,48 @@ class SimplePeerGroupSpec extends FlatSpec {
         "Alice",
         "Bob"
       ) { (alice, bob) =>
-        val message = "HI!! Alice"
+        val bobsMessage = "HI Alice"
+        val alicesMessage = "HI Bob"
 
-        val messageReceivedF = alice.messageChannel[String].headL.runToFuture
-        bob.sendMessage("Alice", message).runToFuture.futureValue
-        val messageReceived = messageReceivedF.futureValue
-        messageReceived shouldBe (bob.processAddress, message)
+        val bobReceived = bob.server().mergeMap(_.in).headL.runToFuture
+        bob.server().foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
-        val messageReceivedByBobF = bob.messageChannel[String].headL.runToFuture
-        val aliceMessage = "HI!! Bob"
-        alice.sendMessage("Bob", aliceMessage).runToFuture.futureValue
-        val messageReceivedByBob = messageReceivedByBobF.futureValue
-        messageReceivedByBob shouldBe (alice.processAddress, aliceMessage)
+        val aliceClient = alice.client(bob.processAddress).evaluated
 
-        val messageReceivedByBobNewsF = bob.messageChannel[String].headL.runToFuture
+        val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
+        aliceClient.sendMessage(alicesMessage).evaluated
+
+        bobReceived.futureValue shouldBe alicesMessage
+        aliceReceived.futureValue shouldBe bobsMessage
+
         val messageNews = "Latest News"
-        alice.sendMessage("news", messageNews).runToFuture.futureValue
-        val messageReceivedByBobNews = messageReceivedByBobNewsF.futureValue
-        messageReceivedByBobNews shouldBe (alice.processAddress, messageNews)
 
-        val messageReceivedByBobSportsF = bob.messageChannel[String].headL.runToFuture
-        val messageSports = "Sports Updates"
-        alice.sendMessage("sports", messageSports).runToFuture.futureValue
-        val messageReceivedByBobSports = messageReceivedByBobSportsF.futureValue
-        messageReceivedByBobSports shouldBe (alice.processAddress, messageSports)
+        val bobReceivedNews = bob
+          .server()
+          .mergeMap { channel =>
+            channel.in.filter(msg => msg == messageNews)
+          }
+          .headL
+          .runToFuture
+
+        val sportUpdates = "Sports Updates"
+
+        val bobSportsUpdate = bob
+          .server()
+          .mergeMap { channel =>
+            channel.in.filter(msg => msg == sportUpdates)
+          }
+          .headL
+          .runToFuture
+
+        val aliceClientNews = alice.client("news").evaluated
+        val aliceClientSports = alice.client("sports").evaluated
+
+        aliceClientNews.sendMessage(messageNews).evaluated
+        bobReceivedNews.futureValue shouldBe messageNews
+
+        aliceClientSports.sendMessage(sportUpdates).evaluated
+        bobSportsUpdate.futureValue shouldBe sportUpdates
 
       }
     }
@@ -109,39 +122,67 @@ class SimplePeerGroupSpec extends FlatSpec {
         "Bob",
         "Charlie"
       ) { (alice, bob, charlie) =>
-        val message = "HI!! Alice"
+        val bobsMessage = "HI Alice"
+        val alicesMessage = "HI Bob"
 
-        val messageReceivedF = alice.messageChannel[String].headL.runToFuture
-        val messageReceivedByBobF = bob.messageChannel[String].headL.runToFuture
+        val bobReceived = bob.server().mergeMap(_.in).headL.runToFuture
+        bob.server().foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
-        bob.sendMessage("Alice", message).runToFuture.futureValue
-        val messageReceived = messageReceivedF.futureValue
-        messageReceived shouldBe (bob.processAddress, message)
+        val aliceClient = alice.client(bob.processAddress).evaluated
 
-        val aliceMessage = "HI!! Bob"
-        alice.sendMessage("Bob", aliceMessage).runToFuture.futureValue
-        val messageReceivedByBob = messageReceivedByBobF.futureValue
-        messageReceivedByBob shouldBe (alice.processAddress, aliceMessage)
+        val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
+        aliceClient.sendMessage(alicesMessage).evaluated
 
-        val messageReceivedByBobNewsF = bob.messageChannel[String].headL.runToFuture
-        val messageReceivedByCharlieNewsF = charlie.messageChannel[String].headL.runToFuture
+        bobReceived.futureValue shouldBe alicesMessage
+        aliceReceived.futureValue shouldBe bobsMessage
 
         val messageNews = "Latest News"
-        alice.sendMessage("news", messageNews).runToFuture.futureValue
-        val messageReceivedByBobNews = messageReceivedByBobNewsF.futureValue
-        messageReceivedByBobNews shouldBe (alice.processAddress, messageNews)
-        val messageReceivedByCharlieNews = messageReceivedByCharlieNewsF.futureValue
-        messageReceivedByCharlieNews shouldBe (alice.processAddress, messageNews)
 
-        val messageReceivedByBobSportsF = bob.messageChannel[String].headL.runToFuture
-        val messageReceivedByCharlieSportsF = charlie.messageChannel[String].headL.runToFuture
+        val bobReceivedNews = bob
+          .server()
+          .mergeMap { channel =>
+            channel.in.filter(msg => msg == messageNews)
+          }
+          .headL
+          .runToFuture
 
-        val messageSports = "Sports Updates"
-        alice.sendMessage("sports", messageSports).runToFuture.futureValue
-        val messageReceivedByBobSports = messageReceivedByBobSportsF.futureValue
-        messageReceivedByBobSports shouldBe (alice.processAddress, messageSports)
-        val messageReceivedByCharlieSports = messageReceivedByCharlieSportsF.futureValue
-        messageReceivedByCharlieSports shouldBe (alice.processAddress, messageSports)
+        val charlieReceivedNews = charlie
+          .server()
+          .mergeMap { channel =>
+            channel.in.filter(msg => msg == messageNews)
+          }
+          .headL
+          .runToFuture
+
+        val aliceClientNews = alice.client("news").evaluated
+
+        aliceClientNews.sendMessage(messageNews).evaluated
+        bobReceivedNews.futureValue shouldBe messageNews
+        charlieReceivedNews.futureValue shouldBe messageNews
+
+        val sportUpdates = "Sports Updates"
+
+        val bobSportsUpdate = bob
+          .server()
+          .mergeMap { channel =>
+            channel.in.filter(msg => msg == sportUpdates)
+          }
+          .headL
+          .runToFuture
+
+        val charlieSportsUpdate = charlie
+          .server()
+          .mergeMap { channel =>
+            channel.in.filter(msg => msg == sportUpdates)
+          }
+          .headL
+          .runToFuture
+
+        val aliceSportsClient = alice.client("sports").evaluated
+
+        aliceSportsClient.sendMessage(sportUpdates).evaluated
+        bobSportsUpdate.futureValue shouldBe sportUpdates
+        charlieSportsUpdate.futureValue shouldBe sportUpdates
 
       }
     }
@@ -154,7 +195,7 @@ class SimplePeerGroupSpec extends FlatSpec {
   private def withASimplePeerGroup(
       underlyingTerminalGroup: SimpleTerminalPeerGroup,
       a: String
-  )(testCode: SimplePeerGroup[String, InetSocketAddress] => Any): Unit = {
+  )(testCode: SimplePeerGroup[String, InetMultiAddress, String] => Any): Unit = {
     withSimplePeerGroups(underlyingTerminalGroup, a, List.empty[String])(groups => testCode(groups(0)))
   }
 
@@ -165,8 +206,8 @@ class SimplePeerGroupSpec extends FlatSpec {
       b: String
   )(
       testCode: (
-          SimplePeerGroup[String, InetSocketAddress],
-          SimplePeerGroup[String, InetSocketAddress]
+          SimplePeerGroup[String, InetMultiAddress, String],
+          SimplePeerGroup[String, InetMultiAddress, String]
       ) => Any
   ): Unit = {
 
@@ -181,9 +222,9 @@ class SimplePeerGroupSpec extends FlatSpec {
       c: String
   )(
       testCode: (
-          SimplePeerGroup[String, InetSocketAddress],
-          SimplePeerGroup[String, InetSocketAddress],
-          SimplePeerGroup[String, InetSocketAddress]
+          SimplePeerGroup[String, InetMultiAddress, String],
+          SimplePeerGroup[String, InetMultiAddress, String],
+          SimplePeerGroup[String, InetMultiAddress, String]
       ) => Any
   ): Unit = {
 
@@ -192,18 +233,20 @@ class SimplePeerGroupSpec extends FlatSpec {
     )
   }
 
+  type UnderlyingMessage = Either[ControlMessage[String, InetMultiAddress], String]
+
   private def withSimplePeerGroups(
       underlyingTerminalGroup: SimpleTerminalPeerGroup,
       bootstrapAddress: String,
       multiCastAddresses: List[String],
       addresses: String*
   )(
-      testCode: Seq[SimplePeerGroup[String, InetSocketAddress]] => Any
+      testCode: Seq[SimplePeerGroup[String, InetMultiAddress, String]] => Any
   ): Unit = {
 
-    val bootStrapTerminalGroup = randomTerminalPeerGroup(underlyingTerminalGroup)
+    val bootStrapTerminalGroup = randomTerminalPeerGroup[UnderlyingMessage](underlyingTerminalGroup)
     val bootstrap = new SimplePeerGroup(
-      SimplePeerGroup.Config(bootstrapAddress, List.empty[String], Map.empty[String, InetSocketAddress]),
+      SimplePeerGroup.Config(bootstrapAddress, List.empty[String], Map.empty[String, InetMultiAddress]),
       bootStrapTerminalGroup
     )
     bootstrap.initialize().runToFuture.futureValue
@@ -217,7 +260,7 @@ class SimplePeerGroupSpec extends FlatSpec {
               multiCastAddresses,
               Map(bootstrapAddress -> bootStrapTerminalGroup.processAddress)
             ),
-            randomTerminalPeerGroup(underlyingTerminalGroup)
+            randomTerminalPeerGroup[UnderlyingMessage](underlyingTerminalGroup)
           )
       )
       .toList

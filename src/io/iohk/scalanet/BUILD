@@ -5,7 +5,6 @@ scala_library(
     external = [
         "io.monix:monix%",
         "io.netty:netty-all",
-        "org.typelevel:cats-core%",
         "com.chuusai:shapeless%",
         "org.slf4j:slf4j-api",
     ],
