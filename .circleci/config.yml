@@ -24,11 +24,6 @@ jobs:
           command: ~/repo/docker/installBazel
 
       - run:
-          name: setup bazel remote proxy
-          command: ~/bazel-remote-proxy -backend circleci:// -bind localhost:7654
-          background: true
-
-      - run:
           name: test
           command: |
              bazel test --jobs=1 //... --test_output=errors
