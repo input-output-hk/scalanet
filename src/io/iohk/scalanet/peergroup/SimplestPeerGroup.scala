@@ -27,8 +27,8 @@ class SimplestPeerGroup[A, AA, M](
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private implicit val apc: PartialCodec[A] = aCodec.partialCodec
-  private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
+  //private implicit val apc: PartialCodec[A] = aCodec.partialCodec
+  //private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
 
   override def processAddress: A = config.processAddress
 
