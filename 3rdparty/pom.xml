@@ -27,7 +27,7 @@
     <dependency>
       <groupId>io.monix</groupId>
       <artifactId>monix_2.12</artifactId>
-      <version>3.0.0-RC2</version>
+      <version>3.0.0-RC1</version>
     </dependency>
     <dependency>
       <groupId>io.netty</groupId>
