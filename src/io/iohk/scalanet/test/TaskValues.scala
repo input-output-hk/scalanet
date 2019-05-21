@@ -9,7 +9,7 @@ object TaskValues {
   implicit class TaskOps[T](task: Task[T]) {
 
     def evaluated(implicit scheduler: Scheduler, patienceConfig: PatienceConfig): T = {
-      task.runToFuture.futureValue
+      task.runAsync.futureValue
     }
   }
 }
