@@ -206,7 +206,8 @@ object TCPPeerGroup {
       messageSubject.onComplete()
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      val messageEq: Either[Codec.Failure, M] = Codec[ByteBuffer].codec(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
+      val messageEq: Either[Codec.Failure, M] =
+        Codec[ByteBuffer].codec(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
 
       val messageE: Either[Codec.Failure, M] = codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
       log.debug(
