@@ -1,8 +1,9 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.{InetAddress, InetSocketAddress}
+import java.nio.ByteBuffer
 
-import io.iohk.decco.{Codec, DecodeFailure}
+import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
@@ -18,6 +19,7 @@ import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
+import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 
 import scala.concurrent.Promise
 import scala.util.Success
@@ -204,7 +206,9 @@ object TCPPeerGroup {
       messageSubject.onComplete()
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      val messageE: Either[DecodeFailure, M] = codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
+      val messageEq: Either[Codec.Failure, M] = Codec[ByteBuffer].codec(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
+
+      val messageE: Either[Codec.Failure, M] = codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
       log.debug(
         s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
           s"to local address ${ctx.channel().localAddress()}, ${messageE.getOrElse("decode failed")}"

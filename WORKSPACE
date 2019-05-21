@@ -32,6 +32,6 @@ load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
 git_repository(
     name = "decco",
-    commit = "4846d9d9c25eda44cd71e389b10765408c9851d9",
+    commit = "ac364f1416c8fa85ee049be1c9a40a9ca4e7badb",
     remote = "https://github.com/input-output-hk/decco.git",
 )

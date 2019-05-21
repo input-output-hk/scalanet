@@ -1,6 +1,5 @@
 package io.iohk.scalanet.peergroup
 
-import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.peergroup.SimplePeerGroup.ControlMessage
 import org.scalatest.FlatSpec
@@ -8,7 +7,7 @@ import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures._
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.concurrent.ScalaFutures
-
+import io.iohk.decco.auto._
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import io.iohk.scalanet.TaskValues._
