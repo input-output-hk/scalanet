@@ -1,9 +1,7 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.{InetAddress, InetSocketAddress}
-import java.nio.ByteBuffer
 
-import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
@@ -19,8 +17,9 @@ import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-
+import io.iohk.decco.BufferInstantiator.global.DirectByteBuffer
+//import io.iohk.decco.auto._
+import io.iohk.decco._
 import scala.concurrent.Promise
 import scala.util.Success
 
@@ -136,6 +135,7 @@ object TCPPeerGroup {
 
     private val log = LoggerFactory.getLogger(getClass)
 
+
     val to: InetMultiAddress = InetMultiAddress(inetSocketAddress)
 
     private val activation = Promise[ChannelHandlerContext]()
@@ -200,14 +200,14 @@ object TCPPeerGroup {
   private class MessageNotifier[M](val messageSubject: Subject[M, M])(implicit codec: Codec[M])
       extends ChannelInboundHandlerAdapter {
 
+
     private val log = LoggerFactory.getLogger(getClass)
 
     override def channelInactive(channelHandlerContext: ChannelHandlerContext): Unit =
       messageSubject.onComplete()
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      val messageEq: Either[Codec.Failure, M] =
-        Codec[ByteBuffer].codec(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
+
 
       val messageE: Either[Codec.Failure, M] = codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
       log.debug(
