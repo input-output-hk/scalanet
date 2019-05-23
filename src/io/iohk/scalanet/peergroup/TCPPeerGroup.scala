@@ -135,7 +135,6 @@ object TCPPeerGroup {
 
     private val log = LoggerFactory.getLogger(getClass)
 
-
     val to: InetMultiAddress = InetMultiAddress(inetSocketAddress)
 
     private val activation = Promise[ChannelHandlerContext]()
@@ -200,14 +199,12 @@ object TCPPeerGroup {
   private class MessageNotifier[M](val messageSubject: Subject[M, M])(implicit codec: Codec[M])
       extends ChannelInboundHandlerAdapter {
 
-
     private val log = LoggerFactory.getLogger(getClass)
 
     override def channelInactive(channelHandlerContext: ChannelHandlerContext): Unit =
       messageSubject.onComplete()
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-
 
       val messageE: Either[Codec.Failure, M] = codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
       log.debug(

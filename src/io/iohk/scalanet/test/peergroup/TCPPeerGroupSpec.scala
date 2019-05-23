@@ -22,7 +22,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   it should "send and receive a message" in
     withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
       println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
-      val alicesMessage = "Hi Bob"// Random.alphanumeric.take(1024).mkString
+      val alicesMessage = "Hi Bob" // Random.alphanumeric.take(1024).mkString
       val bobsMessage = "Hi Alice" //Random.alphanumeric.take(1024).mkString
 
       bob.server().foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runToFuture
