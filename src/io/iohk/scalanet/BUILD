@@ -8,7 +8,8 @@ scala_library(
         "com.chuusai:shapeless%",
         "org.slf4j:slf4j-api",
     ],
-    deps = ["@decco//src/io/iohk/decco"],
+    deps = ["@decco//src/io/iohk/decco",
+            "@decco//src/io/iohk/decco/auto",],
 )
 
 scala_test(
@@ -23,5 +24,6 @@ scala_test(
     deps = [
         "scalanet",
         "@decco//src/io/iohk/decco",
+        "@decco//src/io/iohk/decco/auto",
     ],
 )

@@ -33,9 +33,6 @@ class SimplePeerGroup[A, AA, M](
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
   private val multiCastTable: mutable.Map[A, List[AA]] = new ConcurrentHashMap[A, List[AA]]().asScala
 
-  private implicit val apc: PartialCodec[A] = aCodec.partialCodec
-  private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
-
   override def processAddress: A = config.processAddress
 
   override def client(to: A): Task[Channel[A, M]] = {

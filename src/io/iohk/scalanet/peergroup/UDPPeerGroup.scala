@@ -3,8 +3,9 @@ package io.iohk.scalanet.peergroup
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
+import io.iohk.decco.BufferInstantiator.global.DirectByteBuffer
 
-import io.iohk.decco.{Codec, DecodeFailure}
+import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.iohk.scalanet.peergroup.UDPPeerGroup._
 import io.netty.bootstrap.Bootstrap
@@ -57,7 +58,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
               val datagram = msg.asInstanceOf[DatagramPacket]
               val remoteAddress = datagram.sender()
               val localAddress = datagram.recipient()
-              val messageE: Either[DecodeFailure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
+              val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
               log.info(s"Client channel read message $messageE with remote $remoteAddress and local $localAddress")
 
               val channelId = getChannelId(remoteAddress, localAddress)
@@ -88,7 +89,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
               val remoteAddress = datagram.sender()
               val localAddress = processAddress.inetSocketAddress //datagram.recipient()
 
-              val messageE: Either[DecodeFailure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
+              val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
 
               log.debug(s"Server read $messageE")
               val nettyChannel: NioDatagramChannel = ctx.channel().asInstanceOf[NioDatagramChannel]
