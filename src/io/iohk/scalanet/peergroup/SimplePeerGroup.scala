@@ -7,11 +7,13 @@ import io.iohk.scalanet.peergroup.SimplePeerGroup.Config
 import scala.collection.mutable
 import scala.collection.JavaConverters._
 import io.iohk.decco._
+//import io.iohk.decco.auto._
 import SimplePeerGroup._
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
 import org.slf4j.LoggerFactory
+
 
 /**
   * Another fairly trivial example of a higher-level peer group. This class
@@ -33,8 +35,9 @@ class SimplePeerGroup[A, AA, M](
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
   private val multiCastTable: mutable.Map[A, List[AA]] = new ConcurrentHashMap[A, List[AA]]().asScala
 
-  //private implicit val apc: PartialCodec[A] = aCodec.
-  //private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
+  implicit def contromMessageCodec[A:Codec,AA:Codec] : Codec[ControlMessage[A,AA]] = SimplePeerGroup.controlMessageCodec
+//  implicit def enrolledMessageCodec[A:Codec,AA:Codec] : Codec[Enrolled[A,AA]] = SimplePeerGroup.EnrolledMessageCodec
+//  implicit def enrolMessageCodec[A:Codec,AA:Codec] : Codec[EnrolMe[A,AA]] = SimplePeerGroup.EnrolMessageCodec
 
   override def processAddress: A = config.processAddress
 
@@ -61,6 +64,9 @@ class SimplePeerGroup[A, AA, M](
 
   override def initialize(): Task[Unit] = {
     routingTable += processAddress -> underLyingPeerGroup.processAddress
+
+//    private implicit val apc: Codec[EnrolMe[A,AA]] = ByteArrayCodec
+ //   private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
 
     underLyingPeerGroup
       .server()
@@ -161,19 +167,46 @@ class SimplePeerGroup[A, AA, M](
   }
 }
 
+sealed trait ControlMessage[A, AA]
+
+ case class EnrolMe[A, AA](myAddress: A, multicastAddresses: List[A], myUnderlyingAddress: AA)
+  extends ControlMessage[A, AA]
+
+case class Enrolled[A, AA](
+                                              address: A,
+                                              underlyingAddress: AA,
+                                              routingTable: Map[A, AA],
+                                              multiCastTable: Map[A, List[AA]]
+                                            ) extends ControlMessage[A, AA]
+
+
 object SimplePeerGroup {
 
-  private[scalanet] sealed trait ControlMessage[A, AA]
+  def controlMessageCodec[A:Codec,AA:Codec] :Codec[ControlMessage[A,AA]] = {
+    import io.iohk.decco.auto._
+    Codec[ControlMessage[A,AA]]
+  }
 
-  private[scalanet] case class EnrolMe[A, AA](myAddress: A, multicastAddresses: List[A], myUnderlyingAddress: AA)
-      extends ControlMessage[A, AA]
+//  def EnrolMessageCodec[A:Codec,AA:Codec] :Codec[EnrolMe[A,AA]] = {
+//    import io.iohk.decco.auto._
+//    Codec[EnrolMe[A,AA]]
+//  }
+//  def EnrolledMessageCodec[A:Codec,AA:Codec] :Codec[Enrolled[A,AA]] = {
+//    import io.iohk.decco.auto._
+//    Codec[Enrolled[A,AA]]
+//  }
 
-  private[scalanet] case class Enrolled[A, AA](
-      address: A,
-      underlyingAddress: AA,
-      routingTable: Map[A, AA],
-      multiCastTable: Map[A, List[AA]]
-  ) extends ControlMessage[A, AA]
+//  private[scalanet] sealed trait ControlMessage[A, AA]
+//
+//  private[scalanet] case class EnrolMe[A, AA](myAddress: A, multicastAddresses: List[A], myUnderlyingAddress: AA)
+//      extends ControlMessage[A, AA]
+//
+//  private[scalanet] case class Enrolled[A, AA](
+//      address: A,
+//      underlyingAddress: AA,
+//      routingTable: Map[A, AA],
+//      multiCastTable: Map[A, List[AA]]
+//  ) extends ControlMessage[A, AA]
 
   case class Config[A, AA](processAddress: A, multicastAddresses: List[A], knownPeers: Map[A, AA])
 }

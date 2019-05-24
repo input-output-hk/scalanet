@@ -8,7 +8,7 @@ dependencies:
       lang: scala
   io.netty:
     netty-all:
-      version: "4.1.28.Final"
+      version: "4.1.31.Final"
       lang: java
   com.chuusai:
     shapeless:
