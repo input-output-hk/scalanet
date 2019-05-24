@@ -182,7 +182,6 @@ object TCPPeerGroup {
               s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
           )
           val e = codec.encode(message)
-          e.flip()
           ctx.writeAndFlush(Unpooled.wrappedBuffer(e))
         })
         .map(_ => ())
