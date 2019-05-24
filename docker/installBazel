@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export BAZEL_VERSION=0.20.0
+export BAZEL_VERSION=0.24.0
 
 apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl gnupg \
  && apt-get install -y --no-install-recommends bash-completion g++ unzip zlib1g-dev \
