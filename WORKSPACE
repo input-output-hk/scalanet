@@ -1,13 +1,13 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
-rules_scala_version = "b537bddc58a77318b34165812a0311ef52806318"
+rules_scala_version = "ca5a7acff4ff630f68f58b8e01e8c25dbf908fb7"
 
-
-git_repository(
+http_archive(
     name = "io_bazel_rules_scala",
-    remote = "https://github.com/bazelbuild/rules_scala",
-    commit = "ca5a7acff4ff630f68f58b8e01e8c25dbf908fb7" # HEAD as of 2019-05-13, update this as needed
+    url = "https://github.com/bazelbuild/rules_scala/archive/%s.zip"%rules_scala_version,
+    type = "zip",
+    strip_prefix= "rules_scala-%s" % rules_scala_version
 )
 
 http_archive(
