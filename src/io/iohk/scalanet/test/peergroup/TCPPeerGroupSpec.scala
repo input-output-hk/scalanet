@@ -11,7 +11,7 @@ import org.scalatest.{BeforeAndAfterAll, FlatSpec}
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
-//import scala.util.Random
+import scala.util.Random
 class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5 seconds)
@@ -21,8 +21,8 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   it should "send and receive a message" in
     withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
       println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
-      val alicesMessage = "Hi Bob" // Random.alphanumeric.take(1024).mkString
-      val bobsMessage = "Hi Alice" //Random.alphanumeric.take(1024).mkString
+      val alicesMessage = Random.alphanumeric.take(1024).mkString
+      val bobsMessage = Random.alphanumeric.take(1024).mkString
 
       bob.server().foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runAsync
       val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runAsync
