@@ -33,9 +33,6 @@ class SimplePeerGroup[A, AA, M](
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
   private val multiCastTable: mutable.Map[A, List[AA]] = new ConcurrentHashMap[A, List[AA]]().asScala
 
-  implicit def contromMessageCodec[A: Codec, AA: Codec]: Codec[ControlMessage[A, AA]] =
-    SimplePeerGroup.controlMessageCodec
-
   override def processAddress: A = config.processAddress
 
   override def client(to: A): Task[Channel[A, M]] = {
@@ -162,11 +159,6 @@ class SimplePeerGroup[A, AA, M](
 }
 
 object SimplePeerGroup {
-
-  def controlMessageCodec[A: Codec, AA: Codec]: Codec[ControlMessage[A, AA]] = {
-    import io.iohk.decco.auto._
-    Codec[ControlMessage[A, AA]]
-  }
 
   private[scalanet] sealed trait ControlMessage[A, AA]
 
