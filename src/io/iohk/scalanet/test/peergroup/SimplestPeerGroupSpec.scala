@@ -36,7 +36,7 @@ class SimplestPeerGroupSpec extends FlatSpec {
           msg == alicesMessage
         }
         .headL
-        .runToFuture
+        .runAsync
 
       bob.server().foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
@@ -46,7 +46,7 @@ class SimplestPeerGroupSpec extends FlatSpec {
           msg == bobsMessage
         }
         .headL
-        .runToFuture
+        .runAsync
       aliceClient.sendMessage(alicesMessage).evaluated
 
       aliceReceived.futureValue shouldBe bobsMessage
