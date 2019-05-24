@@ -114,11 +114,9 @@ object TCPPeerGroup {
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
-      val e = codec.encode(message)
-      (e: java.nio.Buffer).position(0)
       toTask({
         nettyChannel
-          .writeAndFlush(Unpooled.wrappedBuffer(e))
+          .writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
       })
     }
 
@@ -181,8 +179,7 @@ object TCPPeerGroup {
             s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
               s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
           )
-          val e = codec.encode(message)
-          ctx.writeAndFlush(Unpooled.wrappedBuffer(e))
+          ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
         })
         .map(_ => ())
     }
