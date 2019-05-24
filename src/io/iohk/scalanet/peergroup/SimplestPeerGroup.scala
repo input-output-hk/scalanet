@@ -27,7 +27,6 @@ class SimplestPeerGroup[A, AA, M](
 
   private val log = LoggerFactory.getLogger(getClass)
 
-
   override def processAddress: A = config.processAddress
 
   override def client(to: A): Task[Channel[A, M]] =
