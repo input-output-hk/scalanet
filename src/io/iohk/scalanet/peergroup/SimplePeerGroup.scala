@@ -14,7 +14,6 @@ import monix.execution.Scheduler
 import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 
-
 /**
   * Another fairly trivial example of a higher-level peer group. This class
   * builds on SimplestPeerGroup providing to provide additionally:
@@ -35,7 +34,8 @@ class SimplePeerGroup[A, AA, M](
   private val routingTable: mutable.Map[A, AA] = new ConcurrentHashMap[A, AA]().asScala
   private val multiCastTable: mutable.Map[A, List[AA]] = new ConcurrentHashMap[A, List[AA]]().asScala
 
-  implicit def contromMessageCodec[A:Codec,AA:Codec] : Codec[ControlMessage[A,AA]] = SimplePeerGroup.controlMessageCodec
+  implicit def contromMessageCodec[A: Codec, AA: Codec]: Codec[ControlMessage[A, AA]] =
+    SimplePeerGroup.controlMessageCodec
 //  implicit def enrolledMessageCodec[A:Codec,AA:Codec] : Codec[Enrolled[A,AA]] = SimplePeerGroup.EnrolledMessageCodec
 //  implicit def enrolMessageCodec[A:Codec,AA:Codec] : Codec[EnrolMe[A,AA]] = SimplePeerGroup.EnrolMessageCodec
 
@@ -66,7 +66,7 @@ class SimplePeerGroup[A, AA, M](
     routingTable += processAddress -> underLyingPeerGroup.processAddress
 
 //    private implicit val apc: Codec[EnrolMe[A,AA]] = ByteArrayCodec
- //   private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
+    //   private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
 
     underLyingPeerGroup
       .server()
@@ -169,22 +169,21 @@ class SimplePeerGroup[A, AA, M](
 
 sealed trait ControlMessage[A, AA]
 
- case class EnrolMe[A, AA](myAddress: A, multicastAddresses: List[A], myUnderlyingAddress: AA)
-  extends ControlMessage[A, AA]
+case class EnrolMe[A, AA](myAddress: A, multicastAddresses: List[A], myUnderlyingAddress: AA)
+    extends ControlMessage[A, AA]
 
 case class Enrolled[A, AA](
-                                              address: A,
-                                              underlyingAddress: AA,
-                                              routingTable: Map[A, AA],
-                                              multiCastTable: Map[A, List[AA]]
-                                            ) extends ControlMessage[A, AA]
-
+    address: A,
+    underlyingAddress: AA,
+    routingTable: Map[A, AA],
+    multiCastTable: Map[A, List[AA]]
+) extends ControlMessage[A, AA]
 
 object SimplePeerGroup {
 
-  def controlMessageCodec[A:Codec,AA:Codec] :Codec[ControlMessage[A,AA]] = {
+  def controlMessageCodec[A: Codec, AA: Codec]: Codec[ControlMessage[A, AA]] = {
     import io.iohk.decco.auto._
-    Codec[ControlMessage[A,AA]]
+    Codec[ControlMessage[A, AA]]
   }
 
 //  def EnrolMessageCodec[A:Codec,AA:Codec] :Codec[EnrolMe[A,AA]] = {

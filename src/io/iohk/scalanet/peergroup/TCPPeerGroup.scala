@@ -2,7 +2,6 @@ package io.iohk.scalanet.peergroup
 
 import java.net.{InetAddress, InetSocketAddress}
 
-
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
@@ -115,7 +114,7 @@ object TCPPeerGroup {
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
-     val  e = codec.encode(message)
+      val e = codec.encode(message)
       (e: java.nio.Buffer).position(0)
       toTask({
         nettyChannel
