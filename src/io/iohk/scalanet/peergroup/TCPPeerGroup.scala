@@ -2,6 +2,7 @@ package io.iohk.scalanet.peergroup
 
 import java.net.{InetAddress, InetSocketAddress}
 
+
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
@@ -10,15 +11,14 @@ import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
-import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
 import io.netty.handler.codec.bytes.ByteArrayEncoder
+import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
 import io.netty.util
 import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
-import io.iohk.decco.BufferInstantiator.global.DirectByteBuffer
-//import io.iohk.decco.auto._
+import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import io.iohk.decco._
 import scala.concurrent.Promise
 import scala.util.Success
@@ -115,9 +115,11 @@ object TCPPeerGroup {
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
+     val  e = codec.encode(message)
+      (e: java.nio.Buffer).position(0)
       toTask({
         nettyChannel
-          .writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
+          .writeAndFlush(Unpooled.wrappedBuffer(e))
       })
     }
 
@@ -180,7 +182,9 @@ object TCPPeerGroup {
             s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
               s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
           )
-          ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
+          val e = codec.encode(message)
+          e.flip()
+          ctx.writeAndFlush(Unpooled.wrappedBuffer(e))
         })
         .map(_ => ())
     }

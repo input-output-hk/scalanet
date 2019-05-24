@@ -1,7 +1,7 @@
 package io.iohk.scalanet.peergroup
 
 import io.iohk.scalanet.NetUtils._
-import io.iohk.scalanet.peergroup.SimplePeerGroup.ControlMessage
+//import io.iohk.scalanet.peergroup.SimplePeerGroup.ControlMessage
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures._
@@ -12,7 +12,7 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import io.iohk.scalanet.TaskValues._
 
-import scala.util.Random
+//import scala.util.Random
 
 class SimplePeerGroupSpec extends FlatSpec {
 
@@ -23,7 +23,7 @@ class SimplePeerGroupSpec extends FlatSpec {
   it should "send a message to itself" in new SimpleTerminalPeerGroups {
     terminalPeerGroups.foreach { terminalGroup =>
       withASimplePeerGroup(terminalGroup, "Alice") { alice =>
-        val message = Random.alphanumeric.take(1044).mkString
+        val message = "Hi ALICE"//Random.alphanumeric.take(1044).mkString
         val aliceReceived = alice.server().mergeMap(_.in).headL.runToFuture
         val aliceClient: Channel[String, String] = alice.client(alice.processAddress).evaluated
         aliceClient.sendMessage(message).runToFuture

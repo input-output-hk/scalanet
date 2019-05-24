@@ -1,7 +1,7 @@
 package io.iohk.scalanet.peergroup
 
 import io.iohk.decco._
-import io.iohk.scalanet.peergroup.SimplestPeerGroup.{Config, ControlMessage}
+import io.iohk.scalanet.peergroup.SimplestPeerGroup.{Config}
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
