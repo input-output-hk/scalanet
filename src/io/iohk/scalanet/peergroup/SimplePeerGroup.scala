@@ -7,7 +7,6 @@ import io.iohk.scalanet.peergroup.SimplePeerGroup.Config
 import scala.collection.mutable
 import scala.collection.JavaConverters._
 import io.iohk.decco._
-//import io.iohk.decco.auto._
 import SimplePeerGroup._
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -36,8 +35,6 @@ class SimplePeerGroup[A, AA, M](
 
   implicit def contromMessageCodec[A: Codec, AA: Codec]: Codec[ControlMessage[A, AA]] =
     SimplePeerGroup.controlMessageCodec
-//  implicit def enrolledMessageCodec[A:Codec,AA:Codec] : Codec[Enrolled[A,AA]] = SimplePeerGroup.EnrolledMessageCodec
-//  implicit def enrolMessageCodec[A:Codec,AA:Codec] : Codec[EnrolMe[A,AA]] = SimplePeerGroup.EnrolMessageCodec
 
   override def processAddress: A = config.processAddress
 
@@ -64,9 +61,6 @@ class SimplePeerGroup[A, AA, M](
 
   override def initialize(): Task[Unit] = {
     routingTable += processAddress -> underLyingPeerGroup.processAddress
-
-//    private implicit val apc: Codec[EnrolMe[A,AA]] = ByteArrayCodec
-    //   private implicit val aapc: PartialCodec[AA] = aaCodec.partialCodec
 
     underLyingPeerGroup
       .server()
@@ -167,18 +161,6 @@ class SimplePeerGroup[A, AA, M](
   }
 }
 
-sealed trait ControlMessage[A, AA]
-
-case class EnrolMe[A, AA](myAddress: A, multicastAddresses: List[A], myUnderlyingAddress: AA)
-    extends ControlMessage[A, AA]
-
-case class Enrolled[A, AA](
-    address: A,
-    underlyingAddress: AA,
-    routingTable: Map[A, AA],
-    multiCastTable: Map[A, List[AA]]
-) extends ControlMessage[A, AA]
-
 object SimplePeerGroup {
 
   def controlMessageCodec[A: Codec, AA: Codec]: Codec[ControlMessage[A, AA]] = {
@@ -186,26 +168,17 @@ object SimplePeerGroup {
     Codec[ControlMessage[A, AA]]
   }
 
-//  def EnrolMessageCodec[A:Codec,AA:Codec] :Codec[EnrolMe[A,AA]] = {
-//    import io.iohk.decco.auto._
-//    Codec[EnrolMe[A,AA]]
-//  }
-//  def EnrolledMessageCodec[A:Codec,AA:Codec] :Codec[Enrolled[A,AA]] = {
-//    import io.iohk.decco.auto._
-//    Codec[Enrolled[A,AA]]
-//  }
+  private[scalanet] sealed trait ControlMessage[A, AA]
 
-//  private[scalanet] sealed trait ControlMessage[A, AA]
-//
-//  private[scalanet] case class EnrolMe[A, AA](myAddress: A, multicastAddresses: List[A], myUnderlyingAddress: AA)
-//      extends ControlMessage[A, AA]
-//
-//  private[scalanet] case class Enrolled[A, AA](
-//      address: A,
-//      underlyingAddress: AA,
-//      routingTable: Map[A, AA],
-//      multiCastTable: Map[A, List[AA]]
-//  ) extends ControlMessage[A, AA]
+  private[scalanet] case class EnrolMe[A, AA](myAddress: A, multicastAddresses: List[A], myUnderlyingAddress: AA)
+      extends ControlMessage[A, AA]
+
+  private[scalanet] case class Enrolled[A, AA](
+      address: A,
+      underlyingAddress: AA,
+      routingTable: Map[A, AA],
+      multiCastTable: Map[A, List[AA]]
+  ) extends ControlMessage[A, AA]
 
   case class Config[A, AA](processAddress: A, multicastAddresses: List[A], knownPeers: Map[A, AA])
 }
