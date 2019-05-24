@@ -4,33 +4,17 @@
 load("@io_bazel_rules_scala//scala:scala_import.bzl", "scala_import")
 
 scala_import(
-    name = "io___monix_and_monix_ds_tail__2___12__NEVERLINK",
+    name = "io___monix_and_monix_ds_reactive__2___12__NEVERLINK",
     jars = [
-        "@io___monix_and_monix_ds_tail__2___12__EXTERNAL__NEVERLINK",
+        "@io___monix_and_monix_ds_reactive__2___12__EXTERNAL__NEVERLINK",
     ],
     visibility = ['//visibility:public'],
     neverlink = 1
 )
 scala_import(
-    name = "io___monix_and_monix_ds_tail__2___12",
+    name = "io___monix_and_monix_ds_reactive__2___12",
     jars = [
-        "@io___monix_and_monix_ds_tail__2___12__EXTERNAL",
-    ],
-    visibility = ['//visibility:public'],
-    neverlink = 0
-)
-scala_import(
-    name = "org___scala_ds_lang___modules_and_scala_ds_collection_ds_compat__2___12__NEVERLINK",
-    jars = [
-        "@org___scala_ds_lang___modules_and_scala_ds_collection_ds_compat__2___12__EXTERNAL__NEVERLINK",
-    ],
-    visibility = ['//visibility:public'],
-    neverlink = 1
-)
-scala_import(
-    name = "org___scala_ds_lang___modules_and_scala_ds_collection_ds_compat__2___12",
-    jars = [
-        "@org___scala_ds_lang___modules_and_scala_ds_collection_ds_compat__2___12__EXTERNAL",
+        "@io___monix_and_monix_ds_reactive__2___12__EXTERNAL",
     ],
     visibility = ['//visibility:public'],
     neverlink = 0
@@ -52,17 +36,33 @@ scala_import(
     neverlink = 0
 )
 scala_import(
-    name = "io___monix_and_monix_ds_execution__2___12__NEVERLINK",
+    name = "io___monix_and_monix_ds_eval__2___12__NEVERLINK",
     jars = [
-        "@io___monix_and_monix_ds_execution__2___12__EXTERNAL__NEVERLINK",
+        "@io___monix_and_monix_ds_eval__2___12__EXTERNAL__NEVERLINK",
     ],
     visibility = ['//visibility:public'],
     neverlink = 1
 )
 scala_import(
-    name = "io___monix_and_monix_ds_execution__2___12",
+    name = "io___monix_and_monix_ds_eval__2___12",
     jars = [
-        "@io___monix_and_monix_ds_execution__2___12__EXTERNAL",
+        "@io___monix_and_monix_ds_eval__2___12__EXTERNAL",
+    ],
+    visibility = ['//visibility:public'],
+    neverlink = 0
+)
+scala_import(
+    name = "io___monix_and_monix_ds_java__2___12__NEVERLINK",
+    jars = [
+        "@io___monix_and_monix_ds_java__2___12__EXTERNAL__NEVERLINK",
+    ],
+    visibility = ['//visibility:public'],
+    neverlink = 1
+)
+scala_import(
+    name = "io___monix_and_monix_ds_java__2___12",
+    jars = [
+        "@io___monix_and_monix_ds_java__2___12__EXTERNAL",
     ],
     visibility = ['//visibility:public'],
     neverlink = 0
@@ -116,33 +116,33 @@ scala_import(
     neverlink = 0
 )
 scala_import(
-    name = "org___typelevel_and_cats_ds_kernel__2___12__NEVERLINK",
+    name = "org___typelevel_and_cats_ds_effect__2___12__NEVERLINK",
     jars = [
-        "@org___typelevel_and_cats_ds_kernel__2___12__EXTERNAL__NEVERLINK",
+        "@org___typelevel_and_cats_ds_effect__2___12__EXTERNAL__NEVERLINK",
     ],
     visibility = ['//visibility:public'],
     neverlink = 1
 )
 scala_import(
-    name = "org___typelevel_and_cats_ds_kernel__2___12",
+    name = "org___typelevel_and_cats_ds_effect__2___12",
     jars = [
-        "@org___typelevel_and_cats_ds_kernel__2___12__EXTERNAL",
+        "@org___typelevel_and_cats_ds_effect__2___12__EXTERNAL",
     ],
     visibility = ['//visibility:public'],
     neverlink = 0
 )
 scala_import(
-    name = "org___typelevel_and_cats_ds_macros__2___12__NEVERLINK",
+    name = "io___monix_and_monix_ds_tail__2___12__NEVERLINK",
     jars = [
-        "@org___typelevel_and_cats_ds_macros__2___12__EXTERNAL__NEVERLINK",
+        "@io___monix_and_monix_ds_tail__2___12__EXTERNAL__NEVERLINK",
     ],
     visibility = ['//visibility:public'],
     neverlink = 1
 )
 scala_import(
-    name = "org___typelevel_and_cats_ds_macros__2___12",
+    name = "io___monix_and_monix_ds_tail__2___12",
     jars = [
-        "@org___typelevel_and_cats_ds_macros__2___12__EXTERNAL",
+        "@io___monix_and_monix_ds_tail__2___12__EXTERNAL",
     ],
     visibility = ['//visibility:public'],
     neverlink = 0
@@ -164,17 +164,17 @@ scala_import(
     neverlink = 0
 )
 scala_import(
-    name = "io___monix_and_monix_ds_eval__2___12__NEVERLINK",
+    name = "org___typelevel_and_machinist__2___12__NEVERLINK",
     jars = [
-        "@io___monix_and_monix_ds_eval__2___12__EXTERNAL__NEVERLINK",
+        "@org___typelevel_and_machinist__2___12__EXTERNAL__NEVERLINK",
     ],
     visibility = ['//visibility:public'],
     neverlink = 1
 )
 scala_import(
-    name = "io___monix_and_monix_ds_eval__2___12",
+    name = "org___typelevel_and_machinist__2___12",
     jars = [
-        "@io___monix_and_monix_ds_eval__2___12__EXTERNAL",
+        "@org___typelevel_and_machinist__2___12__EXTERNAL",
     ],
     visibility = ['//visibility:public'],
     neverlink = 0
@@ -212,33 +212,33 @@ scala_import(
     neverlink = 0
 )
 scala_import(
-    name = "org___typelevel_and_cats_ds_effect__2___12__NEVERLINK",
+    name = "org___typelevel_and_cats_ds_macros__2___12__NEVERLINK",
     jars = [
-        "@org___typelevel_and_cats_ds_effect__2___12__EXTERNAL__NEVERLINK",
+        "@org___typelevel_and_cats_ds_macros__2___12__EXTERNAL__NEVERLINK",
     ],
     visibility = ['//visibility:public'],
     neverlink = 1
 )
 scala_import(
-    name = "org___typelevel_and_cats_ds_effect__2___12",
+    name = "org___typelevel_and_cats_ds_macros__2___12",
     jars = [
-        "@org___typelevel_and_cats_ds_effect__2___12__EXTERNAL",
+        "@org___typelevel_and_cats_ds_macros__2___12__EXTERNAL",
     ],
     visibility = ['//visibility:public'],
     neverlink = 0
 )
 scala_import(
-    name = "io___monix_and_monix_ds_reactive__2___12__NEVERLINK",
+    name = "org___typelevel_and_cats_ds_kernel__2___12__NEVERLINK",
     jars = [
-        "@io___monix_and_monix_ds_reactive__2___12__EXTERNAL__NEVERLINK",
+        "@org___typelevel_and_cats_ds_kernel__2___12__EXTERNAL__NEVERLINK",
     ],
     visibility = ['//visibility:public'],
     neverlink = 1
 )
 scala_import(
-    name = "io___monix_and_monix_ds_reactive__2___12",
+    name = "org___typelevel_and_cats_ds_kernel__2___12",
     jars = [
-        "@io___monix_and_monix_ds_reactive__2___12__EXTERNAL",
+        "@org___typelevel_and_cats_ds_kernel__2___12__EXTERNAL",
     ],
     visibility = ['//visibility:public'],
     neverlink = 0
@@ -260,49 +260,17 @@ scala_import(
     neverlink = 0
 )
 scala_import(
-    name = "io___monix_and_monix_ds_catnap__2___12__NEVERLINK",
+    name = "io___monix_and_monix_ds_execution__2___12__NEVERLINK",
     jars = [
-        "@io___monix_and_monix_ds_catnap__2___12__EXTERNAL__NEVERLINK",
+        "@io___monix_and_monix_ds_execution__2___12__EXTERNAL__NEVERLINK",
     ],
     visibility = ['//visibility:public'],
     neverlink = 1
 )
 scala_import(
-    name = "io___monix_and_monix_ds_catnap__2___12",
+    name = "io___monix_and_monix_ds_execution__2___12",
     jars = [
-        "@io___monix_and_monix_ds_catnap__2___12__EXTERNAL",
-    ],
-    visibility = ['//visibility:public'],
-    neverlink = 0
-)
-scala_import(
-    name = "io___monix_and_monix_ds_java__2___12__NEVERLINK",
-    jars = [
-        "@io___monix_and_monix_ds_java__2___12__EXTERNAL__NEVERLINK",
-    ],
-    visibility = ['//visibility:public'],
-    neverlink = 1
-)
-scala_import(
-    name = "io___monix_and_monix_ds_java__2___12",
-    jars = [
-        "@io___monix_and_monix_ds_java__2___12__EXTERNAL",
-    ],
-    visibility = ['//visibility:public'],
-    neverlink = 0
-)
-scala_import(
-    name = "org___typelevel_and_machinist__2___12__NEVERLINK",
-    jars = [
-        "@org___typelevel_and_machinist__2___12__EXTERNAL__NEVERLINK",
-    ],
-    visibility = ['//visibility:public'],
-    neverlink = 1
-)
-scala_import(
-    name = "org___typelevel_and_machinist__2___12",
-    jars = [
-        "@org___typelevel_and_machinist__2___12__EXTERNAL",
+        "@io___monix_and_monix_ds_execution__2___12__EXTERNAL",
     ],
     visibility = ['//visibility:public'],
     neverlink = 0

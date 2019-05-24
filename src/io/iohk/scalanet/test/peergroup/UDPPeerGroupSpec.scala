@@ -24,12 +24,12 @@ class UDPPeerGroupSpec extends FlatSpec {
     val alicesMessage = Random.alphanumeric.take(1024 * 4).mkString
     val bobsMessage = Random.alphanumeric.take(1024 * 4).mkString
 
-    val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runToFuture
-    bob.server().foreach(channel => channel.sendMessage(bobsMessage).runToFuture)
+    val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runAsync
+    bob.server().foreach(channel => channel.sendMessage(bobsMessage).runAsync)
 
     val aliceClient = alice.client(bob.processAddress).evaluated
-    val aliceReceived = aliceClient.in.headL.runToFuture
-    aliceClient.sendMessage(alicesMessage).runToFuture
+    val aliceReceived = aliceClient.in.headL.runAsync
+    aliceClient.sendMessage(alicesMessage).runAsync
 
     bobReceived.futureValue shouldBe alicesMessage
     aliceReceived.futureValue shouldBe bobsMessage
@@ -39,7 +39,7 @@ class UDPPeerGroupSpec extends FlatSpec {
     val pg1 = randomUDPPeerGroup[String]
     isListeningUDP(pg1.config.bindAddress) shouldBe true
 
-    pg1.shutdown().runToFuture.futureValue
+    pg1.shutdown().runAsync.futureValue
 
     isListeningUDP(pg1.config.bindAddress) shouldBe false
   }
