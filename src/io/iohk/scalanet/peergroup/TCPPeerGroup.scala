@@ -5,6 +5,7 @@ import java.net.{InetAddress, InetSocketAddress}
 import io.iohk.decco.{Codec, DecodeFailure}
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
+import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
 import io.netty.channel._
@@ -13,14 +14,12 @@ import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
 import io.netty.handler.codec.bytes.ByteArrayEncoder
-import io.netty.util
 import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
 
 import scala.concurrent.Promise
-import scala.util.Success
 
 /**
   * PeerGroup implementation on top of TCP.
@@ -214,11 +213,5 @@ object TCPPeerGroup {
         messageSubject.onNext(message)
       }
     }
-  }
-
-  private def toTask(f: util.concurrent.Future[_]): Task[Unit] = {
-    val promisedCompletion = Promise[Unit]()
-    f.addListener((_: util.concurrent.Future[_]) => promisedCompletion.complete(Success(())))
-    Task.fromFuture(promisedCompletion.future)
   }
 }
