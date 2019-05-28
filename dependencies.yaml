@@ -2,6 +2,7 @@ scalaVersionSufix: "2.12"
 
 dependencies:
 
+
   io.monix:
     monix:
       version: "3.0.0-RC2"
@@ -40,5 +41,12 @@ dependencies:
       version: "2.24.0"
       lang: java
       scope: test
+  org.eclipse.californium:
+    scandium:
+      version: "1.0.6"
+      lang: java
+    element-connector:
+      version: "1.0.6"
+      lang: java
 
 

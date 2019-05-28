@@ -2,6 +2,7 @@ package io.iohk.scalanet
 
 import java.net._
 import java.nio.ByteBuffer
+import java.security.KeyStore
 
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.{InetMultiAddress, PeerGroup, TCPPeerGroup, UDPPeerGroup}
@@ -12,6 +13,14 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 object NetUtils {
+
+  val keyStore: KeyStore = loadKeyStore("keystore.p12", "password")
+
+  def loadKeyStore(keystoreLocation: String, keystorePassword: String): KeyStore = {
+    val keystore = KeyStore.getInstance("PKCS12")
+    keystore.load(NetUtils.getClass.getClassLoader.getResourceAsStream(keystoreLocation), keystorePassword.toCharArray)
+    keystore
+  }
 
   def aRandomAddress(): InetSocketAddress = {
     val s = new ServerSocket(0)

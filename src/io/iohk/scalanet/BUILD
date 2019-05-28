@@ -7,6 +7,8 @@ scala_library(
         "io.netty:netty-all",
         "com.chuusai:shapeless%",
         "org.slf4j:slf4j-api",
+        "org.eclipse.californium:element-connector",
+        "org.eclipse.californium:scandium"
     ],
     deps = ["@decco//src/io/iohk/decco"],
 )

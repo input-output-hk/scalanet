@@ -423,6 +423,25 @@ def maven_dependencies():
   )
 
   java_import_external(
+      name = "org___eclipse___californium_and_scandium",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/eclipse/californium/scandium/1.0.6/scandium-1.0.6.jar"
+      ],
+      jar_sha256 = "78e51350990578afdfbe95c6ea7850a2e9bacfdcad06fa0bbd1e376f5d43198a",
+      neverlink=0
+  )
+  java_import_external(
+      name = "org___eclipse___californium_and_scandium__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/eclipse/californium/scandium/1.0.6/scandium-1.0.6.jar"
+      ],
+      jar_sha256 = "78e51350990578afdfbe95c6ea7850a2e9bacfdcad06fa0bbd1e376f5d43198a",
+      neverlink=1
+  )
+
+  java_import_external(
       name = "org___typelevel_and_cats_ds_effect__2___12__EXTERNAL",
       licenses = ["notice"],
       jar_urls = [
@@ -495,6 +514,25 @@ def maven_dependencies():
           "https://repo1.maven.org/maven2/io/monix/monix_2.12/3.0.0-RC2/monix_2.12-3.0.0-RC2.jar"
       ],
       jar_sha256 = "a669ea3d6353b5e25efbe6344410b8bedf37a85cf8dfca5246d361881116a18e",
+      neverlink=1
+  )
+
+  java_import_external(
+      name = "org___eclipse___californium_and_element_ds_connector",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/eclipse/californium/element-connector/1.0.6/element-connector-1.0.6.jar"
+      ],
+      jar_sha256 = "8c928e30404dcb19dc7a7157828986707efee775970ef68ff64ad393c973ee3e",
+      neverlink=0
+  )
+  java_import_external(
+      name = "org___eclipse___californium_and_element_ds_connector__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/eclipse/californium/element-connector/1.0.6/element-connector-1.0.6.jar"
+      ],
+      jar_sha256 = "8c928e30404dcb19dc7a7157828986707efee775970ef68ff64ad393c973ee3e",
       neverlink=1
   )
 
