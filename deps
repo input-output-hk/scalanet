@@ -3,10 +3,15 @@
 ROOT=`pwd`
 
 BAZEL_DEPS_REPO="https://github.com/input-output-hk/bazel-deps.git"
-BAZEL_DEPS_COMMIT="c9f440d823c987ce6ad86faf10fd53ecf6d9bbc7"
+BAZEL_DEPS_COMMIT="afc4425dc71194b9a6fa9b243b5155ea49dd322c"
 IDENTIFIER="$BAZEL_DEPS_REPO|$BAZEL_DEPS_COMMIT"
+SHASUM="sha256sum"
+unameOut="$(uname -s)"
+case "${unameOut}" in
+    Darwin*)    SHASUM="shasum -a256";;
+esac
 
-BAZEL_DEPS="/tmp/$(echo "$IDENTIFIER" | sha256sum | awk '{ print $1 }')/.bazel-deps/"
+BAZEL_DEPS="/tmp/$(echo "$IDENTIFIER" | ${SHASUM} | awk '{ print $1 }')/.bazel-deps/"
 
 function fail() {
   echo "$1"
