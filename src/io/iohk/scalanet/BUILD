@@ -10,7 +10,8 @@ scala_library(
         "org.eclipse.californium:element-connector",
         "org.eclipse.californium:scandium"
     ],
-    deps = ["@decco//src/io/iohk/decco"],
+    deps = ["@decco//src/io/iohk/decco",
+            "@decco//src/io/iohk/decco/auto",],
 )
 
 scala_test(
@@ -25,5 +26,6 @@ scala_test(
     deps = [
         "scalanet",
         "@decco//src/io/iohk/decco",
+        "@decco//src/io/iohk/decco/auto",
     ],
 )

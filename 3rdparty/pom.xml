@@ -27,12 +27,12 @@
     <dependency>
       <groupId>io.monix</groupId>
       <artifactId>monix_2.12</artifactId>
-      <version>3.0.0-RC2</version>
+      <version>3.0.0-RC1</version>
     </dependency>
     <dependency>
       <groupId>io.netty</groupId>
       <artifactId>netty-all</artifactId>
-      <version>4.1.28.Final</version>
+      <version>4.1.31.Final</version>
     </dependency>
     <dependency>
       <groupId>com.chuusai</groupId>

@@ -6,7 +6,7 @@ import java.security.cert.Certificate
 import java.security.{PrivateKey, PublicKey}
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.decco.Codec
+import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -20,7 +20,7 @@ import org.eclipse.californium.scandium.dtls.cipher.CipherSuite._
 import scala.collection.JavaConverters._
 import scala.concurrent.Promise
 
-class DTLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], scheduler: Scheduler)
+class DTLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer], scheduler: Scheduler)
     extends PeerGroup[InetMultiAddress, M] {
 
   private val serverConnector = createServerConnector()

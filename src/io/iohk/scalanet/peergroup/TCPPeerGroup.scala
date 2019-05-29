@@ -1,8 +1,8 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.{InetAddress, InetSocketAddress}
+import java.nio.ByteBuffer
 
-import io.iohk.decco.{Codec, DecodeFailure}
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
@@ -12,14 +12,18 @@ import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
-import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
 import io.netty.handler.codec.bytes.ByteArrayEncoder
+import io.netty.util
 import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
+import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+import io.iohk.decco._
+import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
 
 import scala.concurrent.Promise
+import scala.util.Success
 
 /**
   * PeerGroup implementation on top of TCP.
@@ -32,7 +36,7 @@ import scala.concurrent.Promise
   * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class TCPPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends TerminalPeerGroup[InetMultiAddress, M]() {
+class TCPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -203,7 +207,8 @@ object TCPPeerGroup {
       messageSubject.onComplete()
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-      val messageE: Either[DecodeFailure, M] = codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
+
+      val messageE: Either[Codec.Failure, M] = codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
       log.debug(
         s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
           s"to local address ${ctx.channel().localAddress()}, ${messageE.getOrElse("decode failed")}"
@@ -213,5 +218,11 @@ object TCPPeerGroup {
         messageSubject.onNext(message)
       }
     }
+  }
+
+  private def toTask(f: util.concurrent.Future[_]): Task[Unit] = {
+    val promisedCompletion = Promise[Unit]()
+    f.addListener((_: util.concurrent.Future[_]) => promisedCompletion.complete(Success(())))
+    Task.fromFuture(promisedCompletion.future)
   }
 }

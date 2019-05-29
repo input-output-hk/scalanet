@@ -5,11 +5,11 @@ dependencies:
 
   io.monix:
     monix:
-      version: "3.0.0-RC2"
+      version: "3.0.0-RC1"
       lang: scala
   io.netty:
     netty-all:
-      version: "4.1.28.Final"
+      version: "4.1.31.Final"
       lang: java
   com.chuusai:
     shapeless:

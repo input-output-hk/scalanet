@@ -1,9 +1,10 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
+import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.decco.{Codec, DecodeFailure}
+import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{getChannelId, toTask}
 import io.iohk.scalanet.peergroup.UDPPeerGroup._
@@ -28,7 +29,7 @@ import scala.collection.JavaConverters._
   * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends TerminalPeerGroup[InetMultiAddress, M]() {
+class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -55,7 +56,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
               val datagram = msg.asInstanceOf[DatagramPacket]
               val remoteAddress = datagram.sender()
               val localAddress = datagram.recipient()
-              val messageE: Either[DecodeFailure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
+              val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
               log.info(s"Client channel read message $messageE with remote $remoteAddress and local $localAddress")
 
               val channelId = getChannelId(remoteAddress, localAddress)
@@ -86,7 +87,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
               val remoteAddress = datagram.sender()
               val localAddress = processAddress.inetSocketAddress //datagram.recipient()
 
-              val messageE: Either[DecodeFailure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
+              val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
 
               log.debug(s"Server read $messageE")
               val nettyChannel: NioDatagramChannel = ctx.channel().asInstanceOf[NioDatagramChannel]

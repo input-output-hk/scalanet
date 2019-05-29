@@ -1,6 +1,8 @@
 package io.iohk.scalanet.peergroup
 
 import io.iohk.decco.auto._
+import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.TaskValues._
 import monix.execution.Scheduler.Implicits.global
@@ -12,7 +14,6 @@ import org.scalatest.{BeforeAndAfterAll, FlatSpec}
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Random
-
 class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5 seconds)
@@ -25,11 +26,11 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
       val alicesMessage = Random.alphanumeric.take(1024).mkString
       val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-      bob.server().foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runToFuture
-      val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runToFuture
+      bob.server().foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runAsync
+      val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runAsync
 
       val aliceClient = alice.client(bob.processAddress).evaluated
-      val aliceReceived = aliceClient.in.headL.runToFuture
+      val aliceReceived = aliceClient.in.headL.runAsync
       aliceClient.sendMessage(alicesMessage).evaluated
 
       bobReceived.futureValue shouldBe alicesMessage
@@ -40,15 +41,15 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     val tcpPeerGroup = randomTCPPeerGroup[String]
     isListening(tcpPeerGroup.config.bindAddress) shouldBe true
 
-    tcpPeerGroup.shutdown().runToFuture.futureValue
+    tcpPeerGroup.shutdown().runAsync.futureValue
 
     isListening(tcpPeerGroup.config.bindAddress) shouldBe false
   }
 
   it should "report the same address for two inbound channels" in
     withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
-      val firstInbound = bob.server().headL.runToFuture
-      val secondInbound = bob.server().drop(1).headL.runToFuture
+      val firstInbound = bob.server().headL.runAsync
+      val secondInbound = bob.server().drop(1).headL.runAsync
 
       alice.client(bob.processAddress).evaluated
       alice.client(bob.processAddress).evaluated
