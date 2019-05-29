@@ -2,35 +2,28 @@ package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
+import java.security.cert.Certificate
 import java.security.{PrivateKey, PublicKey}
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
 import monix.eval.Task
+import monix.execution.Scheduler
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
+import org.eclipse.californium.elements._
 import org.eclipse.californium.scandium.DTLSConnector
 import org.eclipse.californium.scandium.config.DtlsConnectorConfig
-import org.eclipse.californium.scandium.dtls.cipher.CipherSuite
-import org.eclipse.californium.elements.{RawData, RawDataChannel}
+import org.eclipse.californium.scandium.dtls.cipher.CipherSuite._
 
 import scala.collection.JavaConverters._
+import scala.concurrent.Promise
 
-class DTLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends PeerGroup[InetMultiAddress, M] {
+class DTLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], scheduler: Scheduler)
+    extends PeerGroup[InetMultiAddress, M] {
 
-  private val scandiumDTLSConnectorConfig = new DtlsConnectorConfig.Builder(config.bindAddress)
-    .setSupportedCipherSuites(
-      Array[CipherSuite](
-        CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8,
-        CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
-      )
-    )
-    .setIdentity(config.privateKey, config.publicKey)
-    .setClientAuthenticationRequired(config.clientAuthRequired)
-    .build()
-
-  private val scandiumDTLSConnector = new DTLSConnector(scandiumDTLSConnectorConfig)
+  private val connector = createConnector()
 
   private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
 
@@ -39,28 +32,13 @@ class DTLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Pee
   override def processAddress: InetMultiAddress = config.processAddress
 
   override def initialize(): Task[Unit] = {
-    Task(scandiumDTLSConnector.start())
+    Task(connector.start())
   }
 
   override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
-    /*
-        val cf = clientBootstrap.connect(to.inetSocketAddress)
-    val ct: Task[NioDatagramChannel] = toTask(cf).map(_ => cf.channel().asInstanceOf[NioDatagramChannel])
-    ct.map { nettyChannel =>
-      val localAddress = nettyChannel.localAddress()
-      log.debug(s"Generated local address for new client is $localAddress")
-      val channelId = getChannelId(to.inetSocketAddress, localAddress)
-
-      assert(!activeChannels.contains(channelId), s"HOUSTON, WE HAVE A MULTIPLEXING PROBLEM")
-
-      val channel = new ChannelImpl(nettyChannel, localAddress, to.inetSocketAddress, ReplaySubject[M]())
-      activeChannels.put(channelId, channel)
-      channel
-    }
-     */
     val id = channelId(to)
     assert(!activeChannels.contains(id), s"HOUSTON, WE HAVE A MULTIPLEXING PROBLEM")
-    val channel = new ChannelImpl(to, scandiumDTLSConnector)
+    val channel = new ChannelImpl(to, connector)
     activeChannels.put(id, channel)
     Task(channel)
   }
@@ -69,33 +47,15 @@ class DTLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Pee
 
   override def shutdown(): Task[Unit] =
     for {
-      _ <- Task(scandiumDTLSConnector.stop())
-      _ <- Task(scandiumDTLSConnector.destroy())
+      _ <- Task(connector.stop())
+      _ <- Task(connector.destroy())
     } yield ()
-
-  scandiumDTLSConnector.setRawDataReceiver(new RawDataChannel {
-    override def receiveData(rawData: RawData): Unit = {
-      val channelId = (processAddress.inetSocketAddress, rawData.getInetSocketAddress)
-
-      val activeChannel: ChannelImpl = activeChannels.getOrElseUpdate(channelId, createNewChannel(rawData))
-
-      val messageE = codec.decode(ByteBuffer.wrap(rawData.bytes))
-
-      messageE.foreach(message => activeChannel.in.onNext(message))
-    }
-
-    private def createNewChannel(rawData: RawData): ChannelImpl = {
-      val newChannel = new ChannelImpl(InetMultiAddress(rawData.getInetSocketAddress), scandiumDTLSConnector)
-      channelSubject.onNext(newChannel)
-      newChannel
-    }
-  })
 
   private def channelId(to: InetMultiAddress): (InetSocketAddress, InetSocketAddress) = {
     (processAddress.inetSocketAddress, to.inetSocketAddress)
   }
 
-  class ChannelImpl(val to: InetMultiAddress, dtlsConnector: DTLSConnector)(implicit codec: Codec[M])
+  private class ChannelImpl(val to: InetMultiAddress, dtlsConnector: DTLSConnector)(implicit codec: Codec[M])
       extends Channel[InetMultiAddress, M] {
 
     override val in: Subject[M, M] = ReplaySubject[M]()
@@ -103,7 +63,20 @@ class DTLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Pee
     override def sendMessage(message: M): Task[Unit] = {
       import io.iohk.scalanet.peergroup.BufferConversionOps._
       val buffer = codec.encode(message)
-      Task(dtlsConnector.send(new RawData(buffer.toArray, to.inetSocketAddress)))
+
+      val promisedSend = Promise[Unit]()
+
+      val callback = new MessageCallback {
+        override def onConnecting(): Unit = ()
+        override def onDtlsRetransmission(i: Int): Unit = ()
+        override def onContextEstablished(endpointContext: EndpointContext): Unit = ()
+        override def onSent(): Unit = promisedSend.success(())
+        override def onError(throwable: Throwable): Unit = promisedSend.failure(throwable)
+      }
+
+      val rawData = RawData.outbound(buffer.toArray, new AddressEndpointContext(to.inetSocketAddress), callback, false)
+      dtlsConnector.send(rawData)
+      Task.fromFuture(promisedSend.future)
     }
 
     override def close(): Task[Unit] = {
@@ -114,6 +87,47 @@ class DTLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Pee
     }
   }
 
+  private def createConnector(): DTLSConnector = {
+    val connectorConfig = new DtlsConnectorConfig.Builder()
+      .setAddress(config.bindAddress)
+      .setSupportedCipherSuites(
+        TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+        TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8,
+        TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8,
+        TLS_ECDHE_ECDSA_WITH_AES_128_CCM,
+        TLS_ECDHE_ECDSA_WITH_AES_256_CCM,
+        TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+        TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+        TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384
+      )
+      .setIdentity(config.privateKey, config.publicKey)
+      .setTrustStore(config.trustStore.toArray)
+      .setClientAuthenticationRequired(config.clientAuthRequired)
+      .setRpkTrustAll()
+      .build()
+
+    val connector = new DTLSConnector(connectorConfig)
+
+    connector.setRawDataReceiver(new RawDataChannel {
+      override def receiveData(rawData: RawData): Unit = {
+        val channelId = (processAddress.inetSocketAddress, rawData.getInetSocketAddress)
+
+        val activeChannel: ChannelImpl = activeChannels.getOrElseUpdate(channelId, createNewChannel(rawData))
+
+        val messageE = codec.decode(ByteBuffer.wrap(rawData.bytes))
+
+        messageE.foreach(message => activeChannel.in.onNext(message))
+      }
+
+      private def createNewChannel(rawData: RawData): ChannelImpl = {
+        val newChannel = new ChannelImpl(InetMultiAddress(rawData.getInetSocketAddress), connector)
+        channelSubject.onNext(newChannel)
+        newChannel
+      }
+    })
+
+    connector
+  }
 }
 
 object DTLSPeerGroup {
@@ -123,6 +137,7 @@ object DTLSPeerGroup {
       processAddress: InetMultiAddress,
       publicKey: PublicKey,
       privateKey: PrivateKey,
+      trustStore: List[Certificate],
       clientAuthRequired: Boolean
   )
 
@@ -130,10 +145,25 @@ object DTLSPeerGroup {
     def apply(
         bindAddress: InetSocketAddress,
         publicKey: PublicKey,
-        privateKey: PrivateKey,
-        clientAuthRequired: Boolean = false
+        privateKey: PrivateKey
     ): Config =
-      Config(bindAddress, InetMultiAddress(bindAddress), publicKey, privateKey, clientAuthRequired)
+      Config(
+        bindAddress,
+        InetMultiAddress(bindAddress),
+        publicKey,
+        privateKey,
+        trustStore = Nil,
+        clientAuthRequired = false
+      )
+
+    def apply(
+        bindAddress: InetSocketAddress,
+        publicKey: PublicKey,
+        privateKey: PrivateKey,
+        trustStore: List[Certificate],
+        clientAuthRequired: Boolean = true
+    ): Config =
+      Config(bindAddress, InetMultiAddress(bindAddress), publicKey, privateKey, trustStore, clientAuthRequired)
   }
 
 }

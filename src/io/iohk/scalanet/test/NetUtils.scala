@@ -3,6 +3,7 @@ package io.iohk.scalanet
 import java.net._
 import java.nio.ByteBuffer
 import java.security.KeyStore
+import java.security.cert.Certificate
 
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.{InetMultiAddress, PeerGroup, TCPPeerGroup, UDPPeerGroup}
@@ -11,10 +12,14 @@ import monix.execution.Scheduler
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.Random
+import scala.collection.JavaConverters._
 
 object NetUtils {
 
   val keyStore: KeyStore = loadKeyStore("keystore.p12", "password")
+  val trustStore: KeyStore = loadKeyStore("truststore.p12", "password")
+  val trustedCerts: List[Certificate] =
+    trustStore.aliases().asScala.toList.map(alias => trustStore.getCertificate(alias))
 
   def loadKeyStore(keystoreLocation: String, keystorePassword: String): KeyStore = {
     val keystore = KeyStore.getInstance("PKCS12")
