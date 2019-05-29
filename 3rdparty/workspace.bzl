@@ -138,25 +138,6 @@ def maven_dependencies():
   )
 
   java_import_external(
-      name = "io___netty_and_netty_ds_all",
-      licenses = ["notice"],
-      jar_urls = [
-          "https://repo1.maven.org/maven2/io/netty/netty-all/4.1.28.Final/netty-all-4.1.28.Final.jar"
-      ],
-      jar_sha256 = "375036f44a72a99b73aac3997b77229270c80f6531f2fea84bd869178c6ea203",
-      neverlink=0
-  )
-  java_import_external(
-      name = "io___netty_and_netty_ds_all__NEVERLINK",
-      licenses = ["notice"],
-      jar_urls = [
-          "https://repo1.maven.org/maven2/io/netty/netty-all/4.1.28.Final/netty-all-4.1.28.Final.jar"
-      ],
-      jar_sha256 = "375036f44a72a99b73aac3997b77229270c80f6531f2fea84bd869178c6ea203",
-      neverlink=1
-  )
-
-  java_import_external(
       name = "org___scalatest_and_scalatest__2___12__EXTERNAL",
       licenses = ["notice"],
       jar_urls = [
@@ -514,6 +495,25 @@ def maven_dependencies():
           "https://repo1.maven.org/maven2/io/monix/monix-java_2.12/3.0.0-RC1/monix-java_2.12-3.0.0-RC1.jar"
       ],
       jar_sha256 = "58f19b051f1e1c4b6825f9213e0a09949f2dbc0a0d1b44af912b830e720ad146",
+      neverlink=1
+  )
+
+  java_import_external(
+      name = "io___netty_and_netty_ds_all",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/io/netty/netty-all/4.1.31.Final/netty-all-4.1.31.Final.jar"
+      ],
+      jar_sha256 = "fc781aab2affe05a334374b31a997433653ce1f4dfb6038b8d6ae1c30dde1db9",
+      neverlink=0
+  )
+  java_import_external(
+      name = "io___netty_and_netty_ds_all__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/io/netty/netty-all/4.1.31.Final/netty-all-4.1.31.Final.jar"
+      ],
+      jar_sha256 = "fc781aab2affe05a334374b31a997433653ce1f4dfb6038b8d6ae1c30dde1db9",
       neverlink=1
   )
 
