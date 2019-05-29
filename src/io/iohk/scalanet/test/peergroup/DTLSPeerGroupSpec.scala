@@ -76,8 +76,8 @@ class DTLSPeerGroupSpec extends FlatSpec {
 
 object DTLSPeerGroupSpec {
   def withTwoDTLSPeerGroups[M](
-                                testCode: (DTLSPeerGroup[M], DTLSPeerGroup[M]) => Any
-                              )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
+      testCode: (DTLSPeerGroup[M], DTLSPeerGroup[M]) => Any
+  )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
     val pg1 = dtlsPeerGroup[M](0)
     val pg2 = dtlsPeerGroup[M](1)
     println(s"Alice is ${pg1.processAddress}")
@@ -90,7 +90,9 @@ object DTLSPeerGroupSpec {
     }
   }
 
-  def dtlsPeerGroup[M](keyIndex: Int)(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): DTLSPeerGroup[M] = {
+  def dtlsPeerGroup[M](
+      keyIndex: Int
+  )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): DTLSPeerGroup[M] = {
     val config = Config(aRandomAddress(), certAt(keyIndex).getPublicKey, keyAt(keyIndex), NetUtils.trustedCerts)
     val pg = new DTLSPeerGroup[M](config)
     Await.result(pg.initialize().runAsync, Duration.Inf)

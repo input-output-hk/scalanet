@@ -20,8 +20,11 @@ import org.eclipse.californium.scandium.dtls.cipher.CipherSuite._
 import scala.collection.JavaConverters._
 import scala.concurrent.Promise
 
-class DTLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer], scheduler: Scheduler)
-    extends PeerGroup[InetMultiAddress, M] {
+class DTLSPeerGroup[M](val config: Config)(
+    implicit codec: Codec[M],
+    bufferInstantiator: BufferInstantiator[ByteBuffer],
+    scheduler: Scheduler
+) extends PeerGroup[InetMultiAddress, M] {
 
   private val serverConnector = createServerConnector()
 

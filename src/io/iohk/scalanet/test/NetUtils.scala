@@ -93,19 +93,31 @@ object NetUtils {
 
   def randomTerminalPeerGroup[M](
       t: SimpleTerminalPeerGroup
-  )(implicit scheduler: Scheduler, codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): PeerGroup[InetMultiAddress, M] =
+  )(
+      implicit scheduler: Scheduler,
+      codec: Codec[M],
+      bufferInstantiator: BufferInstantiator[ByteBuffer]
+  ): PeerGroup[InetMultiAddress, M] =
     t match {
       case TcpTerminalPeerGroup => randomTCPPeerGroup
       case UdpTerminalPeerGroup => randomUDPPeerGroup
     }
 
-  def randomTCPPeerGroup[M](implicit scheduler: Scheduler, codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): TCPPeerGroup[M] = {
+  def randomTCPPeerGroup[M](
+      implicit scheduler: Scheduler,
+      codec: Codec[M],
+      bufferInstantiator: BufferInstantiator[ByteBuffer]
+  ): TCPPeerGroup[M] = {
     val pg = new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
     Await.result(pg.initialize().runAsync, 10 seconds)
     pg
   }
 
-  def randomUDPPeerGroup[M](implicit scheduler: Scheduler, codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): UDPPeerGroup[M] = {
+  def randomUDPPeerGroup[M](
+      implicit scheduler: Scheduler,
+      codec: Codec[M],
+      bufferInstantiator: BufferInstantiator[ByteBuffer]
+  ): UDPPeerGroup[M] = {
     val pg = new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
     Await.result(pg.initialize().runAsync, 10 seconds)
     pg
@@ -123,7 +135,11 @@ object NetUtils {
     }
   }
 
-  def random2TCPPeerGroup[M](implicit scheduler: Scheduler, codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): (TCPPeerGroup[M], TCPPeerGroup[M]) = {
+  def random2TCPPeerGroup[M](
+      implicit scheduler: Scheduler,
+      codec: Codec[M],
+      bufferInstantiator: BufferInstantiator[ByteBuffer]
+  ): (TCPPeerGroup[M], TCPPeerGroup[M]) = {
     val address = aRandomAddress()
     val address2 = aRandomAddress()
 
