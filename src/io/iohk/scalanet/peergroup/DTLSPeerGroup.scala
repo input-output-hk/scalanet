@@ -23,7 +23,7 @@ import scala.concurrent.Promise
 class DTLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], scheduler: Scheduler)
     extends PeerGroup[InetMultiAddress, M] {
 
-  private val connector = createConnector()
+  private val serverConnector = createServerConnector()
 
   private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
 
@@ -32,13 +32,15 @@ class DTLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], scheduler: 
   override def processAddress: InetMultiAddress = config.processAddress
 
   override def initialize(): Task[Unit] = {
-    Task(connector.start())
+    Task(serverConnector.start())
   }
 
   override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
-    val id = channelId(to)
+    val connector = createClientConnector()
+    connector.start()
+    val id = (connector.getAddress, to.inetSocketAddress)
     assert(!activeChannels.contains(id), s"HOUSTON, WE HAVE A MULTIPLEXING PROBLEM")
-    val channel = new ChannelImpl(to, connector)
+    val channel = new ClientChannelImpl(to, connector)
     activeChannels.put(id, channel)
     Task(channel)
   }
@@ -47,13 +49,9 @@ class DTLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], scheduler: 
 
   override def shutdown(): Task[Unit] =
     for {
-      _ <- Task(connector.stop())
-      _ <- Task(connector.destroy())
+      _ <- Task(serverConnector.stop())
+      _ <- Task(serverConnector.destroy())
     } yield ()
-
-  private def channelId(to: InetMultiAddress): (InetSocketAddress, InetSocketAddress) = {
-    (processAddress.inetSocketAddress, to.inetSocketAddress)
-  }
 
   private class ChannelImpl(val to: InetMultiAddress, dtlsConnector: DTLSConnector)(implicit codec: Codec[M])
       extends Channel[InetMultiAddress, M] {
@@ -68,9 +66,13 @@ class DTLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], scheduler: 
 
       val callback = new MessageCallback {
         override def onConnecting(): Unit = ()
+
         override def onDtlsRetransmission(i: Int): Unit = ()
+
         override def onContextEstablished(endpointContext: EndpointContext): Unit = ()
+
         override def onSent(): Unit = promisedSend.success(())
+
         override def onError(throwable: Throwable): Unit = promisedSend.failure(throwable)
       }
 
@@ -80,14 +82,51 @@ class DTLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], scheduler: 
     }
 
     override def close(): Task[Unit] = {
-      val id = channelId(to)
-      activeChannels.get(id).foreach(channel => channel.in.onComplete())
+      val id = (dtlsConnector.getAddress, to.inetSocketAddress)
+      activeChannels(id).in.onComplete()
       activeChannels.remove(id)
       Task.unit
     }
   }
 
-  private def createConnector(): DTLSConnector = {
+  private class ClientChannelImpl(to: InetMultiAddress, dtlsConnector: DTLSConnector)(implicit codec: Codec[M])
+      extends ChannelImpl(to, dtlsConnector) {
+    override def close(): Task[Unit] = {
+      dtlsConnector.stop()
+      dtlsConnector.destroy()
+      super.close()
+    }
+  }
+
+  private def createClientConnector(): DTLSConnector = {
+    val connectorConfig = new DtlsConnectorConfig.Builder()
+      .setAddress(new InetSocketAddress(config.processAddress.inetSocketAddress.getAddress, 0))
+      .setIdentity(config.privateKey, config.publicKey)
+      .setTrustStore(config.trustStore.toArray)
+      .setRpkTrustAll()
+      .setClientOnly()
+      .build()
+
+    val connector = new DTLSConnector(connectorConfig)
+
+    connector.setRawDataReceiver(new RawDataChannel {
+      override def receiveData(rawData: RawData): Unit = {
+        val channelId = (connector.getAddress, rawData.getInetSocketAddress)
+
+        assert(activeChannels.contains(channelId), s"Missing channel for channelId $channelId")
+
+        val activeChannel: ChannelImpl = activeChannels(channelId)
+
+        val messageE = codec.decode(ByteBuffer.wrap(rawData.bytes))
+
+        messageE.foreach(message => activeChannel.in.onNext(message))
+      }
+    })
+
+    connector
+  }
+
+  private def createServerConnector(): DTLSConnector = {
     val connectorConfig = new DtlsConnectorConfig.Builder()
       .setAddress(config.bindAddress)
       .setSupportedCipherSuites(

@@ -13,6 +13,7 @@ import monix.execution.Scheduler.Implicits.global
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures._
+import org.scalatest.RecoverMethods._
 
 import scala.collection.JavaConverters._
 import scala.concurrent.duration.Duration
@@ -27,8 +28,6 @@ class DTLSPeerGroupSpec extends FlatSpec {
   behavior of "DTLSPeerGroup"
 
   it should "send and receive a message" in withTwoDTLSPeerGroups[String] { (alice, bob) =>
-    println(s"Alice is ${alice.processAddress}")
-    println(s"Bob is ${bob.processAddress}")
     val alicesMessage = Random.alphanumeric.take(1024 * 4).mkString
     val bobsMessage = Random.alphanumeric.take(1024 * 4).mkString
 
@@ -41,6 +40,24 @@ class DTLSPeerGroupSpec extends FlatSpec {
 
     bobReceived.futureValue shouldBe alicesMessage
     aliceReceived.futureValue shouldBe bobsMessage
+  }
+
+  it should "do multiplexing properly" in withTwoDTLSPeerGroups[String] { (alice, bob) =>
+    val alicesMessage = Random.alphanumeric.take(1024 * 4).mkString
+    val bobsMessage = Random.alphanumeric.take(1024 * 4).mkString
+
+    bob.server().foreach(channel => channel.sendMessage(bobsMessage).runToFuture)
+
+    val aliceClient1 = alice.client(bob.processAddress).evaluated
+    val aliceClient2 = alice.client(bob.processAddress).evaluated
+
+    val aliceReceived1 = aliceClient1.in.headL.runToFuture
+    val aliceReceived2 = aliceClient2.in.headL.runToFuture
+
+    aliceClient1.sendMessage(alicesMessage).runToFuture
+
+    aliceReceived1.futureValue shouldBe bobsMessage
+    recoverToSucceededIf[IllegalStateException](aliceReceived2)
   }
 
   it should "shutdown cleanly" in {
@@ -57,6 +74,8 @@ class DTLSPeerGroupSpec extends FlatSpec {
   )(implicit codec: Codec[M]): Unit = {
     val pg1 = dtlsPeerGroup(0)
     val pg2 = dtlsPeerGroup(1)
+    println(s"Alice is ${pg1.processAddress}")
+    println(s"Bob is ${pg2.processAddress}")
     try {
       testCode(pg1, pg2)
     } finally {
