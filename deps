@@ -3,8 +3,8 @@
 ROOT=`pwd`
 
 BAZEL_DEPS_REPO="https://github.com/input-output-hk/bazel-deps.git"
-BAZEL_DEPS_COMMIT="afc4425dc71194b9a6fa9b243b5155ea49dd322c"
-IDENTIFIER="$BAZEL_DEPS_REPO|$BAZEL_DEPS_COMMIT"
+BAZEL_DEPS_TAG="latest"
+IDENTIFIER="$BAZEL_DEPS_REPO|$BAZEL_DEPS_TAG"
 SHASUM="sha256sum"
 unameOut="$(uname -s)"
 case "${unameOut}" in
@@ -29,7 +29,7 @@ if [ -e $BAZEL_DEPS ]; then
 else
     git clone "$BAZEL_DEPS_REPO" "$BAZEL_DEPS" || fail "Repo could not be found"
     cd "$BAZEL_DEPS"
-    git checkout "$BAZEL_DEPS_COMMIT" || fail "Commit could not be found"
+    git checkout "$BAZEL_DEPS_TAG" || fail "Tag could not be found"
 fi
 
 bazel run //:parse -- generate --repo-root $ROOT --deps "$ROOT/dependencies.yaml" --external 3rdparty 
