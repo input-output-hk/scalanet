@@ -91,24 +91,21 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
 
 object TLSPeerGroup {
   case class Config(
-                     bindAddress: InetSocketAddress,
-                     processAddress: InetMultiAddress,
-                     remoteHostConfig: Map[InetAddress, Int] = Map.empty[InetAddress, Int],
-                     serverCertChainFile: Option[File]=None,
-                     serverPrivateKeyFile: Option[File]=None,
-                     serverKeyPassword: Option[String]=None,
-                     certificateFile: Option[File]=None
-
-                   )
-
+      bindAddress: InetSocketAddress,
+      processAddress: InetMultiAddress,
+      remoteHostConfig: Map[InetAddress, Int] = Map.empty[InetAddress, Int],
+      serverCertChainFile: Option[File] = None,
+      serverPrivateKeyFile: Option[File] = None,
+      serverKeyPassword: Option[String] = None,
+      certificateFile: Option[File] = None
+  )
 
   object Config {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, new InetMultiAddress(bindAddress))
   }
 
-
   private[scalanet] class ServerChannelImpl[M](val nettyChannel: SocketChannel)(
-    implicit codec: Codec[M]
+      implicit codec: Codec[M]
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
@@ -116,10 +113,9 @@ object TLSPeerGroup {
 
     private val ssc = new SelfSignedCertificate
 
-    private   val sslserverCtx = SslContextBuilder.forServer(ssc.certificate(),ssc.privateKey()).build()
+    private val sslserverCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build()
 //      sslProvider(SslProvider.JDK).
 //      trustManager(InsecureTrustManagerFactory.INSTANCE).build()
-
 
     log.debug(
       s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
@@ -149,9 +145,8 @@ object TLSPeerGroup {
     }
   }
 
-
   private class ClientChannelImpl[M](inetSocketAddress: InetSocketAddress, clientBootstrap: Bootstrap)(
-    implicit codec: Codec[M]
+      implicit codec: Codec[M]
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
@@ -166,19 +161,19 @@ object TLSPeerGroup {
 
     private val messageSubject = ReplaySubject[M]()
 
-    private val sslClientCtx = SslContextBuilder.forClient()
-      .trustManager(InsecureTrustManagerFactory.INSTANCE).build()
-
-
+    private val sslClientCtx = SslContextBuilder
+      .forClient()
+      .trustManager(InsecureTrustManagerFactory.INSTANCE)
+      .build()
 
     private val bootstrap: Bootstrap = clientBootstrap
       .clone()
       .handler(new ChannelInitializer[SocketChannel]() {
         def initChannel(ch: SocketChannel): Unit = {
-         val pipeline =  ch.pipeline()
-          val sslHandler =  sslClientCtx.newHandler(ch.alloc())
+          val pipeline = ch.pipeline()
+          val sslHandler = sslClientCtx.newHandler(ch.alloc())
           pipeline
-            .addLast("ssl",sslHandler) //This needs to first
+            .addLast("ssl", sslHandler) //This needs to first
             .addLast("frameEncoder", new LengthFieldPrepender(4))
             .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
             .addLast(new ByteArrayEncoder())
@@ -189,17 +184,17 @@ object TLSPeerGroup {
 
               override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
                 evt match {
-                  case e:SslHandshakeCompletionEvent =>
-                   if(e.isSuccess) activation.success(ctx) else activation.failure(e.cause())
+                  case e: SslHandshakeCompletionEvent =>
+                    if (e.isSuccess) activation.success(ctx) else activation.failure(e.cause())
                     log.debug(
                       s"Ssl Handshake client channel from ${ctx.channel().localAddress()} " +
                         s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
                     )
-                   case _ =>
-                     log.debug(
-                       s"User Event client channel from ${ctx.channel().localAddress()} " +
-                         s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
-                     )
+                  case _ =>
+                    log.debug(
+                      s"User Event client channel from ${ctx.channel().localAddress()} " +
+                        s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
+                    )
                 }
                 super.userEventTriggered(ctx, evt)
               }
@@ -239,7 +234,7 @@ object TLSPeerGroup {
   }
 
   private class MessageNotifier[M](val messageSubject: Subject[M, M])(implicit codec: Codec[M])
-    extends ChannelInboundHandlerAdapter {
+      extends ChannelInboundHandlerAdapter {
 
     private val log = LoggerFactory.getLogger(getClass)
 
@@ -248,8 +243,7 @@ object TLSPeerGroup {
 
     override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
       evt match {
-        case e:SslHandshakeCompletionEvent =>
-
+        case e: SslHandshakeCompletionEvent =>
           log.debug(
             s"Ssl Handshake Server channel from ${ctx.channel().localAddress()} " +
               s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
@@ -281,8 +275,5 @@ object TLSPeerGroup {
     f.addListener((_: util.concurrent.Future[_]) => promisedCompletion.complete(Success(())))
     Task.fromFuture(promisedCompletion.future)
   }
-
-
-
 
 }

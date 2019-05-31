@@ -109,8 +109,8 @@ object NetUtils {
   }
 
   def withTwoRandomTLSPeerGroups[M](
-                                     testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
-                                   )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
+      testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
+  )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
     val (pg1, pg2) = random2TLSPPeerGroup(scheduler, codec)
     try {
       testCode(pg1, pg2)
@@ -131,7 +131,6 @@ object NetUtils {
 
     (pg1, pg2)
   }
-
 
   def random2TCPPeerGroup[M](implicit scheduler: Scheduler, codec: Codec[M]): (TCPPeerGroup[M], TCPPeerGroup[M]) = {
     val address = aRandomAddress()

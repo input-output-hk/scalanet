@@ -27,7 +27,6 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
       bob.server().foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runAsync
       val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runAsync
-      //val aliceClient =  Await.result(alice.client(bob.processAddress).runAsync,20 seconds)
       val aliceClient = alice.client(bob.processAddress).evaluated
       Thread.sleep(2000)
       val aliceReceived = aliceClient.in.headL.runAsync
