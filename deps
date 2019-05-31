@@ -29,7 +29,8 @@ if [ -e $BAZEL_DEPS ]; then
 else
     git clone "$BAZEL_DEPS_REPO" "$BAZEL_DEPS" || fail "Repo could not be found"
     cd "$BAZEL_DEPS"
-    git checkout "$BAZEL_DEPS_TAG" || fail "Tag could not be found"
 fi
+
+git checkout "$BAZEL_DEPS_TAG" || fail "Tag could not be found"
 
 bazel run //:parse -- generate --repo-root $ROOT --deps "$ROOT/dependencies.yaml" --external 3rdparty 
