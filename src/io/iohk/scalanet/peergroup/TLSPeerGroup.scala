@@ -43,19 +43,14 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
 
   private val log = LoggerFactory.getLogger(getClass)
 
-
-
-
   private[scalanet] class ServerChannelImpl[M](val nettyChannel: SocketChannel)(
-    implicit codec: Codec[M]
+      implicit codec: Codec[M]
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
     private val messageSubject = ReplaySubject[M]()
 
     private val ssc = new SelfSignedCertificate
-
-
 
     private val sslserverCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build()
 
@@ -88,10 +83,8 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
 
   }
 
-
-
   private class ClientChannelImpl[M](inetSocketAddress: InetSocketAddress, clientBootstrap: Bootstrap)(
-    implicit codec: Codec[M]
+      implicit codec: Codec[M]
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
@@ -178,7 +171,6 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
     }
   }
 
-
   private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
 
   private val workerGroup = new NioEventLoopGroup()
@@ -189,7 +181,6 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
     .option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
     .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
     .option[Integer](ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
-
 
   private val serverBootstrap = new ServerBootstrap()
     .group(workerGroup)
@@ -230,20 +221,20 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
 object TLSPeerGroup {
 
   case class Config(
-                     bindAddress: InetSocketAddress,
-                     processAddress: InetMultiAddress,
-                     publicKey: PublicKey,
-                     privateKey: PrivateKey,
-                     trustStore: List[Certificate],
-                     clientAuthRequired: Boolean
-                   )
+      bindAddress: InetSocketAddress,
+      processAddress: InetMultiAddress,
+      publicKey: PublicKey,
+      privateKey: PrivateKey,
+      trustStore: List[Certificate],
+      clientAuthRequired: Boolean
+  )
 
   object Config {
     def apply(
-               bindAddress: InetSocketAddress,
-               publicKey: PublicKey,
-               privateKey: PrivateKey
-             ): Config =
+        bindAddress: InetSocketAddress,
+        publicKey: PublicKey,
+        privateKey: PrivateKey
+    ): Config =
       Config(
         bindAddress,
         InetMultiAddress(bindAddress),
@@ -254,17 +245,14 @@ object TLSPeerGroup {
       )
 
     def apply(
-               bindAddress: InetSocketAddress,
-               publicKey: PublicKey,
-               privateKey: PrivateKey,
-               trustStore: List[Certificate],
-               clientAuthRequired: Boolean = true
-             ): Config =
+        bindAddress: InetSocketAddress,
+        publicKey: PublicKey,
+        privateKey: PrivateKey,
+        trustStore: List[Certificate],
+        clientAuthRequired: Boolean = true
+    ): Config =
       Config(bindAddress, InetMultiAddress(bindAddress), publicKey, privateKey, trustStore, clientAuthRequired)
   }
-
-
-
 
   private class MessageNotifier[M](val messageSubject: Subject[M, M])(implicit codec: Codec[M])
       extends ChannelInboundHandlerAdapter {
