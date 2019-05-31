@@ -2,6 +2,8 @@ package io.iohk.scalanet.peergroup
 
 import java.io.File
 import java.net.{InetAddress, InetSocketAddress}
+import java.security.cert.Certificate
+import java.security.{PrivateKey, PublicKey}
 
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.iohk.scalanet.peergroup.TLSPeerGroup._
@@ -22,7 +24,6 @@ import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import io.iohk.decco._
 import io.netty.handler.ssl.{SslContextBuilder, SslHandshakeCompletionEvent}
 import io.netty.handler.ssl.util.{InsecureTrustManagerFactory, SelfSignedCertificate}
-//import io.netty.util.concurrent.Future
 
 import scala.concurrent.Promise
 import scala.util.Success
@@ -42,70 +43,11 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
 
-  private val workerGroup = new NioEventLoopGroup()
 
-  private val clientBootstrap = new Bootstrap()
-    .group(workerGroup)
-    .channel(classOf[NioSocketChannel])
-    .option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
-    .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
-    .option[Integer](ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
-
-  private val serverBootstrap = new ServerBootstrap()
-    .group(workerGroup)
-    .channel(classOf[NioServerSocketChannel])
-    .childHandler(new ChannelInitializer[SocketChannel]() {
-      override def initChannel(ch: SocketChannel): Unit = {
-        val newChannel = new ServerChannelImpl[M](ch)
-        channelSubject.onNext(newChannel)
-        log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
-      }
-    })
-    .option[Integer](ChannelOption.SO_BACKLOG, 128)
-    .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
-    .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
-
-  private val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
-
-  override def initialize(): Task[Unit] =
-    toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}"))
-
-  override def processAddress: InetMultiAddress = config.processAddress
-
-  override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
-    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap).initialize
-  }
-
-  override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
-
-  override def shutdown(): Task[Unit] = {
-    channelSubject.onComplete()
-    for {
-      _ <- toTask(serverBind.channel().close())
-      _ <- toTask(workerGroup.shutdownGracefully())
-    } yield ()
-  }
-}
-
-object TLSPeerGroup {
-  case class Config(
-      bindAddress: InetSocketAddress,
-      processAddress: InetMultiAddress,
-      remoteHostConfig: Map[InetAddress, Int] = Map.empty[InetAddress, Int],
-      serverCertChainFile: Option[File] = None,
-      serverPrivateKeyFile: Option[File] = None,
-      serverKeyPassword: Option[String] = None,
-      certificateFile: Option[File] = None
-  )
-
-  object Config {
-    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, new InetMultiAddress(bindAddress))
-  }
 
   private[scalanet] class ServerChannelImpl[M](val nettyChannel: SocketChannel)(
-      implicit codec: Codec[M]
+    implicit codec: Codec[M]
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
@@ -113,9 +55,9 @@ object TLSPeerGroup {
 
     private val ssc = new SelfSignedCertificate
 
+
+
     private val sslserverCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build()
-//      sslProvider(SslProvider.JDK).
-//      trustManager(InsecureTrustManagerFactory.INSTANCE).build()
 
     log.debug(
       s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
@@ -143,10 +85,13 @@ object TLSPeerGroup {
       messageSubject.onComplete()
       toTask(nettyChannel.close())
     }
+
   }
 
+
+
   private class ClientChannelImpl[M](inetSocketAddress: InetSocketAddress, clientBootstrap: Bootstrap)(
-      implicit codec: Codec[M]
+    implicit codec: Codec[M]
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
@@ -232,6 +177,94 @@ object TLSPeerGroup {
         .flatMap(_ => Task.fromFuture(deactivationF))
     }
   }
+
+
+  private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
+
+  private val workerGroup = new NioEventLoopGroup()
+
+  private val clientBootstrap = new Bootstrap()
+    .group(workerGroup)
+    .channel(classOf[NioSocketChannel])
+    .option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
+    .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
+    .option[Integer](ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
+
+
+  private val serverBootstrap = new ServerBootstrap()
+    .group(workerGroup)
+    .channel(classOf[NioServerSocketChannel])
+    .childHandler(new ChannelInitializer[SocketChannel]() {
+      override def initChannel(ch: SocketChannel): Unit = {
+        val newChannel = new ServerChannelImpl[M](ch)
+        channelSubject.onNext(newChannel)
+        log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
+      }
+    })
+    .option[Integer](ChannelOption.SO_BACKLOG, 128)
+    .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
+    .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
+
+  private val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
+
+  override def initialize(): Task[Unit] =
+    toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}"))
+
+  override def processAddress: InetMultiAddress = config.processAddress
+
+  override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
+    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap).initialize
+  }
+
+  override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
+
+  override def shutdown(): Task[Unit] = {
+    channelSubject.onComplete()
+    for {
+      _ <- toTask(serverBind.channel().close())
+      _ <- toTask(workerGroup.shutdownGracefully())
+    } yield ()
+  }
+}
+
+object TLSPeerGroup {
+
+  case class Config(
+                     bindAddress: InetSocketAddress,
+                     processAddress: InetMultiAddress,
+                     publicKey: PublicKey,
+                     privateKey: PrivateKey,
+                     trustStore: List[Certificate],
+                     clientAuthRequired: Boolean
+                   )
+
+  object Config {
+    def apply(
+               bindAddress: InetSocketAddress,
+               publicKey: PublicKey,
+               privateKey: PrivateKey
+             ): Config =
+      Config(
+        bindAddress,
+        InetMultiAddress(bindAddress),
+        publicKey,
+        privateKey,
+        trustStore = Nil,
+        clientAuthRequired = false
+      )
+
+    def apply(
+               bindAddress: InetSocketAddress,
+               publicKey: PublicKey,
+               privateKey: PrivateKey,
+               trustStore: List[Certificate],
+               clientAuthRequired: Boolean = true
+             ): Config =
+      Config(bindAddress, InetMultiAddress(bindAddress), publicKey, privateKey, trustStore, clientAuthRequired)
+  }
+
+
+
 
   private class MessageNotifier[M](val messageSubject: Subject[M, M])(implicit codec: Codec[M])
       extends ChannelInboundHandlerAdapter {
