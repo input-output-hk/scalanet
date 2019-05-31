@@ -10,6 +10,7 @@ http_archive(
     strip_prefix= "rules_scala-%s" % rules_scala_version
 )
 
+
 http_archive(
     name = "com_google_protobuf",
     sha256 = "9510dd2afc29e7245e9e884336f848c8a6600a14ae726adb6befdb4f786f0be2",

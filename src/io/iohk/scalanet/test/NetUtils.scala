@@ -4,7 +4,7 @@ import java.net._
 import java.nio.ByteBuffer
 
 import io.iohk.decco.Codec
-import io.iohk.scalanet.peergroup.{InetMultiAddress, PeerGroup, TCPPeerGroup, UDPPeerGroup}
+import io.iohk.scalanet.peergroup.{InetMultiAddress, PeerGroup, TCPPeerGroup, TLSPeerGroup, UDPPeerGroup}
 import monix.execution.Scheduler
 
 import scala.concurrent.Await
@@ -107,6 +107,31 @@ object NetUtils {
       pg2.shutdown()
     }
   }
+
+  def withTwoRandomTLSPeerGroups[M](
+                                     testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
+                                   )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
+    val (pg1, pg2) = random2TLSPPeerGroup(scheduler, codec)
+    try {
+      testCode(pg1, pg2)
+    } finally {
+      pg1.shutdown()
+      pg2.shutdown()
+    }
+  }
+  def random2TLSPPeerGroup[M](implicit scheduler: Scheduler, codec: Codec[M]): (TLSPeerGroup[M], TLSPeerGroup[M]) = {
+    val address = aRandomAddress()
+    val address2 = aRandomAddress()
+
+    val pg1 = new TLSPeerGroup(TLSPeerGroup.Config(address))
+    val pg2 = new TLSPeerGroup(TLSPeerGroup.Config(address2))
+
+    Await.result(pg1.initialize().runAsync, 10 seconds)
+    Await.result(pg2.initialize().runAsync, 10 seconds)
+
+    (pg1, pg2)
+  }
+
 
   def random2TCPPeerGroup[M](implicit scheduler: Scheduler, codec: Codec[M]): (TCPPeerGroup[M], TCPPeerGroup[M]) = {
     val address = aRandomAddress()
