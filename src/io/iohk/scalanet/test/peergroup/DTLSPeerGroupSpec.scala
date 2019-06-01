@@ -2,7 +2,7 @@ package io.iohk.scalanet.peergroup
 
 import java.nio.ByteBuffer
 import java.security.PrivateKey
-import java.security.cert.Certificate
+import java.security.cert.{Certificate, CertificateFactory}
 
 import io.iohk.decco.auto._
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
@@ -10,20 +10,19 @@ import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils.{aRandomAddress, isListeningUDP}
 import io.iohk.scalanet.TaskValues._
-import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
+import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config._
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.RecoverMethods._
 
-import scala.collection.JavaConverters._
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.util.Random
-
 import DTLSPeerGroupSpec._
+import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
 
 class DTLSPeerGroupSpec extends FlatSpec {
 
@@ -31,22 +30,24 @@ class DTLSPeerGroupSpec extends FlatSpec {
 
   behavior of "DTLSPeerGroup"
 
-  it should "send and receive a message" in withTwoDTLSPeerGroups[String] { (alice, bob) =>
-    val alicesMessage = Random.alphanumeric.take(1024 * 4).mkString
-    val bobsMessage = Random.alphanumeric.take(1024 * 4).mkString
+  it should "send and receive a message" in {
+    withTwoDTLSPeerGroups[String](rawKeyConfig, signedCertConfig) { (alice, bob) =>
+      val alicesMessage = Random.alphanumeric.take(1024 * 4).mkString
+      val bobsMessage = Random.alphanumeric.take(1024 * 4).mkString
 
-    val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runAsync
-    bob.server().foreach(channel => channel.sendMessage(bobsMessage).runAsync)
+      val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runAsync
+      bob.server().foreach(channel => channel.sendMessage(bobsMessage).runAsync)
 
-    val aliceClient = alice.client(bob.processAddress).evaluated
-    val aliceReceived = aliceClient.in.headL.runAsync
-    aliceClient.sendMessage(alicesMessage).runAsync
+      val aliceClient = alice.client(bob.processAddress).evaluated
+      val aliceReceived = aliceClient.in.headL.runAsync
+      aliceClient.sendMessage(alicesMessage).runAsync
 
-    bobReceived.futureValue shouldBe alicesMessage
-    aliceReceived.futureValue shouldBe bobsMessage
+      bobReceived.futureValue shouldBe alicesMessage
+      aliceReceived.futureValue shouldBe bobsMessage
+    }
   }
 
-  it should "do multiplexing properly" in withTwoDTLSPeerGroups[String] { (alice, bob) =>
+  it should "do multiplexing properly" in withTwoDTLSPeerGroups[String](rawKeyConfig) { (alice, bob) =>
     val alicesMessage = Random.alphanumeric.take(1024 * 4).mkString
     val bobsMessage = Random.alphanumeric.take(1024 * 4).mkString
 
@@ -65,7 +66,7 @@ class DTLSPeerGroupSpec extends FlatSpec {
   }
 
   it should "shutdown cleanly" in {
-    val pg1 = dtlsPeerGroup[String](0)
+    val pg1 = dtlsPeerGroup[String](rawKeyConfig("alice"))
     isListeningUDP(pg1.config.bindAddress) shouldBe true
 
     pg1.shutdown().runAsync.futureValue
@@ -75,11 +76,27 @@ class DTLSPeerGroupSpec extends FlatSpec {
 }
 
 object DTLSPeerGroupSpec {
-  def withTwoDTLSPeerGroups[M](
+
+  def rawKeyConfig(alias: String): Config = {
+    Unauthenticated(aRandomAddress(), certAt(alias).getPublicKey, keyAt(alias))
+  }
+
+  def signedCertConfig(alias: String): Config = {
+    import scala.collection.JavaConverters._
+    val fact = CertificateFactory.getInstance("X.509")
+    val certChain: Array[Certificate] = fact
+      .generateCertificates(DTLSPeerGroupSpec.getClass.getClassLoader.getResourceAsStream(s"${alias}.pem"))
+      .asScala
+      .toArray
+
+    CertAuthenticated(aRandomAddress(), certChain, keyAt(alias), NetUtils.trustedCerts)
+  }
+
+  def withTwoDTLSPeerGroups[M](cgens: (String => Config)*)(
       testCode: (DTLSPeerGroup[M], DTLSPeerGroup[M]) => Any
-  )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
-    val pg1 = dtlsPeerGroup[M](0)
-    val pg2 = dtlsPeerGroup[M](1)
+  )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = cgens.foreach { cgen =>
+    val pg1 = dtlsPeerGroup[M](cgen("alice"))
+    val pg2 = dtlsPeerGroup[M](cgen("bob"))
     println(s"Alice is ${pg1.processAddress}")
     println(s"Bob is ${pg2.processAddress}")
     try {
@@ -91,23 +108,18 @@ object DTLSPeerGroupSpec {
   }
 
   def dtlsPeerGroup[M](
-      keyIndex: Int
+      config: Config
   )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): DTLSPeerGroup[M] = {
-    val config = Config(aRandomAddress(), certAt(keyIndex).getPublicKey, keyAt(keyIndex), NetUtils.trustedCerts)
     val pg = new DTLSPeerGroup[M](config)
     Await.result(pg.initialize().runAsync, Duration.Inf)
     pg
   }
 
-  def keyAt(index: Int): PrivateKey = {
-    val aliases = NetUtils.keyStore.aliases().asScala.toIndexedSeq
-    val alias = aliases(index)
+  def keyAt(alias: String): PrivateKey = {
     NetUtils.keyStore.getKey(alias, "password".toCharArray).asInstanceOf[PrivateKey]
   }
 
-  def certAt(index: Int): Certificate = {
-    val aliases = NetUtils.keyStore.aliases().asScala.toIndexedSeq
-    val alias = aliases(index)
+  def certAt(alias: String): Certificate = {
     NetUtils.keyStore.getCertificate(alias)
   }
 }

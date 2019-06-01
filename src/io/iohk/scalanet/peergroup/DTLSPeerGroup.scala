@@ -102,11 +102,8 @@ class DTLSPeerGroup[M](val config: Config)(
   }
 
   private def createClientConnector(): DTLSConnector = {
-    val connectorConfig = new DtlsConnectorConfig.Builder()
+    val connectorConfig = config.scandiumConfigBuilder
       .setAddress(new InetSocketAddress(config.processAddress.inetSocketAddress.getAddress, 0))
-      .setIdentity(config.privateKey, config.publicKey)
-      .setTrustStore(config.trustStore.toArray)
-      .setRpkTrustAll()
       .setClientOnly()
       .build()
 
@@ -130,23 +127,7 @@ class DTLSPeerGroup[M](val config: Config)(
   }
 
   private def createServerConnector(): DTLSConnector = {
-    val connectorConfig = new DtlsConnectorConfig.Builder()
-      .setAddress(config.bindAddress)
-      .setSupportedCipherSuites(
-        TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-        TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8,
-        TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8,
-        TLS_ECDHE_ECDSA_WITH_AES_128_CCM,
-        TLS_ECDHE_ECDSA_WITH_AES_256_CCM,
-        TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-        TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
-        TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384
-      )
-      .setIdentity(config.privateKey, config.publicKey)
-      .setTrustStore(config.trustStore.toArray)
-      .setClientAuthenticationRequired(config.clientAuthRequired)
-      .setRpkTrustAll()
-      .build()
+    val connectorConfig = config.scandiumConfigBuilder.build()
 
     val connector = new DTLSConnector(connectorConfig)
 
@@ -174,38 +155,88 @@ class DTLSPeerGroup[M](val config: Config)(
 
 object DTLSPeerGroup {
 
-  case class Config(
-      bindAddress: InetSocketAddress,
-      processAddress: InetMultiAddress,
-      publicKey: PublicKey,
-      privateKey: PrivateKey,
-      trustStore: List[Certificate],
-      clientAuthRequired: Boolean
+  val supportedCipherSuites = Seq(
+    TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+    TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8,
+    TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8,
+    TLS_ECDHE_ECDSA_WITH_AES_128_CCM,
+    TLS_ECDHE_ECDSA_WITH_AES_256_CCM,
+    TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+    TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+    TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384
   )
 
-  object Config {
-    def apply(
-        bindAddress: InetSocketAddress,
-        publicKey: PublicKey,
-        privateKey: PrivateKey
-    ): Config =
-      Config(
-        bindAddress,
-        InetMultiAddress(bindAddress),
-        publicKey,
-        privateKey,
-        trustStore = Nil,
-        clientAuthRequired = false
-      )
-
-    def apply(
-        bindAddress: InetSocketAddress,
-        publicKey: PublicKey,
-        privateKey: PrivateKey,
-        trustStore: List[Certificate],
-        clientAuthRequired: Boolean = true
-    ): Config =
-      Config(bindAddress, InetMultiAddress(bindAddress), publicKey, privateKey, trustStore, clientAuthRequired)
+  trait Config {
+    val bindAddress: InetSocketAddress
+    val processAddress: InetMultiAddress
+    private[scalanet] def scandiumConfigBuilder: DtlsConnectorConfig.Builder
   }
 
+  object Config {
+
+    case class Unauthenticated(
+        bindAddress: InetSocketAddress,
+        processAddress: InetMultiAddress,
+        publicKey: PublicKey,
+        privateKey: PrivateKey
+    ) extends Config {
+      override def scandiumConfigBuilder: DtlsConnectorConfig.Builder =
+        new DtlsConnectorConfig.Builder()
+          .setAddress(bindAddress)
+          .setSupportedCipherSuites(supportedCipherSuites: _*)
+          .setIdentity(privateKey, publicKey)
+          .setRpkTrustAll()
+    }
+
+    object Unauthenticated {
+      def apply(
+          bindAddress: InetSocketAddress,
+          publicKey: PublicKey,
+          privateKey: PrivateKey
+      ): Unauthenticated =
+        Unauthenticated(
+          bindAddress,
+          InetMultiAddress(bindAddress),
+          publicKey,
+          privateKey
+        )
+    }
+
+    /*
+    certificate_list
+      This is a sequence (chain) of certificates.  The sender's
+      certificate MUST come first in the list.  Each following
+      certificate MUST directly certify the one preceding it.  Because
+      certificate validation requires that root keys be distributed
+      independently, the self-signed certificate that specifies the root
+      certificate authority MAY be omitted from the chain, under the
+      assumption that the remote end must already possess it in order to
+      validate it in any case.
+     */
+    case class CertAuthenticated(
+        bindAddress: InetSocketAddress,
+        processAddress: InetMultiAddress,
+        certificateChain: Array[Certificate],
+        privateKey: PrivateKey,
+        trustedCerts: Array[Certificate]
+    ) extends Config {
+      override def scandiumConfigBuilder: DtlsConnectorConfig.Builder = {
+        new DtlsConnectorConfig.Builder()
+          .setAddress(bindAddress)
+          .setSupportedCipherSuites(supportedCipherSuites: _*)
+          .setIdentity(privateKey, certificateChain)
+          .setTrustStore(trustedCerts)
+      }
+    }
+
+    object CertAuthenticated {
+      def apply(
+          bindAddress: InetSocketAddress,
+          certificateChain: Array[Certificate],
+          privateKey: PrivateKey,
+          trustedCerts: Array[Certificate]
+      ): CertAuthenticated =
+        CertAuthenticated(bindAddress, InetMultiAddress(bindAddress), certificateChain, privateKey, trustedCerts)
+    }
+  }
 }
