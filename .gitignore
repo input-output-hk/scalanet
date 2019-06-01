@@ -8,4 +8,4 @@ bazel-*
 .bazel-*
 .dazel_run
 
-./scalafmt
+scalafmt
