@@ -9,3 +9,4 @@ bazel-*
 .dazel_run
 
 scalafmt
+
