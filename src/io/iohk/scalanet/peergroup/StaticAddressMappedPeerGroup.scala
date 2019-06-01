@@ -14,9 +14,9 @@ import monix.reactive.Observable
   * @tparam M the message type.
   */
 class StaticAddressMappedPeerGroup[A, AA, M](
-                                              val config: Config[A, AA],
-                                              underLyingPeerGroup: PeerGroup[AA, M]
-                                            ) extends PeerGroup[A, M] {
+    val config: Config[A, AA],
+    underLyingPeerGroup: PeerGroup[AA, M]
+) extends PeerGroup[A, M] {
 
   private val reverseLookup = config.knownPeers.map(_.swap)
 
@@ -28,9 +28,9 @@ class StaticAddressMappedPeerGroup[A, AA, M](
     }
 
   override def server(): Observable[Channel[A, M]] = {
-    underLyingPeerGroup.server().map(underlyingChannel =>
-      new ChannelImpl(reverseLookup(underlyingChannel.to), underlyingChannel)
-    )
+    underLyingPeerGroup
+      .server()
+      .map(underlyingChannel => new ChannelImpl(reverseLookup(underlyingChannel.to), underlyingChannel))
   }
 
   override def shutdown(): Task[Unit] =
@@ -39,8 +39,7 @@ class StaticAddressMappedPeerGroup[A, AA, M](
   override def initialize(): Task[Unit] =
     Task.unit
 
-  private class ChannelImpl(val to: A, underlyingChannel: Channel[AA, M])
-    extends Channel[A, M] {
+  private class ChannelImpl(val to: A, underlyingChannel: Channel[AA, M]) extends Channel[A, M] {
 
     override def sendMessage(message: M): Task[Unit] =
       underlyingChannel.sendMessage(message)
