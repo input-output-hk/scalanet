@@ -7,3 +7,5 @@ target/
 bazel-*
 .bazel-*
 .dazel_run
+
+./scalafmt
