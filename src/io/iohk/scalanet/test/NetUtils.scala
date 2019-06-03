@@ -5,6 +5,7 @@ import java.nio.ByteBuffer
 
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.{InetMultiAddress, PeerGroup, TCPPeerGroup, TLSPeerGroup, UDPPeerGroup}
+import io.netty.handler.ssl.util.SelfSignedCertificate
 import monix.execution.Scheduler
 
 import scala.concurrent.Await
@@ -120,11 +121,13 @@ object NetUtils {
     }
   }
   def random2TLSPPeerGroup[M](implicit scheduler: Scheduler, codec: Codec[M]): (TLSPeerGroup[M], TLSPeerGroup[M]) = {
-    val address = aRandomAddress()
+    val address1 = aRandomAddress()
     val address2 = aRandomAddress()
+    val sc1 = new SelfSignedCertificate()
+    val sc2 = new SelfSignedCertificate()
 
-    val pg1 = new TLSPeerGroup(TLSPeerGroup.Config(address))
-    val pg2 = new TLSPeerGroup(TLSPeerGroup.Config(address2))
+    val pg1 = new TLSPeerGroup(TLSPeerGroup.Config(address1,sc1.key(),List(sc1.cert()),List(sc2.cert())))
+    val pg2 = new TLSPeerGroup(TLSPeerGroup.Config(address2,sc2.key(),List(sc2.cert()),List(sc1.cert())))
 
     Await.result(pg1.initialize().runAsync, 10 seconds)
     Await.result(pg2.initialize().runAsync, 10 seconds)

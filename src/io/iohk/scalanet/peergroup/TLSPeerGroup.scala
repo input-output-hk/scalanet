@@ -1,10 +1,11 @@
 package io.iohk.scalanet.peergroup
 
-import java.io.File
-import java.net.{InetAddress, InetSocketAddress}
-import java.security.cert.Certificate
-import java.security.{PrivateKey, PublicKey}
+import java.net.InetSocketAddress
+import java.security.PrivateKey
+import java.security.cert.X509Certificate
 
+import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+import io.iohk.decco._
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.iohk.scalanet.peergroup.TLSPeerGroup._
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
@@ -15,15 +16,12 @@ import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.codec.bytes.ByteArrayEncoder
 import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
+import io.netty.handler.ssl.{SslContextBuilder, SslHandshakeCompletionEvent}
 import io.netty.util
 import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-import io.iohk.decco._
-import io.netty.handler.ssl.{SslContextBuilder, SslHandshakeCompletionEvent}
-import io.netty.handler.ssl.util.{InsecureTrustManagerFactory, SelfSignedCertificate}
 
 import scala.concurrent.Promise
 import scala.util.Success
@@ -50,9 +48,8 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
     private val log = LoggerFactory.getLogger(getClass)
     private val messageSubject = ReplaySubject[M]()
 
-    private val ssc = new SelfSignedCertificate
 
-    private val sslserverCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build()
+    private val sslServerCtx = SslContextBuilder.forServer(config.certChainPrivateKey,config.certChain: _* ).build()
 
     log.debug(
       s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
@@ -60,7 +57,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
 
     nettyChannel
       .pipeline()
-      .addLast("ssl", sslserverCtx.newHandler(nettyChannel.alloc())) //This needs to first
+      .addLast("ssl", sslServerCtx.newHandler(nettyChannel.alloc())) //This needs to first
       .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
       .addLast("frameEncoder", new LengthFieldPrepender(4))
       .addLast(new MessageNotifier(messageSubject))
@@ -101,7 +98,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
 
     private val sslClientCtx = SslContextBuilder
       .forClient()
-      .trustManager(InsecureTrustManagerFactory.INSTANCE)
+      .trustManager(config.trustStore : _*)
       .build()
 
     private val bootstrap: Bootstrap = clientBootstrap
@@ -223,35 +220,38 @@ object TLSPeerGroup {
   case class Config(
       bindAddress: InetSocketAddress,
       processAddress: InetMultiAddress,
-      publicKey: PublicKey,
-      privateKey: PrivateKey,
-      trustStore: List[Certificate],
+      certChainPrivateKey: PrivateKey,
+      certChain: List[X509Certificate],
+      trustStore: List[X509Certificate],
       clientAuthRequired: Boolean
   )
 
   object Config {
     def apply(
         bindAddress: InetSocketAddress,
-        publicKey: PublicKey,
-        privateKey: PrivateKey
+        certChainPrivateKey: PrivateKey,
+        certChain: List[X509Certificate],
     ): Config =
       Config(
         bindAddress,
         InetMultiAddress(bindAddress),
-        publicKey,
-        privateKey,
+        certChainPrivateKey,
+        certChain,
         trustStore = Nil,
         clientAuthRequired = false
       )
 
     def apply(
         bindAddress: InetSocketAddress,
-        publicKey: PublicKey,
-        privateKey: PrivateKey,
-        trustStore: List[Certificate],
+        certChainPrivateKey: PrivateKey,
+        certChain: List[X509Certificate],
+        trustStore: List[X509Certificate],
         clientAuthRequired: Boolean = true
     ): Config =
-      Config(bindAddress, InetMultiAddress(bindAddress), publicKey, privateKey, trustStore, clientAuthRequired)
+      Config(bindAddress, InetMultiAddress(bindAddress), certChainPrivateKey,certChain, trustStore, clientAuthRequired)
+
+
+
   }
 
   private class MessageNotifier[M](val messageSubject: Subject[M, M])(implicit codec: Codec[M])
