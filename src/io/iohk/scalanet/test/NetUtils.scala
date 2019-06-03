@@ -126,8 +126,8 @@ object NetUtils {
     val sc1 = new SelfSignedCertificate()
     val sc2 = new SelfSignedCertificate()
 
-    val pg1 = new TLSPeerGroup(TLSPeerGroup.Config(address1,sc1.key(),List(sc1.cert()),List(sc2.cert())))
-    val pg2 = new TLSPeerGroup(TLSPeerGroup.Config(address2,sc2.key(),List(sc2.cert()),List(sc1.cert())))
+    val pg1 = new TLSPeerGroup(TLSPeerGroup.Config(address1, sc1.key(), List(sc1.cert()), List(sc2.cert())))
+    val pg2 = new TLSPeerGroup(TLSPeerGroup.Config(address2, sc2.key(), List(sc2.cert()), List(sc1.cert())))
 
     Await.result(pg1.initialize().runAsync, 10 seconds)
     Await.result(pg2.initialize().runAsync, 10 seconds)

@@ -48,8 +48,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
     private val log = LoggerFactory.getLogger(getClass)
     private val messageSubject = ReplaySubject[M]()
 
-
-    private val sslServerCtx = SslContextBuilder.forServer(config.certChainPrivateKey,config.certChain: _* ).build()
+    private val sslServerCtx = SslContextBuilder.forServer(config.certChainPrivateKey, config.certChain: _*).build()
 
     log.debug(
       s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
@@ -98,7 +97,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
 
     private val sslClientCtx = SslContextBuilder
       .forClient()
-      .trustManager(config.trustStore : _*)
+      .trustManager(config.trustStore: _*)
       .build()
 
     private val bootstrap: Bootstrap = clientBootstrap
@@ -230,7 +229,7 @@ object TLSPeerGroup {
     def apply(
         bindAddress: InetSocketAddress,
         certChainPrivateKey: PrivateKey,
-        certChain: List[X509Certificate],
+        certChain: List[X509Certificate]
     ): Config =
       Config(
         bindAddress,
@@ -248,9 +247,7 @@ object TLSPeerGroup {
         trustStore: List[X509Certificate],
         clientAuthRequired: Boolean = true
     ): Config =
-      Config(bindAddress, InetMultiAddress(bindAddress), certChainPrivateKey,certChain, trustStore, clientAuthRequired)
-
-
+      Config(bindAddress, InetMultiAddress(bindAddress), certChainPrivateKey, certChain, trustStore, clientAuthRequired)
 
   }
 
