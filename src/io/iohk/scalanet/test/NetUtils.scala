@@ -90,6 +90,12 @@ object NetUtils {
     Await.result(pg.initialize().runAsync, 10 seconds)
     pg
   }
+  def randomTLSPeerGroup[M](implicit scheduler: Scheduler, codec: Codec[M]): TLSPeerGroup[M] = {
+    val sc1 = new SelfSignedCertificate()
+    val pg = new TLSPeerGroup(TLSPeerGroup.Config(aRandomAddress(), sc1.key(), List(sc1.cert()), Nil))
+    Await.result(pg.initialize().runAsync, 10 seconds)
+    pg
+  }
 
   def randomUDPPeerGroup[M](implicit scheduler: Scheduler, codec: Codec[M]): UDPPeerGroup[M] = {
     val pg = new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
@@ -109,10 +115,22 @@ object NetUtils {
     }
   }
 
-  def withTwoRandomTLSPeerGroups[M](
+//  def withTwoRandomTLSPeerGroups[M](
+//      testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
+//  )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
+//    val (pg1, pg2) = random2TLSPPeerGroup(false)(scheduler, codec)
+//    try {
+//      testCode(pg1, pg2)
+//    } finally {
+//      pg1.shutdown()
+//      pg2.shutdown()
+//    }
+//  }
+
+  def withTwoRandomTLSPeerGroups[M](clientAuth: Boolean = false)(
       testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
   )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
-    val (pg1, pg2) = random2TLSPPeerGroup(scheduler, codec)
+    val (pg1, pg2) = random2TLSPPeerGroup(clientAuth)(scheduler, codec)
     try {
       testCode(pg1, pg2)
     } finally {
@@ -120,14 +138,17 @@ object NetUtils {
       pg2.shutdown()
     }
   }
-  def random2TLSPPeerGroup[M](implicit scheduler: Scheduler, codec: Codec[M]): (TLSPeerGroup[M], TLSPeerGroup[M]) = {
+
+  def random2TLSPPeerGroup[M](
+      clientAuth: Boolean
+  )(implicit scheduler: Scheduler, codec: Codec[M]): (TLSPeerGroup[M], TLSPeerGroup[M]) = {
     val address1 = aRandomAddress()
     val address2 = aRandomAddress()
     val sc1 = new SelfSignedCertificate()
     val sc2 = new SelfSignedCertificate()
 
-    val pg1 = new TLSPeerGroup(TLSPeerGroup.Config(address1, sc1.key(), List(sc1.cert()), List(sc2.cert())))
-    val pg2 = new TLSPeerGroup(TLSPeerGroup.Config(address2, sc2.key(), List(sc2.cert()), List(sc1.cert())))
+    val pg1 = new TLSPeerGroup(TLSPeerGroup.Config(address1, sc1.key(), List(sc1.cert()), List(sc2.cert()), clientAuth))
+    val pg2 = new TLSPeerGroup(TLSPeerGroup.Config(address2, sc2.key(), List(sc2.cert()), List(sc1.cert()), clientAuth))
 
     Await.result(pg1.initialize().runAsync, 10 seconds)
     Await.result(pg2.initialize().runAsync, 10 seconds)

@@ -19,8 +19,25 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   behavior of "TCPPeerGroup"
 
-  it should "send and receive a message" in
-    withTwoRandomTLSPeerGroups[String] { (alice, bob) =>
+  it should "send and receive a message when client auth is false" in
+    withTwoRandomTLSPeerGroups[String](false) { (alice, bob) =>
+      println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
+      val alicesMessage = Random.alphanumeric.take(1024).mkString
+      val bobsMessage = Random.alphanumeric.take(1024).mkString
+
+      bob.server().foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runAsync
+      val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runAsync
+      val aliceClient = alice.client(bob.processAddress).evaluated
+      Thread.sleep(2000)
+      val aliceReceived = aliceClient.in.headL.runAsync
+      aliceClient.sendMessage(alicesMessage).evaluated
+
+      bobReceived.futureValue shouldBe alicesMessage
+      aliceReceived.futureValue shouldBe bobsMessage
+    }
+
+  it should "send and receive a message when client auth is true" in
+    withTwoRandomTLSPeerGroups[String](true) { (alice, bob) =>
       println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
       val alicesMessage = Random.alphanumeric.take(1024).mkString
       val bobsMessage = Random.alphanumeric.take(1024).mkString
@@ -37,16 +54,16 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     }
 
   it should "shutdown a TCPPeerGroup properly" in {
-    val tcpPeerGroup = randomTCPPeerGroup[String]
-    isListening(tcpPeerGroup.config.bindAddress) shouldBe true
+    val tlsPeerGroup = randomTLSPeerGroup[String]
+    isListening(tlsPeerGroup.config.bindAddress) shouldBe true
 
-    tcpPeerGroup.shutdown().runAsync.futureValue
+    tlsPeerGroup.shutdown().runAsync.futureValue
 
-    isListening(tcpPeerGroup.config.bindAddress) shouldBe false
+    isListening(tlsPeerGroup.config.bindAddress) shouldBe false
   }
 
   it should "report the same address for two inbound channels" in
-    withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
+    withTwoRandomTLSPeerGroups[String](false) { (alice, bob) =>
       val firstInbound = bob.server().headL.runAsync
       val secondInbound = bob.server().drop(1).headL.runAsync
 

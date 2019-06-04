@@ -229,14 +229,15 @@ object TLSPeerGroup {
     def apply(
         bindAddress: InetSocketAddress,
         certChainPrivateKey: PrivateKey,
-        certChain: List[X509Certificate]
+        certChain: List[X509Certificate],
+        trustStore: List[X509Certificate]
     ): Config =
       Config(
         bindAddress,
         InetMultiAddress(bindAddress),
         certChainPrivateKey,
         certChain,
-        trustStore = Nil,
+        trustStore = trustStore,
         clientAuthRequired = false
       )
 
