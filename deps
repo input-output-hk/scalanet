@@ -3,10 +3,15 @@
 ROOT=`pwd`
 
 BAZEL_DEPS_REPO="https://github.com/input-output-hk/bazel-deps.git"
-BAZEL_DEPS_COMMIT="c9f440d823c987ce6ad86faf10fd53ecf6d9bbc7"
-IDENTIFIER="$BAZEL_DEPS_REPO|$BAZEL_DEPS_COMMIT"
+BAZEL_DEPS_TAG="latest"
+IDENTIFIER="$BAZEL_DEPS_REPO|$BAZEL_DEPS_TAG"
+SHASUM="sha256sum"
+unameOut="$(uname -s)"
+case "${unameOut}" in
+    Darwin*)    SHASUM="shasum -a256";;
+esac
 
-BAZEL_DEPS="/tmp/$(echo "$IDENTIFIER" | sha256sum | awk '{ print $1 }')/.bazel-deps/"
+BAZEL_DEPS="/tmp/$(echo "$IDENTIFIER" | ${SHASUM} | awk '{ print $1 }')/.bazel-deps/"
 
 function fail() {
   echo "$1"
@@ -24,7 +29,8 @@ if [ -e $BAZEL_DEPS ]; then
 else
     git clone "$BAZEL_DEPS_REPO" "$BAZEL_DEPS" || fail "Repo could not be found"
     cd "$BAZEL_DEPS"
-    git checkout "$BAZEL_DEPS_COMMIT" || fail "Commit could not be found"
 fi
+
+git checkout "$BAZEL_DEPS_TAG" || fail "Tag could not be found"
 
 bazel run //:parse -- generate --repo-root $ROOT --deps "$ROOT/dependencies.yaml" --external 3rdparty 

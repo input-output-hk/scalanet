@@ -5,17 +5,17 @@ rules_scala_version = "ca5a7acff4ff630f68f58b8e01e8c25dbf908fb7"
 
 http_archive(
     name = "io_bazel_rules_scala",
-    url = "https://github.com/bazelbuild/rules_scala/archive/%s.zip"%rules_scala_version,
+    strip_prefix = "rules_scala-%s" % rules_scala_version,
     type = "zip",
-    strip_prefix= "rules_scala-%s" % rules_scala_version
+    url = "https://github.com/bazelbuild/rules_scala/archive/%s.zip" % rules_scala_version,
 )
 
 
 http_archive(
     name = "com_google_protobuf",
     sha256 = "9510dd2afc29e7245e9e884336f848c8a6600a14ae726adb6befdb4f786f0be2",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.6.1.3.zip"],
     strip_prefix = "protobuf-3.6.1.3",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.6.1.3.zip"],
 )
 
 load("@io_bazel_rules_scala//scala:scala.bzl", "scala_repositories")
@@ -41,6 +41,6 @@ load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
 git_repository(
     name = "decco",
-    commit = "a159c16b5cd2dffe1e5c34e333d6fb74d3c49e1b",
+    commit = "e89981d41dbfc1108596c4e9c871c58c1f58dfab",
     remote = "https://github.com/input-output-hk/decco.git",
 )
