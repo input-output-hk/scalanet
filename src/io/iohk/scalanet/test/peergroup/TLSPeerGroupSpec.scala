@@ -19,7 +19,7 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   behavior of "TCPPeerGroup"
 
-  it should "send and receive a message when client auth is false" in
+  it should "send and receive a message when client auth is disabled / false" in
     withTwoRandomTLSPeerGroups[String](false) { (alice, bob) =>
       println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
       val alicesMessage = Random.alphanumeric.take(1024).mkString
@@ -36,7 +36,7 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
       aliceReceived.futureValue shouldBe bobsMessage
     }
 
-  it should "send and receive a message when client auth is true" in
+  it should "send and receive a message when client auth is enabled or true" in
     withTwoRandomTLSPeerGroups[String](true) { (alice, bob) =>
       println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
       val alicesMessage = Random.alphanumeric.take(1024).mkString
