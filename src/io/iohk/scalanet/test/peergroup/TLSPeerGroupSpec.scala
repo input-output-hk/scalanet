@@ -17,7 +17,7 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5 seconds)
 
-  behavior of "TCPPeerGroup"
+  behavior of "TLSPeerGroup"
   val clientAuth: Seq[Boolean] = Seq(true, false)
 
   it should "send and receive a message when client auth is disabled/false or enabled/true" in clientAuth
@@ -42,7 +42,7 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   }
 
-  it should "shutdown a TCPPeerGroup properly" in {
+  it should "shutdown a TLSPeerGroup properly" in {
     val tlsPeerGroup = randomTLSPeerGroup[String]
     isListening(tlsPeerGroup.config.bindAddress) shouldBe true
 
