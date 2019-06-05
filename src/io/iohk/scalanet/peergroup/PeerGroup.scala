@@ -73,10 +73,47 @@ trait Channel[A, M] {
   *           are not yet supported, though expect this soonish.
   */
 trait PeerGroup[A, M] {
+
+  /**
+    * Each PeerGroup instance can be thought as a gateway to the logical group of peers that the PeerGroup
+    * represent.
+    * The `processAddress` method returns the address of the self peer within the group. This is the address
+    * that can be used to interact one-on-one with this peer.
+    * @return the current peer address.
+    */
   def processAddress: A
+
+  /**
+    * This method initializes the PeerGroup.
+    * @return a task that will be completed at the end of the initialization.
+    */
   def initialize(): Task[Unit]
+
+  /**
+    * This method builds a communication channel for the current peer to communicate messages with the
+    * desired address,
+    * @param to the address of the entity that would receive our messages. Note that this address can
+    *           be the address to refer to a single peer as well as a multicast address (to refer to a
+    *           set of peers).
+    * @return the channel to interact with the desired peer(s).
+    */
   def client(to: A): Task[Channel[A, M]]
+
+  /**
+    * This method provides a stream of the channels that have been created to communicate to the
+    * peer identified with the address returned by `processAddress`. Note that if a peer A opens
+    * a multicast channel, every peer referenced by the multicast address will receive a channel
+    * in the stream returned by this method. This returned channel, could refer either to reply
+    * only to A or to the whole group that is referenced by the multicast address. Different
+    * implementations could handle this logic differently.
+    * @return the stream of opened channels that are referencing this peer.
+    */
   def server(): Observable[Channel[A, M]]
+
+  /**
+    * This methods clean resources of the current instance of a PeerGroup.
+    * @return a task that will be completed at the end of the shutdown procedure.
+    */
   def shutdown(): Task[Unit]
 }
 
