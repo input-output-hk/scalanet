@@ -18,7 +18,7 @@ class StaticAddressMappedPeerGroupSpec extends FlatSpec {
 
   implicit val patienceConfig = ScalaFutures.PatienceConfig(timeout = 5 second, interval = 1000 millis)
 
-  behavior of "SimplePeerGroup"
+  behavior of "StaticAddressMappedPeerGroup"
 
   it should "send and receive a message" in
     withTwoStaticPeerGroups(
