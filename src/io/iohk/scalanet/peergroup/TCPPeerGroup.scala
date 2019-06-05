@@ -1,9 +1,11 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.{InetAddress, InetSocketAddress}
+import java.nio.ByteBuffer
 
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
+import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
 import io.netty.channel._
@@ -11,7 +13,6 @@ import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.codec.bytes.ByteArrayEncoder
-import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
 import io.netty.util
 import monix.eval.Task
 import monix.reactive.Observable
@@ -19,6 +20,8 @@ import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import io.iohk.decco._
+import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
+
 import scala.concurrent.Promise
 import scala.util.Success
 
@@ -33,7 +36,8 @@ import scala.util.Success
   * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class TCPPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends TerminalPeerGroup[InetMultiAddress, M]() {
+class TCPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer])
+    extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 

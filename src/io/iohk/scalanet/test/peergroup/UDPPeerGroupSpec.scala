@@ -7,6 +7,8 @@ import io.iohk.scalanet.NetUtils._
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import io.iohk.decco.auto._
+import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+
 import monix.execution.Scheduler.Implicits.global
 
 import org.scalatest.concurrent.ScalaFutures._
