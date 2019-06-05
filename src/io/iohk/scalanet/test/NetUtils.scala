@@ -115,18 +115,6 @@ object NetUtils {
     }
   }
 
-//  def withTwoRandomTLSPeerGroups[M](
-//      testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
-//  )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
-//    val (pg1, pg2) = random2TLSPPeerGroup(false)(scheduler, codec)
-//    try {
-//      testCode(pg1, pg2)
-//    } finally {
-//      pg1.shutdown()
-//      pg2.shutdown()
-//    }
-//  }
-
   def withTwoRandomTLSPeerGroups[M](clientAuth: Boolean = false)(
       testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
   )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
