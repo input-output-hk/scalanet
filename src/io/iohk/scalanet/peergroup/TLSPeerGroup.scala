@@ -119,11 +119,12 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
               override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
                 evt match {
                   case e: SslHandshakeCompletionEvent =>
-                    if (e.isSuccess) activation.success(ctx) else activation.failure(e.cause())
                     log.debug(
                       s"Ssl Handshake client channel from ${ctx.channel().localAddress()} " +
                         s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
                     )
+                    if (e.isSuccess) activation.success(ctx) else activation.failure(e.cause())
+
                   case _ =>
                     log.debug(
                       s"User Event client channel from ${ctx.channel().localAddress()} " +
