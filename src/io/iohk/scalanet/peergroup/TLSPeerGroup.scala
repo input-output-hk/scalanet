@@ -22,10 +22,9 @@ import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
-
 import scala.concurrent.Promise
 import scala.util.Success
-
+import scala.collection.JavaConverters._
 /**
   * PeerGroup implementation on top of TCP.
   * FIXME currently this class makes use of netty's LengthFieldPrepender to perform packet reassembly. This means
@@ -48,7 +47,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
     private val log = LoggerFactory.getLogger(getClass)
     private val messageSubject = ReplaySubject[M]()
 
-    private val sslServerCtx = SslContextBuilder.forServer(config.certChainPrivateKey, config.certChain: _*).build()
+    private val sslServerCtx = SslContextBuilder.forServer(config.certChainPrivateKey, config.certChain: _*).ciphers(TLSPeerGroup.supportedCipherSuites.asJava).build()
 
     log.debug(
       s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
@@ -64,10 +63,10 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
-      toTask({
+      toTask(
         nettyChannel
-          .writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
-      })
+          .writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message))))
+
     }
 
     override def in: Observable[M] = messageSubject
@@ -252,6 +251,23 @@ object TLSPeerGroup {
       Config(bindAddress, InetMultiAddress(bindAddress), certChainPrivateKey, certChain, trustStore, clientAuthRequired)
 
   }
+
+  val supportedCipherSuites: Seq[String] = Seq(
+      "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384",
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384",
+      "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA",
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+      "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",
+      "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_ECDHE_ECDSA_WITH_RC4_128_SHA",
+      "TLS_ECDHE_RSA_WITH_RC4_128_SHA",
+      "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+      "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+      "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA",
+      "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA")
 
   private class MessageNotifier[M](val messageSubject: Subject[M, M])(implicit codec: Codec[M])
       extends ChannelInboundHandlerAdapter {
