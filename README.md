@@ -39,7 +39,7 @@ Here is a picture of the structure of the library for a few sample applications:
 
 ### Getting started
 The easiest way to get started is to send and receive data over TCP, using the library just like netty. Have a look at
-the [TCPPeerGroupSpec](src/io/iohk/scalanet/test/peergroup/TCPPeerGroupSpec.scala) test case or the following code. 
+the [TCPPeerGroupSpec](core/io/iohk/scalanet/test/peergroup/TCPPeerGroupSpec.scala) test case or the following code. 
 
 ```scala
 // import some peer group classes
