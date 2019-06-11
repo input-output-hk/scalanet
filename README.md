@@ -76,9 +76,9 @@ Two main branches are maintained: `develop` and `master`.
 
 ### Building the codebase
 
-To build the codebase, we use [bazel](https://bazel.build/). Assuming you have bazel installed correctly, you can build and test the codebase with
+To build the codebase, we use [mill](http://www.lihaoyi.com/mill). Assuming you have mill installed correctly, you can build and test the codebase with
 ```bash
-bazel test //...
+mill test //...
 ```
 
 ### Formatting the codebase

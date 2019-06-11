@@ -20,22 +20,12 @@ jobs:
           command: apt-get update && apt-get install -y --no-install-recommends zip
 
       - run:
-          name: install bazel
-          command: ~/repo/docker/installBazel
+          name: install mill
+          command: sh -c '(echo "#!/usr/bin/env sh" && curl -L https://github.com/lihaoyi/mill/releases/download/0.4.0/0.4.0) > /usr/local/bin/mill && chmod +x /usr/local/bin/mill'
 
       - run:
           name: test
-          command: |
-             bazel test --jobs=1 //... --test_output=errors
-
-      - run:
-          name: build
-          command: |
-            bazel build --jobs=1 //src/io/iohk/scalanet:scalanet_EXT_deploy.jar
-
-            cp bazel-bin/src/io/iohk/scalanet/scalanet_EXT_deploy.jar scalanet.jar
-
-            .circleci/removeScalaStandardLibrary scalanet.jar
+          command: mill library.test
 
       - run:
           name: check that the code is formatted properly
