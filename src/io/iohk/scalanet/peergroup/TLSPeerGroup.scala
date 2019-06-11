@@ -59,7 +59,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
 
     nettyChannel
       .pipeline()
-      .addLast("ssl", sslServerCtx.newHandler(nettyChannel.alloc())) //This needs to first
+      .addLast("ssl", sslServerCtx.newHandler(nettyChannel.alloc())) //This needs to be first
       .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
       .addLast("frameEncoder", new LengthFieldPrepender(4))
       .addLast(new MessageNotifier(messageSubject))
@@ -111,7 +111,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
           val pipeline = ch.pipeline()
           val sslHandler = sslClientCtx.newHandler(ch.alloc())
           pipeline
-            .addLast("ssl", sslHandler) //This needs to first
+            .addLast("ssl", sslHandler) //This needs to be first
             .addLast("frameEncoder", new LengthFieldPrepender(4))
             .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
             .addLast(new ByteArrayEncoder())
