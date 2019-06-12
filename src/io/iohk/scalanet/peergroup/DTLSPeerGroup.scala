@@ -74,7 +74,8 @@ class DTLSPeerGroup[M](val config: Config)(
           override def onError(throwable: Throwable): Unit = c.onError(throwable)
         }
 
-        val rawData = RawData.outbound(buffer.toArray, new AddressEndpointContext(to.inetSocketAddress), messageCallback, false)
+        val rawData =
+          RawData.outbound(buffer.toArray, new AddressEndpointContext(to.inetSocketAddress), messageCallback, false)
 
         dtlsConnector.send(rawData)
 

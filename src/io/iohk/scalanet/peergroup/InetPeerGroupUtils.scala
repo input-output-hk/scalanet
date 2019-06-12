@@ -13,7 +13,9 @@ import scala.util.Success
 object InetPeerGroupUtils {
   def toTask(f: util.concurrent.Future[_]): Task[Unit] = {
     Task.create[Unit] { (_, cb) =>
-      f.addListener((future: util.concurrent.Future[_]) => if (future.isSuccess) cb.onSuccess(()) else cb.onError(future.cause()))
+      f.addListener(
+        (future: util.concurrent.Future[_]) => if (future.isSuccess) cb.onSuccess(()) else cb.onError(future.cause())
+      )
       Cancelable.empty
     }
 
