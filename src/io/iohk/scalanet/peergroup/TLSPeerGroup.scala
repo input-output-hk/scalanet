@@ -29,11 +29,11 @@ import scala.util.Success
 import scala.collection.JavaConverters._
 
 /**
-  * PeerGroup implementation on top of TCP.
+  * PeerGroup implementation on top of TLS.
   * FIXME currently this class makes use of netty's LengthFieldPrepender to perform packet reassembly. This means
   * the encoded bytes provided by the callers codec are not identical to the bytes put on the wire (since a
   * length field is prepended to the byte stream). This class therefore cannot be used to talk to general services
-  * that are not instances of TCPPeerGroup.
+  * that are not instances of TLSPeerGroup.
   *
   * @param config bind address etc. See the companion object.
   * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
