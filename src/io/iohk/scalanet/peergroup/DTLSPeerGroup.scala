@@ -9,7 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
 import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
 import monix.eval.Task
-import monix.execution.Scheduler
+import monix.execution.{Cancelable, Scheduler}
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.eclipse.californium.elements._
@@ -18,7 +18,6 @@ import org.eclipse.californium.scandium.config.DtlsConnectorConfig
 import org.eclipse.californium.scandium.dtls.cipher.CipherSuite._
 
 import scala.collection.JavaConverters._
-import scala.concurrent.Promise
 
 class DTLSPeerGroup[M](val config: Config)(
     implicit codec: Codec[M],
@@ -38,14 +37,14 @@ class DTLSPeerGroup[M](val config: Config)(
     Task(serverConnector.start())
   }
 
-  override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
+  override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = Task {
     val connector = createClientConnector()
     connector.start()
     val id = (connector.getAddress, to.inetSocketAddress)
     assert(!activeChannels.contains(id), s"HOUSTON, WE HAVE A MULTIPLEXING PROBLEM")
     val channel = new ClientChannelImpl(to, connector)
     activeChannels.put(id, channel)
-    Task(channel)
+    channel
   }
 
   override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
@@ -65,23 +64,22 @@ class DTLSPeerGroup[M](val config: Config)(
       import io.iohk.scalanet.peergroup.BufferConversionOps._
       val buffer = codec.encode(message)
 
-      val promisedSend = Promise[Unit]()
+      Task.async[Unit] { (_, c) =>
+        val messageCallback = new MessageCallback {
+          override def onConnecting(): Unit = ()
+          override def onDtlsRetransmission(i: Int): Unit = ()
+          override def onContextEstablished(endpointContext: EndpointContext): Unit = ()
 
-      val callback = new MessageCallback {
-        override def onConnecting(): Unit = ()
+          override def onSent(): Unit = c.onSuccess(())
+          override def onError(throwable: Throwable): Unit = c.onError(throwable)
+        }
 
-        override def onDtlsRetransmission(i: Int): Unit = ()
+        val rawData = RawData.outbound(buffer.toArray, new AddressEndpointContext(to.inetSocketAddress), messageCallback, false)
 
-        override def onContextEstablished(endpointContext: EndpointContext): Unit = ()
+        dtlsConnector.send(rawData)
 
-        override def onSent(): Unit = promisedSend.success(())
-
-        override def onError(throwable: Throwable): Unit = promisedSend.failure(throwable)
+        Cancelable.empty
       }
-
-      val rawData = RawData.outbound(buffer.toArray, new AddressEndpointContext(to.inetSocketAddress), callback, false)
-      dtlsConnector.send(rawData)
-      Task.fromFuture(promisedSend.future)
     }
 
     override def close(): Task[Unit] = {
