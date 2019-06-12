@@ -1,8 +1,9 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
+import java.nio.ByteBuffer
 import java.security.PrivateKey
-import java.security.cert.X509Certificate
+import java.security.cert.{Certificate, X509Certificate}
 
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import io.iohk.decco._
@@ -22,6 +23,7 @@ import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
+
 import scala.concurrent.Promise
 import scala.util.Success
 import scala.collection.JavaConverters._
@@ -37,7 +39,7 @@ import scala.collection.JavaConverters._
   * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends TerminalPeerGroup[InetMultiAddress, M]() {
+class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M],bufferInstantiator: BufferInstantiator[ByteBuffer]) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -49,7 +51,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
     private val messageSubject = ReplaySubject[M]()
 
     private val sslServerCtx = SslContextBuilder
-      .forServer(config.certChainPrivateKey, config.certChain: _*)
+      .forServer(config.certChainPrivateKey, config.certChain.asInstanceOf[List[X509Certificate]]: _*)
       .ciphers(TLSPeerGroup.supportedCipherSuites.asJava)
       .build()
 
@@ -101,7 +103,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
 
     private val sslClientCtx = SslContextBuilder
       .forClient()
-      .trustManager(config.trustStore: _*)
+      .trustManager(config.trustStore.asInstanceOf[List[X509Certificate]]: _*)
       .build()
 
     private val bootstrap: Bootstrap = clientBootstrap
@@ -225,8 +227,8 @@ object TLSPeerGroup {
       bindAddress: InetSocketAddress,
       processAddress: InetMultiAddress,
       certChainPrivateKey: PrivateKey,
-      certChain: List[X509Certificate],
-      trustStore: List[X509Certificate],
+      certChain: List[Certificate],
+      trustStore: List[Certificate],
       clientAuthRequired: Boolean
   )
 
@@ -234,8 +236,8 @@ object TLSPeerGroup {
     def apply(
         bindAddress: InetSocketAddress,
         certChainPrivateKey: PrivateKey,
-        certChain: List[X509Certificate],
-        trustStore: List[X509Certificate]
+        certChain: List[Certificate],
+        trustStore: List[Certificate]
     ): Config =
       Config(
         bindAddress,
@@ -249,8 +251,8 @@ object TLSPeerGroup {
     def apply(
         bindAddress: InetSocketAddress,
         certChainPrivateKey: PrivateKey,
-        certChain: List[X509Certificate],
-        trustStore: List[X509Certificate],
+        certChain: List[Certificate],
+        trustStore: List[Certificate],
         clientAuthRequired: Boolean = true
     ): Config =
       Config(bindAddress, InetMultiAddress(bindAddress), certChainPrivateKey, certChain, trustStore, clientAuthRequired)
