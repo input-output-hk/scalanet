@@ -88,10 +88,9 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
       secondInbound.futureValue.to shouldBe alice.processAddress
     }
 
-
 }
 
-object TLSPeerGroupSpec{
+object TLSPeerGroupSpec {
 
   def signedCertConfig(alias: String): Config = {
     import scala.collection.JavaConverters._
@@ -101,21 +100,20 @@ object TLSPeerGroupSpec{
       .asScala
       .toList
 
-    Config(aRandomAddress(),keyAt(alias),certChain, NetUtils.trustedCerts.toList)
+    Config(aRandomAddress(), keyAt(alias), certChain, NetUtils.trustedCerts.toList)
   }
 
   def selfSignedCertConfig(alias: String): Config = {
 
-    val key = keyStore.getKey(alias,"password".toCharArray).asInstanceOf[PrivateKey]
+    val key = keyStore.getKey(alias, "password".toCharArray).asInstanceOf[PrivateKey]
     val certChain = keyStore.getCertificateChain(alias).toList
-    val trustStore =  List(keyStore.getCertificate("bob"))
-    Config(aRandomAddress(),key ,certChain, trustStore)
+    val trustStore = List(keyStore.getCertificate("bob"))
+    Config(aRandomAddress(), key, certChain, trustStore)
 
   }
 
-
   def withTwoTLSPeerGroups[M](cgens: (String => Config)*)(
-    testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
+      testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
   )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = cgens.foreach { cgen =>
     val pg1 = tlsPeerGroup[M](cgen("alice"))
     val pg2 = tlsPeerGroup[M](cgen("bob"))
@@ -129,7 +127,9 @@ object TLSPeerGroupSpec{
     }
   }
 
-  def tlsPeerGroup[M](config: Config)(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): TLSPeerGroup[M] = {
+  def tlsPeerGroup[M](
+      config: Config
+  )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): TLSPeerGroup[M] = {
     val pg = new TLSPeerGroup[M](config)
     Await.result(pg.initialize().runAsync, Duration.Inf)
     pg
@@ -142,14 +142,13 @@ object TLSPeerGroupSpec{
     val bobSc = new SelfSignedCertificate()
 
     keyStore.setCertificateEntry("alice", bobSc.cert())
-    keyStore.setKeyEntry("alice",aliceSc.key(),"password".toCharArray,Array(aliceSc.cert()))
+    keyStore.setKeyEntry("alice", aliceSc.key(), "password".toCharArray, Array(aliceSc.cert()))
 
     keyStore.setCertificateEntry("bob", aliceSc.cert())
-    keyStore.setKeyEntry("bob",bobSc.key(),"password".toCharArray,Array(bobSc.cert()))
+    keyStore.setKeyEntry("bob", bobSc.key(), "password".toCharArray, Array(bobSc.cert()))
 
     keyStore
   }
-
 
   def keyAt(alias: String): PrivateKey = {
     NetUtils.keyStore.getKey(alias, "password".toCharArray).asInstanceOf[PrivateKey]

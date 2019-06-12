@@ -115,7 +115,11 @@ object NetUtils {
     Await.result(pg.initialize().runAsync, 10 seconds)
     pg
   }
-  def randomTLSPeerGroup[M](implicit scheduler: Scheduler, codec: Codec[M],bufferInstantiator: BufferInstantiator[ByteBuffer]): TLSPeerGroup[M] = {
+  def randomTLSPeerGroup[M](
+      implicit scheduler: Scheduler,
+      codec: Codec[M],
+      bufferInstantiator: BufferInstantiator[ByteBuffer]
+  ): TLSPeerGroup[M] = {
     val sc1 = new SelfSignedCertificate()
     val pg = new TLSPeerGroup(TLSPeerGroup.Config(aRandomAddress(), sc1.key(), List(sc1.cert()), Nil))
     Await.result(pg.initialize().runAsync, 10 seconds)
@@ -146,8 +150,8 @@ object NetUtils {
 
   def withTwoRandomTLSPeerGroups[M](clientAuth: Boolean = false)(
       testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
-  )(implicit scheduler: Scheduler, codec: Codec[M],bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
-    val (pg1, pg2) = random2TLSPPeerGroup(clientAuth)(scheduler, codec,bufferInstantiator)
+  )(implicit scheduler: Scheduler, codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
+    val (pg1, pg2) = random2TLSPPeerGroup(clientAuth)(scheduler, codec, bufferInstantiator)
     try {
       testCode(pg1, pg2)
     } finally {
@@ -158,7 +162,11 @@ object NetUtils {
 
   def random2TLSPPeerGroup[M](
       clientAuth: Boolean
-  )(implicit scheduler: Scheduler, codec: Codec[M],bufferInstantiator: BufferInstantiator[ByteBuffer]): (TLSPeerGroup[M], TLSPeerGroup[M]) = {
+  )(
+      implicit scheduler: Scheduler,
+      codec: Codec[M],
+      bufferInstantiator: BufferInstantiator[ByteBuffer]
+  ): (TLSPeerGroup[M], TLSPeerGroup[M]) = {
     val address1 = aRandomAddress()
     val address2 = aRandomAddress()
     val sc1 = new SelfSignedCertificate()

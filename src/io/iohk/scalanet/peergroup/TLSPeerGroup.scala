@@ -39,7 +39,8 @@ import scala.collection.JavaConverters._
   * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M],bufferInstantiator: BufferInstantiator[ByteBuffer]) extends TerminalPeerGroup[InetMultiAddress, M]() {
+class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer])
+    extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
