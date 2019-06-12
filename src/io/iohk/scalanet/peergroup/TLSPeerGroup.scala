@@ -86,9 +86,9 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
 
   }
 
-  private class ClientChannelImpl[M](inetSocketAddress: InetSocketAddress, clientBootstrap: Bootstrap)(
-      implicit codec: Codec[M]
-  ) extends Channel[InetMultiAddress, M] {
+  private class ClientChannelImpl[Message](inetSocketAddress: InetSocketAddress, clientBootstrap: Bootstrap)(
+      implicit codec: Codec[Message]
+  ) extends Channel[InetMultiAddress, Message] {
 
     private val log = LoggerFactory.getLogger(getClass)
 
@@ -100,7 +100,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
     private val deactivation = Promise[Unit]()
     private val deactivationF = deactivation.future
 
-    private val messageSubject = ReplaySubject[M]()
+    private val messageSubject = ReplaySubject[Message]()
 
     private val sslClientCtx = SslContextBuilder
       .forClient()
@@ -141,15 +141,15 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
                 super.userEventTriggered(ctx, evt)
               }
             })
-            .addLast(new MessageNotifier[M](messageSubject))
+            .addLast(new MessageNotifier[Message](messageSubject))
         }
       })
 
-    def initialize: Task[ClientChannelImpl[M]] = {
+    def initialize: Task[ClientChannelImpl[Message]] = {
       toTask(bootstrap.connect(inetSocketAddress)).map(_ => this)
     }
 
-    override def sendMessage(message: M): Task[Unit] = {
+    override def sendMessage(message: Message): Task[Unit] = {
 
       Task
         .fromFuture(activationF)
@@ -164,7 +164,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
         .map(_ => ())
     }
 
-    override def in: Observable[M] = messageSubject
+    override def in: Observable[Message] = messageSubject
 
     override def close(): Task[Unit] = {
       messageSubject.onComplete()
