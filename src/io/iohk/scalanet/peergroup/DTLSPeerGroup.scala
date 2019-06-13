@@ -16,7 +16,8 @@ import org.eclipse.californium.elements._
 import org.eclipse.californium.scandium.DTLSConnector
 import org.eclipse.californium.scandium.config.DtlsConnectorConfig
 import org.eclipse.californium.scandium.dtls.cipher.CipherSuite._
-
+import InetPeerGroupUtils.ChannelId
+import InetPeerGroupUtils._
 import scala.collection.JavaConverters._
 
 class DTLSPeerGroup[M](val config: Config)(
@@ -29,7 +30,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
   private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
 
-  private val activeChannels = new ConcurrentHashMap[(InetSocketAddress, InetSocketAddress), ChannelImpl]().asScala
+  private val activeChannels = new ConcurrentHashMap[ChannelId, ChannelImpl]().asScala
 
   override def processAddress: InetMultiAddress = config.processAddress
 
@@ -40,7 +41,7 @@ class DTLSPeerGroup[M](val config: Config)(
   override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = Task {
     val connector = createClientConnector()
     connector.start()
-    val id = (connector.getAddress, to.inetSocketAddress)
+    val id = getChannelId(connector.getAddress, to.inetSocketAddress)
     assert(!activeChannels.contains(id), s"HOUSTON, WE HAVE A MULTIPLEXING PROBLEM")
     val channel = new ClientChannelImpl(to, connector)
     activeChannels.put(id, channel)
@@ -110,7 +111,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
     connector.setRawDataReceiver(new RawDataChannel {
       override def receiveData(rawData: RawData): Unit = {
-        val channelId = (connector.getAddress, rawData.getInetSocketAddress)
+        val channelId = getChannelId(connector.getAddress, rawData.getInetSocketAddress)
 
         assert(activeChannels.contains(channelId), s"Missing channel for channelId $channelId")
 
@@ -132,7 +133,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
     connector.setRawDataReceiver(new RawDataChannel {
       override def receiveData(rawData: RawData): Unit = {
-        val channelId = (processAddress.inetSocketAddress, rawData.getInetSocketAddress)
+        val channelId = getChannelId(processAddress.inetSocketAddress, rawData.getInetSocketAddress)
 
         val activeChannel: ChannelImpl = activeChannels.getOrElseUpdate(channelId, createNewChannel(rawData))
 
