@@ -3,10 +3,10 @@ package io.iohk.scalanet.peergroup
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
-import io.iohk.decco.BufferInstantiator.global.DirectByteBuffer
 
-import io.iohk.decco.Codec
+import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
+import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{getChannelId, toTask}
 import io.iohk.scalanet.peergroup.UDPPeerGroup._
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
@@ -14,15 +14,13 @@ import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
-import io.netty.{channel, util}
+import io.netty.channel
 import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
-import scala.concurrent.Promise
-import scala.util.Success
 
 /**
   * PeerGroup implementation on top of UDP.
@@ -31,7 +29,8 @@ import scala.util.Success
   * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends TerminalPeerGroup[InetMultiAddress, M]() {
+class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer])
+    extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -177,21 +176,6 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends Term
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
     } yield ()
-  }
-
-  private def toTask(f: util.concurrent.Future[_]): Task[Unit] = {
-    val promisedCompletion = Promise[Unit]()
-    f.addListener((_: util.concurrent.Future[_]) => promisedCompletion.complete(Success(())))
-    Task.fromFuture(promisedCompletion.future)
-  }
-
-  private def getChannelId(remoteAddress: InetSocketAddress, localAddress: InetSocketAddress): Seq[Byte] = {
-    val b = ByteBuffer.allocate(16)
-    b.put(remoteAddress.getAddress.getAddress)
-    b.putInt(remoteAddress.getPort)
-    b.put(localAddress.getAddress.getAddress)
-    b.putInt(localAddress.getPort)
-    b.array().toIndexedSeq
   }
 }
 

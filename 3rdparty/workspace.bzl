@@ -556,6 +556,44 @@ def maven_dependencies():
   )
 
   java_import_external(
+      name = "org___eclipse___californium_and_scandium",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/eclipse/californium/scandium/2.0.0-M15/scandium-2.0.0-M15.jar"
+      ],
+      jar_sha256 = "fac5e3ea7a1dadbd5dcecba8e32dac05caeefeb600711b68556c64448540be4b",
+      neverlink=0
+  )
+  java_import_external(
+      name = "org___eclipse___californium_and_scandium__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/eclipse/californium/scandium/2.0.0-M15/scandium-2.0.0-M15.jar"
+      ],
+      jar_sha256 = "fac5e3ea7a1dadbd5dcecba8e32dac05caeefeb600711b68556c64448540be4b",
+      neverlink=1
+  )
+
+  java_import_external(
+      name = "org___eclipse___californium_and_element_ds_connector",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/eclipse/californium/element-connector/2.0.0-M15/element-connector-2.0.0-M15.jar"
+      ],
+      jar_sha256 = "e8d1b7a6f91fd73cc7188069a6ba271f6a91714a8f3618565212fe6bdcc2de22",
+      neverlink=0
+  )
+  java_import_external(
+      name = "org___eclipse___californium_and_element_ds_connector__NEVERLINK",
+      licenses = ["notice"],
+      jar_urls = [
+          "https://repo1.maven.org/maven2/org/eclipse/californium/element-connector/2.0.0-M15/element-connector-2.0.0-M15.jar"
+      ],
+      jar_sha256 = "e8d1b7a6f91fd73cc7188069a6ba271f6a91714a8f3618565212fe6bdcc2de22",
+      neverlink=1
+  )
+
+  java_import_external(
       name = "io___monix_and_monix__2___12__EXTERNAL",
       licenses = ["notice"],
       jar_urls = [
