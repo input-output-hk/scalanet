@@ -1,1 +1,0 @@
-scalafmt --diff-branch develop
