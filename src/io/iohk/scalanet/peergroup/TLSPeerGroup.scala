@@ -17,7 +17,7 @@ import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.codec.bytes.ByteArrayEncoder
 import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
-import io.netty.handler.ssl.{SslContextBuilder, SslHandshakeCompletionEvent}
+import io.netty.handler.ssl.{SslContext, SslContextBuilder, SslHandshakeCompletionEvent}
 import io.netty.util
 import monix.eval.Task
 import monix.reactive.Observable
@@ -44,136 +44,15 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private[scalanet] class ServerChannelImpl[M](val nettyChannel: SocketChannel)(
-      implicit codec: Codec[M]
-  ) extends Channel[InetMultiAddress, M] {
+  private val sslClientCtx: SslContext = SslContextBuilder
+    .forClient()
+    .trustManager(config.trustStore.asInstanceOf[List[X509Certificate]]: _*)
+    .build()
 
-    private val log = LoggerFactory.getLogger(getClass)
-    private val messageSubject = ReplaySubject[M]()
-
-    private val sslServerCtx = SslContextBuilder
-      .forServer(config.certChainPrivateKey, config.certChain.asInstanceOf[List[X509Certificate]]: _*)
-      .ciphers(TLSPeerGroup.supportedCipherSuites.asJava)
-      .build()
-
-    log.debug(
-      s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
-    )
-
-    nettyChannel
-      .pipeline()
-      .addLast("ssl", sslServerCtx.newHandler(nettyChannel.alloc())) //This needs to be first
-      .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
-      .addLast("frameEncoder", new LengthFieldPrepender(4))
-      .addLast(new MessageNotifier(messageSubject))
-
-    override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
-
-    override def sendMessage(message: M): Task[Unit] = {
-      toTask(
-        nettyChannel
-          .writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
-      )
-
-    }
-
-    override def in: Observable[M] = messageSubject
-
-    override def close(): Task[Unit] = {
-      messageSubject.onComplete()
-      toTask(nettyChannel.close())
-    }
-
-  }
-
-  private class ClientChannelImpl[Message](inetSocketAddress: InetSocketAddress, clientBootstrap: Bootstrap)(
-      implicit codec: Codec[Message]
-  ) extends Channel[InetMultiAddress, Message] {
-
-    private val log = LoggerFactory.getLogger(getClass)
-
-    val to: InetMultiAddress = InetMultiAddress(inetSocketAddress)
-
-    private val activation = Promise[ChannelHandlerContext]()
-    private val activationF = activation.future
-
-    private val deactivation = Promise[Unit]()
-    private val deactivationF = deactivation.future
-
-    private val messageSubject = ReplaySubject[Message]()
-
-    private val sslClientCtx = SslContextBuilder
-      .forClient()
-      .trustManager(config.trustStore.asInstanceOf[List[X509Certificate]]: _*)
-      .build()
-
-    private val bootstrap: Bootstrap = clientBootstrap
-      .clone()
-      .handler(new ChannelInitializer[SocketChannel]() {
-        def initChannel(ch: SocketChannel): Unit = {
-          val pipeline = ch.pipeline()
-          val sslHandler = sslClientCtx.newHandler(ch.alloc())
-          pipeline
-            .addLast("ssl", sslHandler) //This needs to be first
-            .addLast("frameEncoder", new LengthFieldPrepender(4))
-            .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
-            .addLast(new ByteArrayEncoder())
-            .addLast(new ChannelInboundHandlerAdapter() {
-              override def channelInactive(ctx: ChannelHandlerContext): Unit = {
-                deactivation.success(())
-              }
-
-              override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
-                evt match {
-                  case e: SslHandshakeCompletionEvent =>
-                    log.debug(
-                      s"Ssl Handshake client channel from ${ctx.channel().localAddress()} " +
-                        s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
-                    )
-                    if (e.isSuccess) activation.success(ctx) else activation.failure(e.cause())
-
-                  case _ =>
-                    log.debug(
-                      s"User Event client channel from ${ctx.channel().localAddress()} " +
-                        s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
-                    )
-                }
-                super.userEventTriggered(ctx, evt)
-              }
-            })
-            .addLast(new MessageNotifier[Message](messageSubject))
-        }
-      })
-
-    def initialize: Task[ClientChannelImpl[Message]] = {
-      toTask(bootstrap.connect(inetSocketAddress)).map(_ => this)
-    }
-
-    override def sendMessage(message: Message): Task[Unit] = {
-
-      Task
-        .fromFuture(activationF)
-        .map(ctx => {
-          log.debug(
-            s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
-              s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
-          )
-
-          ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
-        })
-        .map(_ => ())
-    }
-
-    override def in: Observable[Message] = messageSubject
-
-    override def close(): Task[Unit] = {
-      messageSubject.onComplete()
-      Task
-        .fromFuture(activationF)
-        .flatMap(ctx => toTask(ctx.close()))
-        .flatMap(_ => Task.fromFuture(deactivationF))
-    }
-  }
+  private val sslServerCtx: SslContext = SslContextBuilder
+    .forServer(config.certChainPrivateKey, config.certChain.asInstanceOf[List[X509Certificate]]: _*)
+    .ciphers(TLSPeerGroup.supportedCipherSuites.asJava)
+    .build()
 
   private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
 
@@ -191,7 +70,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
-        val newChannel = new ServerChannelImpl[M](ch)
+        val newChannel = new ServerChannelImpl[M](ch, sslServerCtx)
         channelSubject.onNext(newChannel)
         log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
@@ -208,7 +87,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
   override def processAddress: InetMultiAddress = config.processAddress
 
   override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
-    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap).initialize
+    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, sslClientCtx).initialize
   }
 
   override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
@@ -321,4 +200,127 @@ object TLSPeerGroup {
     Task.fromFuture(promisedCompletion.future)
   }
 
+  private class ClientChannelImpl[M](
+      inetSocketAddress: InetSocketAddress,
+      clientBootstrap: Bootstrap,
+      sslClientCtx: SslContext
+  )(
+      implicit codec: Codec[M]
+  ) extends Channel[InetMultiAddress, M] {
+
+    private val log = LoggerFactory.getLogger(getClass)
+
+    val to: InetMultiAddress = InetMultiAddress(inetSocketAddress)
+
+    private val activation = Promise[ChannelHandlerContext]()
+    private val activationF = activation.future
+
+    private val deactivation = Promise[Unit]()
+    private val deactivationF = deactivation.future
+
+    private val messageSubject = ReplaySubject[M]()
+
+    private val bootstrap: Bootstrap = clientBootstrap
+      .clone()
+      .handler(new ChannelInitializer[SocketChannel]() {
+        def initChannel(ch: SocketChannel): Unit = {
+          val pipeline = ch.pipeline()
+          val sslHandler = sslClientCtx.newHandler(ch.alloc())
+          pipeline
+            .addLast("ssl", sslHandler) //This needs to be first
+            .addLast("frameEncoder", new LengthFieldPrepender(4))
+            .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
+            .addLast(new ByteArrayEncoder())
+            .addLast(new ChannelInboundHandlerAdapter() {
+              override def channelInactive(ctx: ChannelHandlerContext): Unit = {
+                deactivation.success(())
+              }
+
+              override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
+                evt match {
+                  case e: SslHandshakeCompletionEvent =>
+                    log.debug(
+                      s"Ssl Handshake client channel from ${ctx.channel().localAddress()} " +
+                        s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
+                    )
+                    if (e.isSuccess) activation.success(ctx) else activation.failure(e.cause())
+
+                  case _ =>
+                    log.debug(
+                      s"User Event client channel from ${ctx.channel().localAddress()} " +
+                        s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
+                    )
+                }
+                super.userEventTriggered(ctx, evt)
+              }
+            })
+            .addLast(new MessageNotifier[M](messageSubject))
+        }
+      })
+
+    def initialize: Task[ClientChannelImpl[M]] = {
+      toTask(bootstrap.connect(inetSocketAddress)).map(_ => this)
+    }
+
+    override def sendMessage(message: M): Task[Unit] = {
+
+      Task
+        .fromFuture(activationF)
+        .map(ctx => {
+          log.debug(
+            s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
+              s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
+          )
+
+          ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
+        })
+        .map(_ => ())
+    }
+
+    override def in: Observable[M] = messageSubject
+
+    override def close(): Task[Unit] = {
+      messageSubject.onComplete()
+      Task
+        .fromFuture(activationF)
+        .flatMap(ctx => toTask(ctx.close()))
+        .flatMap(_ => Task.fromFuture(deactivationF))
+    }
+  }
+
+  private[scalanet] class ServerChannelImpl[M](val nettyChannel: SocketChannel, sslServerCtx: SslContext)(
+      implicit codec: Codec[M]
+  ) extends Channel[InetMultiAddress, M] {
+
+    private val log = LoggerFactory.getLogger(getClass)
+    private val messageSubject = ReplaySubject[M]()
+
+    log.debug(
+      s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
+    )
+
+    nettyChannel
+      .pipeline()
+      .addLast("ssl", sslServerCtx.newHandler(nettyChannel.alloc())) //This needs to be first
+      .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
+      .addLast("frameEncoder", new LengthFieldPrepender(4))
+      .addLast(new MessageNotifier(messageSubject))
+
+    override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
+
+    override def sendMessage(message: M): Task[Unit] = {
+      toTask(
+        nettyChannel
+          .writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
+      )
+
+    }
+
+    override def in: Observable[M] = messageSubject
+
+    override def close(): Task[Unit] = {
+      messageSubject.onComplete()
+      toTask(nettyChannel.close())
+    }
+  }
 }
