@@ -109,18 +109,16 @@ class DTLSPeerGroup[M](val config: Config)(
 
     val connector = new DTLSConnector(connectorConfig)
 
-    connector.setRawDataReceiver(new RawDataChannel {
-      override def receiveData(rawData: RawData): Unit = {
-        val channelId = getChannelId(connector.getAddress, rawData.getInetSocketAddress)
+    connector.setRawDataReceiver((rawData: RawData) => {
+      val channelId = getChannelId(connector.getAddress, rawData.getInetSocketAddress)
 
-        assert(activeChannels.contains(channelId), s"Missing channel for channelId $channelId")
+      assert(activeChannels.contains(channelId), s"Missing channel for channelId $channelId")
 
-        val activeChannel: ChannelImpl = activeChannels(channelId)
+      val activeChannel: ChannelImpl = activeChannels(channelId)
 
-        val messageE = codec.decode(ByteBuffer.wrap(rawData.bytes))
+      val messageE = codec.decode(ByteBuffer.wrap(rawData.bytes))
 
-        messageE.foreach(message => activeChannel.in.onNext(message))
-      }
+      messageE.foreach(message => activeChannel.in.onNext(message))
     })
 
     connector

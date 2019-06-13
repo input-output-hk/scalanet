@@ -4,18 +4,19 @@ import java.net.InetSocketAddress
 
 import io.netty.util
 import monix.eval.Task
-
-import scala.concurrent.Promise
-import scala.util.Success
+import monix.execution.Cancelable
 
 object InetPeerGroupUtils {
 
   type ChannelId = (InetSocketAddress, InetSocketAddress)
 
   def toTask(f: util.concurrent.Future[_]): Task[Unit] = {
-    val promisedCompletion = Promise[Unit]()
-    f.addListener((_: util.concurrent.Future[_]) => promisedCompletion.complete(Success(())))
-    Task.fromFuture(promisedCompletion.future)
+    Task.create[Unit] { (_, cb) =>
+      f.addListener(
+        (future: util.concurrent.Future[_]) => if (future.isSuccess) cb.onSuccess(()) else cb.onError(future.cause())
+      )
+      Cancelable.empty
+    }
   }
 
   def getChannelId(remoteAddress: InetSocketAddress, localAddress: InetSocketAddress): ChannelId = {
