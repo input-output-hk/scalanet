@@ -45,4 +45,27 @@ class UDPPeerGroupSpec extends FlatSpec {
 
     isListeningUDP(pg1.config.bindAddress) shouldBe false
   }
+
+  it should "receive a channel and message that was sent before subscription to the server stream" in withTwoRandomUDPPeerGroups[
+    String
+  ] { (alice, bob) =>
+    val alicesMessage = Random.alphanumeric.take(1024 * 4).mkString
+
+    val aliceClient = alice.client(bob.processAddress).evaluated
+    aliceClient.sendMessage(alicesMessage).runAsync
+
+    expensiveComputation()
+
+    val bobFirstReceivedChannel = bob.server().headL.runAsync
+    bobFirstReceivedChannel.futureValue.to shouldBe alice.processAddress
+
+    val bobReceivedMessage = bobFirstReceivedChannel.futureValue.in.headL.runAsync
+    bobReceivedMessage.futureValue shouldBe alicesMessage
+  }
+
+  def expensiveComputation(): Unit = {
+    def fib(n: BigInt): BigInt = if (n == 0 || n == 1) 1 else fib(n - 1) + fib(n - 2)
+    fib(20)
+  }
+
 }

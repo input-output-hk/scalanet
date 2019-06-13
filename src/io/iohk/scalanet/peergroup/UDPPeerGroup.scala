@@ -17,7 +17,7 @@ import io.netty.channel.socket.nio.NioDatagramChannel
 import io.netty.channel
 import monix.eval.Task
 import monix.reactive.Observable
-import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
+import monix.reactive.subjects.{ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
@@ -34,7 +34,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
+  private val channelSubject = ReplaySubject[Channel[InetMultiAddress, M]]()
 
   private val workerGroup = new NioEventLoopGroup()
 
