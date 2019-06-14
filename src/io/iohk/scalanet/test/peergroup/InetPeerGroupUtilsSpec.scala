@@ -6,7 +6,7 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.{BeforeAndAfterAll, FlatSpec}
 import org.scalatest.Matchers._
-import org.scalatest.prop.TableDrivenPropertyChecks
+import org.scalatest.prop.TableDrivenPropertyChecks._
 import org.scalatest.prop.Tables.Table
 import scala.concurrent.duration._
 class InetPeerGroupUtilsSpec extends FlatSpec with BeforeAndAfterAll {
@@ -27,7 +27,7 @@ class InetPeerGroupUtilsSpec extends FlatSpec with BeforeAndAfterAll {
 
   it should "create a channelId for all ip6address and ip4Address" in {
 
-    TableDrivenPropertyChecks.forAll(values) { (ipAddress1, ipAddress2, port1, port2) =>
+    forAll(values) { (ipAddress1, ipAddress2, port1, port2) =>
       val remoteInet6Address = InetAddress.getByName(ipAddress1)
       val localInet6Address = InetAddress.getByName(ipAddress2)
       val remoteAddress = new InetSocketAddress(remoteInet6Address, port1)
