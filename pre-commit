@@ -1,1 +1,1 @@
-scalafmt --diff-branch develop
+./scalafmt --test
