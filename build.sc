@@ -8,7 +8,7 @@ import mill.contrib.scoverage.ScoverageModule
 
 import $file.decco.build
 
-trait ScalanetModule extends ScoverageModule {
+object scalanet extends ScoverageModule with PublishModule {
 
   def scalaVersion = "2.12.7"
 
@@ -28,9 +28,6 @@ trait ScalanetModule extends ScoverageModule {
     "-encoding",
     "utf-8"
   )
-}
-
-object library extends ScalanetModule with PublishModule {
 
   def artifactName: T[String] = "scalanet"
 
@@ -57,7 +54,7 @@ object library extends ScalanetModule with PublishModule {
     ivy"org.eclipse.californium:element-connector:2.0.0-M15"
   )
 
-  override def moduleDeps: Seq[PublishModule] = Seq(decco.build.src.io.iohk.decco)
+  def moduleDeps: Seq[PublishModule] = Seq(decco.build.src.io.iohk.decco)
 
   def scoverageVersion = "1.3.1"
 
@@ -68,8 +65,8 @@ object library extends ScalanetModule with PublishModule {
       ivy"ch.qos.logback:logback-classic:1.2.3"
     )
 
-    override def moduleDeps: Seq[PublishModule] =
-      Seq(decco.build.src.io.iohk.decco, decco.build.src.io.iohk.decco.auto, library)
+    def moduleDeps: Seq[PublishModule] =
+      Seq(decco.build.src.io.iohk.decco, decco.build.src.io.iohk.decco.auto, scalanet)
 
     def testFrameworks = Seq("org.scalatest.tools.Framework")
 
