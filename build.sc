@@ -39,7 +39,7 @@ object library extends ScalanetModule with PublishModule {
     licenses = Seq(License.MIT),
     versionControl = VersionControl.github("input-output-hk", "scalanet.git"),
     developers = Seq(
-      Developer("jtownson", "Jeremy Townson","https://github.com/jtownson")
+      Developer("jtownson", "Jeremy Townson", "https://github.com/jtownson")
       // TODO add your entries here...
     )
   )
