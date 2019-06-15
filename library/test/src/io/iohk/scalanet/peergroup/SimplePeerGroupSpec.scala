@@ -8,6 +8,8 @@ import org.scalatest.concurrent.ScalaFutures._
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.concurrent.ScalaFutures
 import io.iohk.decco.auto._
+import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import io.iohk.scalanet.TaskValues._

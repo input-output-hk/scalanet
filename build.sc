@@ -49,6 +49,8 @@ object library extends ScalanetModule with PublishModule {
     ivy"com.chuusai::shapeless:2.3.3",
     ivy"org.slf4j:slf4j-api:1.7.25",
     ivy"io.netty:netty-all:4.1.31.Final",
+    ivy"org.eclipse.californium:scandium:2.0.0-M15",
+    ivy"org.eclipse.californium:element-connector:2.0.0-M15",
     ivy"io.iohk::decco:HEAD",
     ivy"io.iohk::decco-auto:HEAD"
   )
