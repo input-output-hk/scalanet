@@ -58,7 +58,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
               val remoteAddress = datagram.sender()
               val localAddress = datagram.recipient()
               val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
-              log.info(s"Client channel read message $messageE with remote $remoteAddress and local $localAddress")
+              log.debug(s"Client channel read message $messageE with remote $remoteAddress and local $localAddress")
 
               val channelId = getChannelId(remoteAddress, localAddress)
 
