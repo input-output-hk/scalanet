@@ -10,7 +10,7 @@ jobs:
       - run:
           name: Initialize submodules
           command: git submodule init && git submodule update
-          
+
       - run:
           name: install coursier
           command: curl -L -o coursier https://git.io/vgvpD && chmod +x coursier
@@ -25,7 +25,7 @@ jobs:
 
       - run:
           name: test
-          command: mill library.test
+          command: mill scalanet.test
 
       - run:
           name: check that the code is formatted properly
