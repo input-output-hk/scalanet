@@ -29,7 +29,7 @@ object scalanet extends ScoverageModule with PublishModule {
     "utf-8"
   )
 
-  def artifactName: T[String] = "scalanet"
+  def artifactName = "scalanet"
 
   def publishVersion = "HEAD"
 
@@ -54,19 +54,19 @@ object scalanet extends ScoverageModule with PublishModule {
     ivy"org.eclipse.californium:element-connector:2.0.0-M15"
   )
 
-  def moduleDeps: Seq[PublishModule] = Seq(decco.build.src.io.iohk.decco)
+  def moduleDeps = Seq(decco.build.src.io.iohk.decco) ++ super.moduleDeps
 
   def scoverageVersion = "1.3.1"
 
-  object test extends Tests with ScoverageTests {
+  object test extends ScoverageTests {
     def ivyDeps = Agg(
       ivy"org.scalatest::scalatest:3.0.5",
       ivy"ch.qos.logback:logback-core:1.2.3",
       ivy"ch.qos.logback:logback-classic:1.2.3"
     )
 
-    def moduleDeps: Seq[PublishModule] =
-      Seq(decco.build.src.io.iohk.decco, decco.build.src.io.iohk.decco.auto, scalanet)
+    def moduleDeps =
+      super.moduleDeps ++ Seq(decco.build.src.io.iohk.decco, decco.build.src.io.iohk.decco.auto, scalanet)
 
     def testFrameworks = Seq("org.scalatest.tools.Framework")
 
