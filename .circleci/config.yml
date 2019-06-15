@@ -25,8 +25,11 @@ jobs:
 
       - run:
           name: test
-          command: mill scalanet.test
+          command: mill scalanet.scoverage.compile && mill scalanet.test && mill scalanet.scoverage.htmlReport
 
       - run:
           name: check that the code is formatted properly
           command: ./scalafmt --test
+
+      - store_artifacts:
+          path: scalanet/scoverage/htmlReport/
