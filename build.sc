@@ -6,7 +6,9 @@ import mill.scalalib.publish.{Developer, License, PomSettings, VersionControl}
 import $ivy.`com.lihaoyi::mill-contrib-buildinfo:0.4.1`
 import mill.contrib.scoverage.ScoverageModule
 
-trait ScalanetModule extends ScalaModule {
+import $file.decco.build
+
+trait ScalanetModule extends ScoverageModule {
 
   def scalaVersion = "2.12.7"
 
@@ -52,19 +54,22 @@ object library extends ScalanetModule with PublishModule {
     ivy"org.slf4j:slf4j-api:1.7.25",
     ivy"io.netty:netty-all:4.1.31.Final",
     ivy"org.eclipse.californium:scandium:2.0.0-M15",
-    ivy"org.eclipse.californium:element-connector:2.0.0-M15",
-    ivy"io.iohk::decco:HEAD",
-    ivy"io.iohk::decco-auto:HEAD"
+    ivy"org.eclipse.californium:element-connector:2.0.0-M15"
   )
+
+  override def moduleDeps: Seq[PublishModule] = Seq(decco.build.src.io.iohk.decco)
 
   def scoverageVersion = "1.3.1"
 
-  object test extends ScoverageTests {
+  object test extends Tests with ScoverageTests {
     def ivyDeps = Agg(
       ivy"org.scalatest::scalatest:3.0.5",
       ivy"ch.qos.logback:logback-core:1.2.3",
       ivy"ch.qos.logback:logback-classic:1.2.3"
     )
+
+    override def moduleDeps: Seq[PublishModule] =
+      Seq(decco.build.src.io.iohk.decco, decco.build.src.io.iohk.decco.auto, library)
 
     def testFrameworks = Seq("org.scalatest.tools.Framework")
 
