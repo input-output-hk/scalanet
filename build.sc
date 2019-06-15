@@ -2,6 +2,7 @@ import mill._
 import mill.modules._
 import scalalib._
 import ammonite.ops._
+import mill.scalalib.publish.{Developer, License, PomSettings, VersionControl}
 
 trait ScalanetModule extends ScalaModule {
 
@@ -25,7 +26,23 @@ trait ScalanetModule extends ScalaModule {
   )
 }
 
-object library extends ScalanetModule {
+object library extends ScalanetModule with PublishModule {
+
+  def artifactName: T[String] = "scalanet"
+
+  def publishVersion = "HEAD"
+
+  def pomSettings = PomSettings(
+    description = "Scalanet",
+    organization = "io.iohk",
+    url = "https://github.com/input-output-hk/scalanet.git",
+    licenses = Seq(License.MIT),
+    versionControl = VersionControl.github("input-output-hk", "scalanet.git"),
+    developers = Seq(
+      Developer("jtownson", "Jeremy Townson","https://github.com/jtownson")
+      // TODO add your entries here...
+    )
+  )
 
   def ivyDeps = Agg(
     ivy"io.monix::monix:3.0.0-RC1",
