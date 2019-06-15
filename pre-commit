@@ -1,1 +1,1 @@
-scalafmt --test
+./scalafmt --test
