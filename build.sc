@@ -3,6 +3,8 @@ import mill.modules._
 import scalalib._
 import ammonite.ops._
 import mill.scalalib.publish.{Developer, License, PomSettings, VersionControl}
+import $ivy.`com.lihaoyi::mill-contrib-buildinfo:0.4.1`
+import mill.contrib.scoverage.ScoverageModule
 
 trait ScalanetModule extends ScalaModule {
 
@@ -55,7 +57,9 @@ object library extends ScalanetModule with PublishModule {
     ivy"io.iohk::decco-auto:HEAD"
   )
 
-  object test extends Tests {
+  def scoverageVersion = "1.3.1"
+
+  object test extends ScoverageTests {
     def ivyDeps = Agg(
       ivy"org.scalatest::scalatest:3.0.5",
       ivy"ch.qos.logback:logback-core:1.2.3",
