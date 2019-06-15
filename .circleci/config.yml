@@ -32,4 +32,4 @@ jobs:
           command: ./scalafmt --test
 
       - store_artifacts:
-          path: scalanet/scoverage/htmlReport/
+          path: out/scalanet/scoverage/htmlReport/
