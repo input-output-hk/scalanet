@@ -4,19 +4,18 @@ import java.nio.ByteBuffer
 
 import io.iohk.scalanet.format.StreamDecoder1.State._
 import io.iohk.scalanet.format.StreamDecoder1._
-import io.netty.buffer.{CompositeByteBuf, Unpooled}
 
 import scala.collection.mutable
 
 class StreamDecoder1 {
-  val cb: CompositeByteBuf = Unpooled.compositeBuffer()
 
   var state: State = LengthExpected
   var length: Int = 0
+  var db: ByteBuffer = null
 
   val nlb = ByteBuffer.allocate(4)
 
-  def fmfn(b: ByteBuffer): Seq[ByteBuffer] = {
+  def streamDecode(b: ByteBuffer): Seq[ByteBuffer] = {
 
     val s = mutable.ListBuffer[ByteBuffer]()
     while (b.remaining() > 0) {
@@ -27,23 +26,22 @@ class StreamDecoder1 {
             nlb.put(b.get())
           }
           if (nlb.position() == 4) {
-//            nlb.position(0)
             length = nlb.getInt(0)
             nlb.clear()
+            db = ByteBuffer.allocate(length)
             state = BytesExpected
           }
 
-        //      else
         case BytesExpected =>
-
-          // we expect a length field, N and there are 4 or more bytes remaining
-          // we expect a length field, N and there are less than 4 bytes remaining
-
-          // we expect N bytes and there are M = N remaining
-
-          // we expect N bytes and there are M < N remaining
-
-          // we expect N bytes and there are M > N remaining
+          val remainingBytes = length - db.position()
+          if (b.remaining() >= remainingBytes) {
+            read(remainingBytes, b, db)
+            db.position(0)
+            s += db
+            state = LengthExpected
+          } else { // (b.remaining() < remainingBytes)
+            read(b.remaining(), b, db)
+          }
       }
     }
     s
@@ -62,4 +60,11 @@ object StreamDecoder1 {
 
   }
 
+  private[StreamDecoder1] def read(n: Int, from: ByteBuffer, to: ByteBuffer): Unit = {
+    var m: Int = 0
+    while (m < n) {
+      to.put(from.get())
+      m += 1
+    }
+  }
 }
