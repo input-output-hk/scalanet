@@ -1,4 +1,4 @@
-package io.iohk.scalanet.format
+package io.iohk.scalanet.codec
 
 import java.nio.ByteBuffer
 
@@ -8,91 +8,93 @@ import org.scalatest.Matchers._
 
 import scala.util.Random
 
+import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+
 // TODO this could all be a single property test
 //      just need to simulate TCP's fixed size write
 //      buffer (poss for arbitrary write buffer size)
 //      whose contents are sent whenever full.
-class StreamDecoder1Spec extends FlatSpec {
+class FramingCodecSpec extends FlatSpec {
 
   behavior of "StreamDecoder1"
 
   it should "handle an empty buffer" in {
-    val d = new StreamDecoder1
+    val fc = new FramingCodec
 
-    val buffers: Seq[ByteBuffer] = d.streamDecode(buffFromBytes())
+    val buffers: Seq[ByteBuffer] = fc.streamDecode(buffFromBytes())
 
     buffers shouldBe Seq.empty
-    d.state shouldBe StreamDecoder1.State.LengthExpected
+    fc.state shouldBe FramingCodec.State.LengthExpected
   }
 
   it should "handle a one byte buffer" in {
-    val d = new StreamDecoder1
+    val fc = new FramingCodec
 
-    val buffers: Seq[ByteBuffer] = d.streamDecode(buffFromBytes(0.toByte))
+    val buffers: Seq[ByteBuffer] = fc.streamDecode(buffFromBytes(0.toByte))
 
     buffers shouldBe Seq.empty
-    d.nlb.get(0) shouldBe 0.toByte
-    d.state shouldBe StreamDecoder1.State.LengthExpected
+    fc.nlb.get(0) shouldBe 0.toByte
+    fc.state shouldBe FramingCodec.State.LengthExpected
   }
 
   it should "handle a two byte buffer" in {
-    val d = new StreamDecoder1
+    val fc = new FramingCodec
 
-    val buffers: Seq[ByteBuffer] = d.streamDecode(buffFromBytes(0.toByte, 1.toByte))
+    val buffers: Seq[ByteBuffer] = fc.streamDecode(buffFromBytes(0.toByte, 1.toByte))
 
     buffers shouldBe Seq.empty
-    d.nlb.get(0) shouldBe 0.toByte
-    d.nlb.get(1) shouldBe 1.toByte
-    d.state shouldBe StreamDecoder1.State.LengthExpected
+    fc.nlb.get(0) shouldBe 0.toByte
+    fc.nlb.get(1) shouldBe 1.toByte
+    fc.state shouldBe FramingCodec.State.LengthExpected
   }
 
   it should "handle a four byte buffer" in {
-    val d = new StreamDecoder1
+    val fc = new FramingCodec
 
-    val buffers: Seq[ByteBuffer] = d.streamDecode(buffFrom(1))
+    val buffers: Seq[ByteBuffer] = fc.streamDecode(buffFrom(1))
 
     buffers shouldBe Seq.empty
-    d.length shouldBe 1
-    d.state shouldBe StreamDecoder1.State.BytesExpected
+    fc.length shouldBe 1
+    fc.state shouldBe FramingCodec.State.BytesExpected
   }
 
   it should "handle a buffer with less than a complete message" in {
-    val d = new StreamDecoder1
+    val fc = new FramingCodec
 
-    val buffers: Seq[ByteBuffer] = d.streamDecode(generatePartMessage(1024))
+    val buffers: Seq[ByteBuffer] = fc.streamDecode(generatePartMessage(1024))
 
     buffers shouldBe Seq.empty
-    d.length shouldBe 1024
+    fc.length shouldBe 1024
   }
 
   it should "handle a buffer with a complete message" in {
-    val d = new StreamDecoder1
+    val fc = new FramingCodec
     val message = generateMessage(1024)
 
-    val buffers: Seq[ByteBuffer] = d.streamDecode(message)
+    val buffers: Seq[ByteBuffer] = fc.streamDecode(message)
 
     buffers shouldBe Seq(subset(4, 1028, message))
   }
 
   it should "handle a buffer with a complete message plus a bit" in {
-    val d = new StreamDecoder1
+    val fc = new FramingCodec
     val message = generateMessagePlus(1024, 512)
 
-    val buffers: Seq[ByteBuffer] = d.streamDecode(message)
+    val buffers: Seq[ByteBuffer] = fc.streamDecode(message)
 
     buffers shouldBe Seq(subset(4, 1028, message))
   }
 
   it should "handle a message split over several packets" in {
-    val d = new StreamDecoder1
+    val fc = new FramingCodec
     val sourceMessage = generateMessage(12)
 
     val packets = split(sourceMessage, 4)
-    val decode0 = d.streamDecode(packets(0))
-    val decode1 = d.streamDecode(packets(1))
-    val decode2 = d.streamDecode(packets(2))
-    val decode3 = d.streamDecode(packets(3))
-    val decode4 = d.streamDecode(ByteBuffer.allocate(0))
+    val decode0 = fc.streamDecode(packets(0))
+    val decode1 = fc.streamDecode(packets(1))
+    val decode2 = fc.streamDecode(packets(2))
+    val decode3 = fc.streamDecode(packets(3))
+    val decode4 = fc.streamDecode(ByteBuffer.allocate(0))
 
     decode0 shouldBe Seq.empty
     decode1 shouldBe Seq.empty

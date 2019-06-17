@@ -1,13 +1,15 @@
-package io.iohk.scalanet.format
+package io.iohk.scalanet.codec
 
 import java.nio.ByteBuffer
 
-import io.iohk.scalanet.format.StreamDecoder1.State._
-import io.iohk.scalanet.format.StreamDecoder1._
+import io.iohk.decco.BufferInstantiator
+import io.iohk.decco.Codec.{DecodeResult, Failure}
+import io.iohk.scalanet.codec.FramingCodec.State._
+import io.iohk.scalanet.codec.FramingCodec._
 
 import scala.collection.mutable
 
-class StreamDecoder1 {
+class FramingCodec extends StreamCodec[ByteBuffer] {
 
   var state: State = LengthExpected
   var length: Int = 0
@@ -15,12 +17,11 @@ class StreamDecoder1 {
 
   val nlb = ByteBuffer.allocate(4)
 
-  def streamDecode(b: ByteBuffer): Seq[ByteBuffer] = {
-
+  override def streamDecode[B](source: B)(implicit bi: BufferInstantiator[B]): Seq[ByteBuffer] = {
+    val b = bi.asByteBuffer(source)
     val s = mutable.ListBuffer[ByteBuffer]()
     while (b.remaining() > 0) {
       state match {
-
         case LengthExpected =>
           while (b.remaining() > 0 && nlb.position() < 4) {
             nlb.put(b.get())
@@ -31,7 +32,6 @@ class StreamDecoder1 {
             db = ByteBuffer.allocate(length)
             state = BytesExpected
           }
-
         case BytesExpected =>
           val remainingBytes = length - db.position()
           if (b.remaining() >= remainingBytes) {
@@ -46,21 +46,28 @@ class StreamDecoder1 {
     }
     s
   }
+
+  override def size(b: ByteBuffer): Int = 4 + b.capacity()
+
+  override def encodeImpl(b: ByteBuffer, start: Int, destination: ByteBuffer): Unit = {
+    destination.putInt(start, b.capacity())
+    destination.put(b)
+  }
+
+  override def decodeImpl(start: Int, source: ByteBuffer): Either[Failure, DecodeResult[ByteBuffer]] =
+    throw new UnsupportedOperationException
 }
 
-object StreamDecoder1 {
+object FramingCodec {
 
   trait State
 
   object State {
-
     case object LengthExpected extends State
-
     case object BytesExpected extends State
-
   }
 
-  private[StreamDecoder1] def read(n: Int, from: ByteBuffer, to: ByteBuffer): Unit = {
+  def read(n: Int, from: ByteBuffer, to: ByteBuffer): Unit = {
     var m: Int = 0
     while (m < n) {
       to.put(from.get())
