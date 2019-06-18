@@ -9,6 +9,7 @@ import org.scalatest.Matchers._
 import org.scalatest.prop.TableDrivenPropertyChecks._
 import org.scalatest.prop.Tables.Table
 import scala.concurrent.duration._
+import InetPeerGroupUtils._
 class InetPeerGroupUtilsSpec extends FlatSpec with BeforeAndAfterAll {
 
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5 seconds)
@@ -19,10 +20,10 @@ class InetPeerGroupUtilsSpec extends FlatSpec with BeforeAndAfterAll {
     ("ipAddress1", "ipAddress2", "port1", "port2"),
     ("4B0C:0:0:0:880C:99A8:4B0:4411", "4B0D:0:0:0:880C:99A8:4B0:4411", 1111, 222),
     ("2001:0db8:85a3:0000:0000:8a2e:0370:7334", "2002:0db8:85a3:0000:0000:8a2e:0370:7334", 1111, 222),
-    ("::1", "::1", 128, 128),
+    ("::1", "::1", 127, 128),
     ("localhost", "localhost", 1111, 2222),
     ("127.0.0.1", "127.0.0.1", 1111, 2222),
-    ("127.0.0.0", "127.0.0.0", 0, 0)
+    ("127.0.0.0", "127.0.0.0", 1, 0)
   )
 
   it should "create a channelId for all ip6address and ip4Address" in {
@@ -33,10 +34,25 @@ class InetPeerGroupUtilsSpec extends FlatSpec with BeforeAndAfterAll {
       val remoteAddress = new InetSocketAddress(remoteInet6Address, port1)
       val localAddress = new InetSocketAddress(localInet6Address, port2)
 
-      InetPeerGroupUtils.getChannelId(remoteAddress, localAddress) shouldBe (remoteAddress, localAddress)
+      getChannelId(remoteAddress, localAddress) shouldBe (remoteAddress, localAddress)
 
     }
+  }
 
+  it should "not have same channelId for 2 different InetAddresses" in {
+
+    forAll(values) { (ipAddress1, ipAddress2, port1, port2) =>
+      val remoteInet6Address = InetAddress.getByName(ipAddress1)
+      val localInet6Address = InetAddress.getByName(ipAddress2)
+      val remoteAddress1 = new InetSocketAddress(remoteInet6Address, port1)
+      val localAddress1 = new InetSocketAddress(localInet6Address, port2)
+
+      val remoteAddress2 = new InetSocketAddress(remoteInet6Address, port2)
+      val localAddress2 = new InetSocketAddress(localInet6Address, port1)
+
+      getChannelId(remoteAddress1, localAddress1) should not equal getChannelId(remoteAddress2, localAddress2)
+
+    }
   }
 
 }
