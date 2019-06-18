@@ -61,6 +61,7 @@ object scalanet extends ScoverageModule with PublishModule {
   object test extends ScoverageTests {
     def ivyDeps = Agg(
       ivy"org.scalatest::scalatest:3.0.5",
+      ivy"org.scalacheck::scalacheck:1.14.0",
       ivy"ch.qos.logback:logback-core:1.2.3",
       ivy"ch.qos.logback:logback-classic:1.2.3"
     )
