@@ -25,7 +25,7 @@ class InetPeerGroupUtilsSpec extends FlatSpec {
 
   it should "create a channelId for IPv6 and IPv4 6addresses" in {
     forAll(values) { (address0, address1) =>
-      noException should be thrownBy getChannelId(address0, address1)
+      getChannelId(address0, address1) should be(address0, address1)
     }
   }
 
