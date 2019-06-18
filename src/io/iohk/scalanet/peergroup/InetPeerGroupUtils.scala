@@ -1,13 +1,15 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
-import java.nio.ByteBuffer
 
 import io.netty.util
 import monix.eval.Task
 import monix.execution.Cancelable
 
 object InetPeerGroupUtils {
+
+  type ChannelId = (InetSocketAddress, InetSocketAddress)
+
   def toTask(f: util.concurrent.Future[_]): Task[Unit] = {
     Task.create[Unit] { (_, cb) =>
       f.addListener(
@@ -17,12 +19,8 @@ object InetPeerGroupUtils {
     }
   }
 
-  def getChannelId(remoteAddress: InetSocketAddress, localAddress: InetSocketAddress): Seq[Byte] = {
-    val b = ByteBuffer.allocate(16)
-    b.put(remoteAddress.getAddress.getAddress)
-    b.putInt(remoteAddress.getPort)
-    b.put(localAddress.getAddress.getAddress)
-    b.putInt(localAddress.getPort)
-    b.array().toIndexedSeq
+  def getChannelId(remoteAddress: InetSocketAddress, localAddress: InetSocketAddress): ChannelId = {
+    (remoteAddress, localAddress)
   }
+
 }
