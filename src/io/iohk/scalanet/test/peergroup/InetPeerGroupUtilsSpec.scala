@@ -33,7 +33,7 @@ class InetPeerGroupUtilsSpec extends FlatSpec with BeforeAndAfterAll {
       val remoteAddress = new InetSocketAddress(remoteInet6Address, port1)
       val localAddress = new InetSocketAddress(localInet6Address, port2)
 
-      InetPeerGroupUtils.getChannelId(remoteAddress, localAddress).hashCode shouldBe a[Integer]
+      InetPeerGroupUtils.getChannelId(remoteAddress, localAddress) shouldBe (remoteAddress, localAddress)
 
     }
 
