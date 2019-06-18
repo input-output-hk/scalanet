@@ -116,10 +116,11 @@ object TCPPeerGroup {
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
+      val byteBuf = Unpooled.wrappedBuffer(codec.encode(message))
       toTask({
-        nettyChannel
-          .writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
-      })
+         nettyChannel
+          .writeAndFlush(byteBuf)
+      }).map(_ => byteBuf.release())
     }
 
     override def in: Observable[M] = messageSubject
@@ -206,8 +207,8 @@ object TCPPeerGroup {
       messageSubject.onComplete()
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-
-      val messageE: Either[Codec.Failure, M] = codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
+      val byteBuf = msg.asInstanceOf[ByteBuf]
+      val messageE: Either[Codec.Failure, M] = codec.decode(byteBuf.nioBuffer().asReadOnlyBuffer())
       log.debug(
         s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
           s"to local address ${ctx.channel().localAddress()}, ${messageE.getOrElse("decode failed")}"
@@ -216,6 +217,7 @@ object TCPPeerGroup {
       messageE.foreach { message =>
         messageSubject.onNext(message)
       }
+      byteBuf.release()
     }
   }
 }
