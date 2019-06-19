@@ -51,7 +51,9 @@ object scalanet extends ScoverageModule with PublishModule {
     ivy"org.slf4j:slf4j-api:1.7.25",
     ivy"io.netty:netty-all:4.1.31.Final",
     ivy"org.eclipse.californium:scandium:2.0.0-M15",
-    ivy"org.eclipse.californium:element-connector:2.0.0-M15"
+    ivy"org.eclipse.californium:element-connector:2.0.0-M15",
+    ivy"io.iohk::decco:HEAD",
+    ivy"io.iohk::decco-auto:HEAD"
   )
 
   def moduleDeps = Seq(decco.build.src.io.iohk.decco) ++ super.moduleDeps
@@ -63,7 +65,9 @@ object scalanet extends ScoverageModule with PublishModule {
       ivy"org.scalatest::scalatest:3.0.5",
       ivy"org.scalacheck::scalacheck:1.14.0",
       ivy"ch.qos.logback:logback-core:1.2.3",
-      ivy"ch.qos.logback:logback-classic:1.2.3"
+      ivy"ch.qos.logback:logback-classic:1.2.3",
+      ivy"io.iohk::decco:HEAD",
+      ivy"io.iohk::decco-auto:HEAD"
     )
 
     def moduleDeps =

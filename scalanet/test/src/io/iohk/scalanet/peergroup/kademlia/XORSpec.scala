@@ -1,6 +1,6 @@
 package io.iohk.scalanet.peergroup.kademlia
 
-import io.iohk.scalanet.peergroup.kademlia.XOR.d
+import io.iohk.scalanet.peergroup.kademlia.XOR._
 
 import org.scalacheck.Gen
 import org.scalatest.FlatSpec
@@ -9,14 +9,14 @@ import org.scalatest.prop.GeneratorDrivenPropertyChecks._
 
 class XORSpec extends FlatSpec {
 
-  val keys: Gen[BigInt] = Gen.listOfN(16, Gen.posNum[Byte]).map(_.toArray).map(BigInt(_))
+  val keys: Gen[Array[Byte]] = Gen.listOfN(8, Gen.posNum[Byte]).map(_.toArray)
 
-  val keyPairs: Gen[(BigInt, BigInt)] = for {
+  val keyPairs: Gen[(Array[Byte], Array[Byte])] = for {
     k1 <- keys
     k2 <- keys
   } yield (k1, k2)
 
-  val keyTriples: Gen[(BigInt, BigInt, BigInt)] = for {
+  val keyTriples: Gen[(Array[Byte], Array[Byte], Array[Byte])] = for {
     k1 <- keys
     k2 <- keys
     k3 <- keys
@@ -31,7 +31,7 @@ class XORSpec extends FlatSpec {
   it should "satisfy d(x,y) > 0 when x != y" in {
     forAll(keyPairs) {
       case (x, y) =>
-        if (x != y)
+        if (!(x sameElements y))
           d(x, y) > 0 shouldBe true
     }
   }
@@ -48,5 +48,12 @@ class XORSpec extends FlatSpec {
       case (x, y, z) =>
         d(x, z) <= d(x, y) + d(y, z) shouldBe true
     }
+  }
+
+  it should "provide the correct maximal distance" in {
+    val zero = Array.fill(8)(0.toByte)
+    val max = Array.fill(8)(255.toByte)
+
+    d(zero, max) shouldBe 64
   }
 }
