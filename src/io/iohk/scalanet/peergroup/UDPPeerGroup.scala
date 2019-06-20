@@ -68,6 +68,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
 
               val channel = activeChannels(channelId)
               messageE.foreach(message => channel.messageSubject.onNext(message))
+              datagram.content().release()
             }
           })
       }
@@ -104,6 +105,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
                 activeChannels.put(channelId, channel)
                 channelSubject.onNext(channel)
                 messageE.foreach(message => channel.messageSubject.onNext(message))
+                datagram.content().release()
               }
             }
           })

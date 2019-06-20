@@ -93,7 +93,7 @@ object TCPPeerGroup {
   )
 
   object Config {
-    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, new InetMultiAddress(bindAddress))
+    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress,  InetMultiAddress(bindAddress))
   }
 
   private[scalanet] class ServerChannelImpl[M](val nettyChannel: SocketChannel)(
@@ -118,7 +118,7 @@ object TCPPeerGroup {
     override def sendMessage(message: M): Task[Unit] = {
       val byteBuf = Unpooled.wrappedBuffer(codec.encode(message))
       toTask({
-         nettyChannel
+        nettyChannel
           .writeAndFlush(byteBuf)
       }).map(_ => byteBuf.release())
     }
