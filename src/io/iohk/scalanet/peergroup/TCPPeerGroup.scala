@@ -93,7 +93,7 @@ object TCPPeerGroup {
   )
 
   object Config {
-    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress,  InetMultiAddress(bindAddress))
+    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, InetMultiAddress(bindAddress))
   }
 
   private[scalanet] class ServerChannelImpl[M](val nettyChannel: SocketChannel)(
