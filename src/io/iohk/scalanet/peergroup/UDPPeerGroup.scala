@@ -55,7 +55,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
           .addLast(new channel.ChannelInboundHandlerAdapter() {
             override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
               val datagram = msg.asInstanceOf[DatagramPacket]
-              try{
+              try {
                 val remoteAddress = datagram.sender()
                 val localAddress = datagram.recipient()
                 val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
@@ -69,7 +69,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
 
                 val channel = activeChannels(channelId)
                 messageE.foreach(message => channel.messageSubject.onNext(message))
-              }finally {
+              } finally {
                 datagram.content().release()
 
               }
@@ -93,7 +93,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
               val datagram = msg.asInstanceOf[DatagramPacket]
               val remoteAddress = datagram.sender()
               val localAddress = processAddress.inetSocketAddress //datagram.recipient()
-              try{
+              try {
                 val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
 
                 log.debug(s"Server read $messageE")
@@ -112,7 +112,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
                   messageE.foreach(message => channel.messageSubject.onNext(message))
 
                 }
-              }finally {
+              } finally {
                 datagram.content().release()
               }
 

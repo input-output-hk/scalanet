@@ -117,12 +117,12 @@ object TCPPeerGroup {
 
     override def sendMessage(message: M): Task[Unit] = {
       val byteBuf = Unpooled.wrappedBuffer(codec.encode(message))
-      try{
+      try {
         toTask({
           nettyChannel
             .writeAndFlush(byteBuf)
         })
-      }finally {
+      } finally {
         byteBuf.release()
       }
 
@@ -213,7 +213,7 @@ object TCPPeerGroup {
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val byteBuf = msg.asInstanceOf[ByteBuf]
-      try{
+      try {
         val messageE: Either[Codec.Failure, M] = codec.decode(byteBuf.nioBuffer().asReadOnlyBuffer())
         log.debug(
           s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
@@ -222,7 +222,7 @@ object TCPPeerGroup {
         messageE.foreach { message =>
           messageSubject.onNext(message)
         }
-      }finally {
+      } finally {
         byteBuf.release()
       }
 
