@@ -55,20 +55,25 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
           .addLast(new channel.ChannelInboundHandlerAdapter() {
             override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
               val datagram = msg.asInstanceOf[DatagramPacket]
-              val remoteAddress = datagram.sender()
-              val localAddress = datagram.recipient()
-              val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
-              log.info(s"Client channel read message $messageE with remote $remoteAddress and local $localAddress")
+              try{
+                val remoteAddress = datagram.sender()
+                val localAddress = datagram.recipient()
+                val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
+                log.info(s"Client channel read message $messageE with remote $remoteAddress and local $localAddress")
 
-              val channelId = getChannelId(remoteAddress, localAddress)
+                val channelId = getChannelId(remoteAddress, localAddress)
 
-              if (!activeChannels.contains(channelId)) {
-                throw new IllegalStateException(s"Missing channel instance for channelId $channelId")
+                if (!activeChannels.contains(channelId)) {
+                  throw new IllegalStateException(s"Missing channel instance for channelId $channelId")
+                }
+
+                val channel = activeChannels(channelId)
+                messageE.foreach(message => channel.messageSubject.onNext(message))
+              }finally {
+                datagram.content().release()
+
               }
 
-              val channel = activeChannels(channelId)
-              messageE.foreach(message => channel.messageSubject.onNext(message))
-              datagram.content().release()
             }
           })
       }
@@ -88,25 +93,29 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
               val datagram = msg.asInstanceOf[DatagramPacket]
               val remoteAddress = datagram.sender()
               val localAddress = processAddress.inetSocketAddress //datagram.recipient()
+              try{
+                val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
 
-              val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
+                log.debug(s"Server read $messageE")
+                val nettyChannel: NioDatagramChannel = ctx.channel().asInstanceOf[NioDatagramChannel]
+                val channelId = getChannelId(remoteAddress, localAddress)
 
-              log.debug(s"Server read $messageE")
-              val nettyChannel: NioDatagramChannel = ctx.channel().asInstanceOf[NioDatagramChannel]
-              val channelId = getChannelId(remoteAddress, localAddress)
+                if (activeChannels.contains(channelId)) {
+                  log.debug(s"Channel with id $channelId found in active channels table.")
+                  val channel = activeChannels(channelId)
+                  messageE.foreach(message => channel.messageSubject.onNext(message))
+                } else {
+                  val channel = new ChannelImpl(nettyChannel, localAddress, remoteAddress, ReplaySubject[M]())
+                  log.debug(s"Channel with id $channelId NOT found in active channels table. Creating a new one")
+                  activeChannels.put(channelId, channel)
+                  channelSubject.onNext(channel)
+                  messageE.foreach(message => channel.messageSubject.onNext(message))
 
-              if (activeChannels.contains(channelId)) {
-                log.debug(s"Channel with id $channelId found in active channels table.")
-                val channel = activeChannels(channelId)
-                messageE.foreach(message => channel.messageSubject.onNext(message))
-              } else {
-                val channel = new ChannelImpl(nettyChannel, localAddress, remoteAddress, ReplaySubject[M]())
-                log.debug(s"Channel with id $channelId NOT found in active channels table. Creating a new one")
-                activeChannels.put(channelId, channel)
-                channelSubject.onNext(channel)
-                messageE.foreach(message => channel.messageSubject.onNext(message))
+                }
+              }finally {
                 datagram.content().release()
               }
+
             }
           })
       }

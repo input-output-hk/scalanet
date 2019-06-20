@@ -181,15 +181,21 @@ object TLSPeerGroup {
     }
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val byteBuf = msg.asInstanceOf[ByteBuf]
-      val messageE: Either[Codec.Failure, M] = codec.decode(byteBuf.nioBuffer().asReadOnlyBuffer())
-      log.debug(
-        s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
-          s"to local address ${ctx.channel().localAddress()}, ${messageE.getOrElse("decode failed")}"
-      )
-      messageE.foreach { message =>
-        messageSubject.onNext(message)
+      try{
+        val messageE: Either[Codec.Failure, M] = codec.decode(byteBuf.nioBuffer().asReadOnlyBuffer())
+        log.debug(
+          s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
+            s"to local address ${ctx.channel().localAddress()}, ${messageE.getOrElse("decode failed")}"
+        )
+        messageE.foreach { message =>
+          messageSubject.onNext(message)
+        }
+
+      }finally {
+        byteBuf.release()
       }
-      byteBuf.release()
+
+
     }
   }
 
@@ -303,11 +309,15 @@ object TLSPeerGroup {
 
     override def sendMessage(message: M): Task[Unit] = {
       val byteBuf = Unpooled.wrappedBuffer(codec.encode(message))
+     try {
+       toTask(
+         nettyChannel
+           .writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
+       )
+     }finally {
+       byteBuf.release()
+     }
 
-      toTask(
-        nettyChannel
-          .writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
-      ).map(_ => byteBuf.release())
 
     }
 
