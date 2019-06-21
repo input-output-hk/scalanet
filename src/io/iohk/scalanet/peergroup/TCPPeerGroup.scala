@@ -116,11 +116,8 @@ object TCPPeerGroup {
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
-      val byteBuf = Unpooled.wrappedBuffer(codec.encode(message))
-      toTask({
-        nettyChannel
-          .writeAndFlush(byteBuf)
-      }).map(_ => byteBuf.release())
+      val messageBuffer = Unpooled.wrappedBuffer(codec.encode(message))
+      toTask(nettyChannel.writeAndFlush(messageBuffer))
     }
 
     override def in: Observable[M] = messageSubject
@@ -175,14 +172,16 @@ object TCPPeerGroup {
 
     override def sendMessage(message: M): Task[Unit] = {
 
+      val messageBuffer = Unpooled.wrappedBuffer(codec.encode(message))
+
       Task
         .fromFuture(activationF)
-        .map(ctx => {
+        .flatMap(ctx => {
           log.debug(
             s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
               s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
           )
-          ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
+          toTask(ctx.writeAndFlush(messageBuffer))
         })
         .map(_ => ())
     }
@@ -208,16 +207,17 @@ object TCPPeerGroup {
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val byteBuf = msg.asInstanceOf[ByteBuf]
-      val messageE: Either[Codec.Failure, M] = codec.decode(byteBuf.nioBuffer().asReadOnlyBuffer())
-      log.debug(
-        s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
-          s"to local address ${ctx.channel().localAddress()}, ${messageE.getOrElse("decode failed")}"
-      )
+      try {
+        val messageE: Either[Codec.Failure, M] = codec.decode(byteBuf.nioBuffer().asReadOnlyBuffer())
+        log.debug(
+          s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
+            s"to local address ${ctx.channel().localAddress()}, ${messageE.getOrElse("decode failed")}"
+        )
+        messageE.foreach(message => messageSubject.onNext(message))
 
-      messageE.foreach { message =>
-        messageSubject.onNext(message)
+      } finally {
+        byteBuf.release()
       }
-      byteBuf.release()
     }
   }
 }
