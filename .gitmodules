@@ -1,5 +1,5 @@
 [submodule "decco"]
 	path = decco
-	url = git@github.com:input-output-hk/decco.git
+	url = https://github.com/input-output-hk/decco.git
 	branch = develop
 
