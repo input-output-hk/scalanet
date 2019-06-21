@@ -8,7 +8,7 @@ import mill.contrib.scoverage.ScoverageModule
 
 import $file.decco.build
 
-object scalanet extends ScoverageModule with PublishModule {
+object scalanet extends ScoverageModule {
 
   def scalaVersion = "2.12.7"
 
@@ -29,22 +29,6 @@ object scalanet extends ScoverageModule with PublishModule {
     "utf-8"
   )
 
-  def artifactName = "scalanet"
-
-  def publishVersion = "HEAD"
-
-  def pomSettings = PomSettings(
-    description = "Scalanet",
-    organization = "io.iohk",
-    url = "https://github.com/input-output-hk/scalanet.git",
-    licenses = Seq(License.MIT),
-    versionControl = VersionControl.github("input-output-hk", "scalanet.git"),
-    developers = Seq(
-      Developer("jtownson", "Jeremy Townson", "https://github.com/jtownson")
-      // TODO add your entries here...
-    )
-  )
-
   def ivyDeps = Agg(
     ivy"io.monix::monix:3.0.0-RC1",
     ivy"com.chuusai::shapeless:2.3.3",
@@ -54,7 +38,7 @@ object scalanet extends ScoverageModule with PublishModule {
     ivy"org.eclipse.californium:element-connector:2.0.0-M15"
   )
 
-  def moduleDeps: Seq[PublishModule] = Seq(decco.build.src.io.iohk.decco) ++ super.moduleDeps
+  def moduleDeps: Seq[JavaModule] = Seq(decco.build.src.io.iohk.decco) ++ super.moduleDeps
 
   def scoverageVersion = "1.3.1"
 
@@ -65,7 +49,7 @@ object scalanet extends ScoverageModule with PublishModule {
       ivy"ch.qos.logback:logback-classic:1.2.3"
     )
 
-    def moduleDeps =
+    override def moduleDeps: Seq[JavaModule] =
       super.moduleDeps ++ Seq(decco.build.src.io.iohk.decco, decco.build.src.io.iohk.decco.auto, scalanet)
 
     def testFrameworks = Seq("org.scalatest.tools.Framework")
