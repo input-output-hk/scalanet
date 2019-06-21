@@ -14,6 +14,7 @@ import org.scalatest.{BeforeAndAfterAll, FlatSpec}
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Random
+
 class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5 seconds)
