@@ -149,8 +149,9 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
         recipient: InetSocketAddress,
         nettyChannel: NioDatagramChannel
     ): Task[Unit] = {
-      val nettyBuffer = Unpooled.wrappedBuffer(codec.encode(message))
-      toTask(nettyChannel.writeAndFlush(new DatagramPacket(nettyBuffer, recipient, sender)))
+      toTask(
+        nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(codec.encode(message)), recipient, sender))
+      )
     }
   }
 

@@ -116,8 +116,7 @@ object TCPPeerGroup {
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
-      val messageBuffer = Unpooled.wrappedBuffer(codec.encode(message))
-      toTask(nettyChannel.writeAndFlush(messageBuffer))
+      toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message))))
     }
 
     override def in: Observable[M] = messageSubject
@@ -172,8 +171,6 @@ object TCPPeerGroup {
 
     override def sendMessage(message: M): Task[Unit] = {
 
-      val messageBuffer = Unpooled.wrappedBuffer(codec.encode(message))
-
       Task
         .fromFuture(activationF)
         .flatMap(ctx => {
@@ -181,7 +178,7 @@ object TCPPeerGroup {
             s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
               s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
           )
-          toTask(ctx.writeAndFlush(messageBuffer))
+          toTask(ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message))))
         })
         .map(_ => ())
     }
