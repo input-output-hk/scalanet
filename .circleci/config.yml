@@ -5,10 +5,12 @@ jobs:
       - image: openjdk:8
     working_directory: ~/repo
     steps:
-     - checkout
-     - run: git submodule sync
-     - run: git submodule update --init 
-     
+      - checkout
+
+      - run: 
+          name: initialize decco submodule
+          command: git submodule sync && git submodule update --init
+
       - run:
           name: install coursier
           command: curl -L -o coursier https://git.io/vgvpD && chmod +x coursier
