@@ -9,7 +9,7 @@ jobs:
 
       - run: 
           name: initialize decco submodule
-          command: git submodule sync && git submodule update --init
+          command: git clone https://github.com/input-output-hk/decco.git decco
 
       - run:
           name: install coursier
