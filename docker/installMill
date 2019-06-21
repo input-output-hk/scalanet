@@ -1,0 +1,4 @@
+#!/bin/bash
+
+apt-get update && apt-get install -y --no-install-recommends curl \
+ && sh -c '(echo "#!/usr/bin/env sh" && curl -L https://github.com/lihaoyi/mill/releases/download/0.4.0/0.4.0) > /usr/local/bin/mill && chmod +x /usr/local/bin/mill'

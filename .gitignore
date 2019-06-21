@@ -1,11 +1,8 @@
+out/
 .idea/
+.idea_modules/
 .ijwb/
 target/
 *.log
 *.iml
-
-bazel-*
-.bazel-*
-.dazel_run
-
 scalafmt

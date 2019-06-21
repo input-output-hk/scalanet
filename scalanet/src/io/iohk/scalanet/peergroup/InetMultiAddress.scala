@@ -21,7 +21,6 @@ import java.net.{InetAddress, InetSocketAddress}
   * @param inetSocketAddress a host:port combo address.
   */
 case class InetMultiAddress(private[scalanet] val inetSocketAddress: InetSocketAddress) {
-
   private val inetAddress: InetAddress = inetSocketAddress.getAddress
 
   def canEqual(other: Any): Boolean = other.isInstanceOf[InetMultiAddress]
