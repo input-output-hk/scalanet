@@ -7,8 +7,8 @@ import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 
 import scala.util.Random
-
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+import io.iohk.scalanet.codec.CodecTestUtils.{generateMessage, split, subset}
 
 // TODO this could all be a single property test
 //      just need to simulate TCP's fixed size write
@@ -16,7 +16,7 @@ import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 //      whose contents are sent whenever full.
 class FramingCodecSpec extends FlatSpec {
 
-  behavior of "StreamDecoder1"
+  behavior of "FramingCodec"
 
   it should "handle an empty buffer" in {
     val fc = new FramingCodec
@@ -103,13 +103,6 @@ class FramingCodecSpec extends FlatSpec {
     decode4 shouldBe Seq.empty
   }
 
-  private def subset(start: Int, end: Int, b: ByteBuffer): ByteBuffer = {
-    b.position(0)
-    val bytes = NetUtils.toArray(b)
-    val slice = bytes.slice(start, end)
-    ByteBuffer.wrap(slice)
-  }
-
   private def buffFrom(i: Int): ByteBuffer = {
     val bb = ByteBuffer.allocate(4)
     bb.putInt(i)
@@ -133,14 +126,6 @@ class FramingCodecSpec extends FlatSpec {
     bb
   }
 
-  private def generateMessage(messageLength: Int): ByteBuffer = {
-    val bb = ByteBuffer.allocate(4 + messageLength)
-    bb.putInt(messageLength)
-    bb.put(NetUtils.randomBytes(messageLength))
-    bb.clear()
-    bb
-  }
-
   private def generateMessagePlus(messageLength: Int, garbageLength: Int): ByteBuffer = {
     val bb = ByteBuffer.allocate(4 + messageLength + 4 + garbageLength - 1)
     bb.putInt(messageLength)
@@ -149,9 +134,5 @@ class FramingCodecSpec extends FlatSpec {
     bb.put(NetUtils.randomBytes(garbageLength - 1))
     bb.clear()
     bb
-  }
-
-  private def split(buffer: ByteBuffer, packetSize: Int): Seq[ByteBuffer] = {
-    buffer.array().grouped(packetSize).map(chunk => ByteBuffer.wrap(chunk)).toSeq
   }
 }
