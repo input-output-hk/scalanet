@@ -19,7 +19,7 @@ import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
-
+import InetPeerGroupUtils.ChannelId
 import scala.collection.JavaConverters._
 
 /**
@@ -38,7 +38,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
 
   private val workerGroup = new NioEventLoopGroup()
 
-  private val activeChannels = new ConcurrentHashMap[Seq[Byte], ChannelImpl]().asScala
+  private val activeChannels = new ConcurrentHashMap[ChannelId, ChannelImpl]().asScala
 
   /**
     * 64 kilobytes is the theoretical maximum size of a complete IP datagram
