@@ -5,12 +5,10 @@ jobs:
       - image: openjdk:8
     working_directory: ~/repo
     steps:
-      - checkout
-
-      - run:
-          name: Initialize submodules
-          command: git submodule update --init
-
+     - checkout
+     - run: git submodule sync
+     - run: git submodule update --init 
+     
       - run:
           name: install coursier
           command: curl -L -o coursier https://git.io/vgvpD && chmod +x coursier
