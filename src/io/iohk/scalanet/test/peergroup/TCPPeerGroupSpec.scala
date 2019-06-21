@@ -9,17 +9,23 @@ import monix.execution.Scheduler.Implicits.global
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
-import org.scalatest.{BeforeAndAfterAll, FlatSpec}
+import org.scalatest.BeforeAndAfterAll
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Random
-class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
+
+class TCPPeerGroupSpec extends PeerGroupTestPack[InetMultiAddress] with BeforeAndAfterAll {
 
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5 seconds)
 
+  override def generateRandomPeerGroup(): PeerGroup[InetMultiAddress, String] = randomTCPPeerGroup
+  override def isPeerListening(peer: PeerGroup[InetMultiAddress, String]): Boolean =
+    isListening(peer.asInstanceOf[TCPPeerGroup[String]].config.bindAddress)
+
   behavior of "TCPPeerGroup"
 
+  // below tests would be removed
   it should "send and receive a message" in
     withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
       println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
@@ -39,11 +45,11 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   it should "shutdown a TCPPeerGroup properly" in {
     val tcpPeerGroup = randomTCPPeerGroup[String]
-    isListening(tcpPeerGroup.config.bindAddress) shouldBe true
+    isPeerListening(tcpPeerGroup) shouldBe true
 
     tcpPeerGroup.shutdown().runAsync.futureValue
 
-    isListening(tcpPeerGroup.config.bindAddress) shouldBe false
+    isPeerListening(tcpPeerGroup) shouldBe false
   }
 
   it should "report the same address for two inbound channels" in
