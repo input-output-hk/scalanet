@@ -93,7 +93,7 @@ object TCPPeerGroup {
   )
 
   object Config {
-    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, new InetMultiAddress(bindAddress))
+    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, InetMultiAddress(bindAddress))
   }
 
   private[scalanet] class ServerChannelImpl[M](val nettyChannel: SocketChannel)(
@@ -116,10 +116,7 @@ object TCPPeerGroup {
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
-      toTask({
-        nettyChannel
-          .writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
-      })
+      toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message))))
     }
 
     override def in: Observable[M] = messageSubject
@@ -176,12 +173,12 @@ object TCPPeerGroup {
 
       Task
         .fromFuture(activationF)
-        .map(ctx => {
+        .flatMap(ctx => {
           log.debug(
             s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
               s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
           )
-          ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
+          toTask(ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message))))
         })
         .map(_ => ())
     }
@@ -206,15 +203,17 @@ object TCPPeerGroup {
       messageSubject.onComplete()
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
+      val byteBuf = msg.asInstanceOf[ByteBuf]
+      try {
+        val messageE: Either[Codec.Failure, M] = codec.decode(byteBuf.nioBuffer().asReadOnlyBuffer())
+        log.debug(
+          s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
+            s"to local address ${ctx.channel().localAddress()}, ${messageE.getOrElse("decode failed")}"
+        )
+        messageE.foreach(message => messageSubject.onNext(message))
 
-      val messageE: Either[Codec.Failure, M] = codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
-      log.debug(
-        s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
-          s"to local address ${ctx.channel().localAddress()}, ${messageE.getOrElse("decode failed")}"
-      )
-
-      messageE.foreach { message =>
-        messageSubject.onNext(message)
+      } finally {
+        byteBuf.release()
       }
     }
   }
