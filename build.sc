@@ -54,7 +54,7 @@ object scalanet extends ScoverageModule with PublishModule {
     ivy"org.eclipse.californium:element-connector:2.0.0-M15"
   )
 
-  def moduleDeps = Seq(decco.build.src.io.iohk.decco) ++ super.moduleDeps
+  def moduleDeps: Seq[PublishModule] = Seq(decco.build.src.io.iohk.decco) ++ super.moduleDeps
 
   def scoverageVersion = "1.3.1"
 
