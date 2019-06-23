@@ -18,7 +18,11 @@ object CodecTestUtils {
     ByteBuffer.wrap(slice)
   }
 
-  def generateMessage(messageLength: Int, streamCodec: StreamCodec[String], bi: BufferInstantiator[ByteBuffer]): ByteBuffer = {
+  def generateMessage(
+      messageLength: Int,
+      streamCodec: StreamCodec[String],
+      bi: BufferInstantiator[ByteBuffer]
+  ): ByteBuffer = {
     streamCodec.encode[ByteBuffer](new String(NetUtils.randomBytes(messageLength)))(bi)
   }
 

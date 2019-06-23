@@ -57,6 +57,8 @@ class FramingCodec[T](messageCodec: Codec[T]) extends StreamCodec[T] {
   override def decodeImpl(start: Int, source: ByteBuffer): Either[Failure, DecodeResult[T]] = {
     messageCodec.decodeImpl(start + 4, source)
   }
+
+  override def cleanSlate: FramingCodec[T] = new FramingCodec[T](messageCodec)
 }
 
 object FramingCodec {
