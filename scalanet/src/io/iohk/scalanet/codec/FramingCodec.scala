@@ -2,14 +2,14 @@ package io.iohk.scalanet.codec
 
 import java.nio.ByteBuffer
 
-import io.iohk.decco.BufferInstantiator
+import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.decco.Codec.{DecodeResult, Failure}
 import io.iohk.scalanet.codec.FramingCodec.State._
 import io.iohk.scalanet.codec.FramingCodec._
 
 import scala.collection.mutable
 
-class FramingCodec extends StreamCodec[ByteBuffer] {
+class FramingCodec[T](messageCodec: Codec[T]) extends StreamCodec[T] {
 
   var state: State = LengthExpected
   var length: Int = 0
@@ -17,9 +17,9 @@ class FramingCodec extends StreamCodec[ByteBuffer] {
 
   val nlb = ByteBuffer.allocate(4)
 
-  override def streamDecode[B](source: B)(implicit bi: BufferInstantiator[B]): Seq[ByteBuffer] = {
+  override def streamDecode[B](source: B)(implicit bi: BufferInstantiator[B]): Seq[T] = {
     val b = bi.asByteBuffer(source)
-    val s = mutable.ListBuffer[ByteBuffer]()
+    val s = mutable.ListBuffer[T]()
     while (b.remaining() > 0) {
       state match {
         case LengthExpected =>
@@ -37,7 +37,7 @@ class FramingCodec extends StreamCodec[ByteBuffer] {
           if (b.remaining() >= remainingBytes) {
             read(remainingBytes, b, db)
             db.position(0)
-            s += db
+            messageCodec.decode(bi.asB(db)).foreach(message => s += message)
             state = LengthExpected
           } else { // (b.remaining() < remainingBytes)
             read(b.remaining(), b, db)
@@ -47,15 +47,16 @@ class FramingCodec extends StreamCodec[ByteBuffer] {
     s
   }
 
-  override def size(b: ByteBuffer): Int = 4 + b.capacity()
+  override def size(t: T): Int = 4 + messageCodec.size(t)
 
-  override def encodeImpl(b: ByteBuffer, start: Int, destination: ByteBuffer): Unit = {
-    destination.putInt(start, b.capacity())
-    destination.put(b)
+  override def encodeImpl(t: T, start: Int, destination: ByteBuffer): Unit = {
+    destination.putInt(start, destination.capacity() - 4)
+    messageCodec.encodeImpl(t, 4, destination)
   }
 
-  override def decodeImpl(start: Int, source: ByteBuffer): Either[Failure, DecodeResult[ByteBuffer]] =
-    throw new UnsupportedOperationException
+  override def decodeImpl(start: Int, source: ByteBuffer): Either[Failure, DecodeResult[T]] = {
+    messageCodec.decodeImpl(start + 4, source)
+  }
 }
 
 object FramingCodec {

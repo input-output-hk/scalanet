@@ -2,137 +2,52 @@ package io.iohk.scalanet.codec
 
 import java.nio.ByteBuffer
 
-import io.iohk.scalanet.NetUtils
+import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+import io.iohk.decco.Codec
+import io.iohk.decco.auto._
+import io.iohk.scalanet.codec.CodecTestUtils.split
+import monix.reactive.Observable
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
-
+import io.iohk.scalanet.TaskValues._
+import monix.execution.Scheduler.Implicits.global
 import scala.util.Random
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-import io.iohk.scalanet.codec.CodecTestUtils.{generateMessage, split, subset}
 
-// TODO this could all be a single property test
-//      just need to simulate TCP's fixed size write
-//      buffer (poss for arbitrary write buffer size)
-//      whose contents are sent whenever full.
 class FramingCodecSpec extends FlatSpec {
 
   behavior of "FramingCodec"
 
-  it should "handle an empty buffer" in {
-    val fc = new FramingCodec
-
-    val buffers: Seq[ByteBuffer] = fc.streamDecode(buffFromBytes())
-
-    buffers shouldBe Seq.empty
-    fc.state shouldBe FramingCodec.State.LengthExpected
-  }
-
-  it should "handle a one byte buffer" in {
-    val fc = new FramingCodec
-
-    val buffers: Seq[ByteBuffer] = fc.streamDecode(buffFromBytes(0.toByte))
-
-    buffers shouldBe Seq.empty
-    fc.nlb.get(0) shouldBe 0.toByte
-    fc.state shouldBe FramingCodec.State.LengthExpected
-  }
-
-  it should "handle a two byte buffer" in {
-    val fc = new FramingCodec
-
-    val buffers: Seq[ByteBuffer] = fc.streamDecode(buffFromBytes(0.toByte, 1.toByte))
-
-    buffers shouldBe Seq.empty
-    fc.nlb.get(0) shouldBe 0.toByte
-    fc.nlb.get(1) shouldBe 1.toByte
-    fc.state shouldBe FramingCodec.State.LengthExpected
-  }
-
-  it should "handle a four byte buffer" in {
-    val fc = new FramingCodec
-
-    val buffers: Seq[ByteBuffer] = fc.streamDecode(buffFrom(1))
-
-    buffers shouldBe Seq.empty
-    fc.length shouldBe 1
-    fc.state shouldBe FramingCodec.State.BytesExpected
-  }
-
-  it should "handle a buffer with less than a complete message" in {
-    val fc = new FramingCodec
-
-    val buffers: Seq[ByteBuffer] = fc.streamDecode(generatePartMessage(1024))
-
-    buffers shouldBe Seq.empty
-    fc.length shouldBe 1024
-  }
-
-  it should "handle a buffer with a complete message" in {
-    val fc = new FramingCodec
-    val message = generateMessage(1024)
-
-    val buffers: Seq[ByteBuffer] = fc.streamDecode(message)
-
-    buffers shouldBe Seq(subset(4, 1028, message))
-  }
-
-  it should "handle a buffer with a complete message plus a bit" in {
-    val fc = new FramingCodec
-    val message = generateMessagePlus(1024, 512)
-
-    val buffers: Seq[ByteBuffer] = fc.streamDecode(message)
-
-    buffers shouldBe Seq(subset(4, 1028, message))
-  }
-
   it should "handle a message split over several packets" in {
-    val fc = new FramingCodec
-    val sourceMessage = generateMessage(12)
+    val fc = new FramingCodec(Codec[String])
+    val sourceMessage = Random.nextString(12)
+    val packets: Seq[ByteBuffer] = split(fc.encode(sourceMessage), 4)
 
-    val packets = split(sourceMessage, 4)
-    val decode0 = fc.streamDecode(packets(0))
-    val decode1 = fc.streamDecode(packets(1))
-    val decode2 = fc.streamDecode(packets(2))
-    val decode3 = fc.streamDecode(packets(3))
-    val decode4 = fc.streamDecode(ByteBuffer.allocate(0))
-
-    decode0 shouldBe Seq.empty
-    decode1 shouldBe Seq.empty
-    decode2 shouldBe Seq.empty
-    decode3 shouldBe Seq(subset(4, 16, sourceMessage))
-    decode4 shouldBe Seq.empty
+    packets.flatMap(packet => fc.streamDecode(packet)) shouldBe Seq(sourceMessage)
   }
 
-  private def buffFrom(i: Int): ByteBuffer = {
-    val bb = ByteBuffer.allocate(4)
-    bb.putInt(i)
-    bb.clear()
-    bb
+  it should "handle message decoding via explicit monix lifting" in {
+    val fc = new FramingCodec(Codec[String])
+    val sourceMessage = Random.nextString(12)
+    val packets: Seq[ByteBuffer] = split(fc.encode(sourceMessage), 4)
+    val sourceObservable = Observable.fromIterable(packets)
+
+    sourceObservable.liftByOperator(fc.monixOperator).headL.evaluated shouldBe sourceMessage
   }
 
-  private def buffFromBytes(bytes: Byte*): ByteBuffer = {
-    val bb = ByteBuffer.allocate(bytes.length)
-    bb.put(bytes.toArray)
-    bb.clear()
-    bb
+  it should "handle message decoding via implicit monix lifting" in {
+    import StreamCodec._
+    implicit val fc = new FramingCodec(Codec[String])
+    val sourceMessage = Random.nextString(12)
+    val packets: Seq[ByteBuffer] = split(fc.encode(sourceMessage), 4)
+    val sourceObservable = Observable.fromIterable(packets)
+
+    sourceObservable.voodooLift.headL.evaluated shouldBe sourceMessage
   }
 
-  private def generatePartMessage(messageLength: Int): ByteBuffer = {
-    val lengthToWrite = Random.nextInt(messageLength - 1)
-    val bb = ByteBuffer.allocate(4 + lengthToWrite)
-    bb.putInt(messageLength)
-    bb.put(NetUtils.randomBytes(lengthToWrite))
-    bb.clear()
-    bb
-  }
+  it should "decode like a normal codec for a complete message" in {
+    val fc = new FramingCodec(Codec[String])
+    val sourceMessage = Random.nextString(12)
 
-  private def generateMessagePlus(messageLength: Int, garbageLength: Int): ByteBuffer = {
-    val bb = ByteBuffer.allocate(4 + messageLength + 4 + garbageLength - 1)
-    bb.putInt(messageLength)
-    bb.put(NetUtils.randomBytes(messageLength))
-    bb.putInt(garbageLength)
-    bb.put(NetUtils.randomBytes(garbageLength - 1))
-    bb.clear()
-    bb
+    fc.decode(fc.encode(sourceMessage)) shouldBe Right(sourceMessage)
   }
 }
