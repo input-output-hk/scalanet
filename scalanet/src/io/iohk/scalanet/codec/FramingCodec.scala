@@ -11,13 +11,12 @@ import scala.collection.mutable
 
 class FramingCodec[T](messageCodec: Codec[T]) extends StreamCodec[T] {
 
-  var state: State = LengthExpected
-  var length: Int = 0
-  var db: ByteBuffer = null
+  private var state: State = LengthExpected
+  private var length: Int = 0
+  private var db: ByteBuffer = null
+  private val nlb = ByteBuffer.allocate(4)
 
-  val nlb = ByteBuffer.allocate(4)
-
-  override def streamDecode[B](source: B)(implicit bi: BufferInstantiator[B]): Seq[T] = {
+  override def streamDecode[B](source: B)(implicit bi: BufferInstantiator[B]): Seq[T] = this.synchronized {
     val b = bi.asByteBuffer(source)
     val s = mutable.ListBuffer[T]()
     while (b.remaining() > 0) {
