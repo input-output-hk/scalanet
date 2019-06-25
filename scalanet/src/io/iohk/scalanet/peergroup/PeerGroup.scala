@@ -162,4 +162,7 @@ object PeerGroup {
 
   private def initializationErrorMsg(config: Any) =
     s"Failed initialization of peer group member with config $config. Cause follows."
+
+  class ChannelSetupException[A](val to: A, val cause: Throwable)
+      extends RuntimeException(s"Error establishing channel to $to.", cause)
 }

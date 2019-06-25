@@ -134,6 +134,17 @@ object NetUtils {
     pg
   }
 
+  def withARandomTCPPeerGroup[M](
+      testCode: TCPPeerGroup[M] => Any
+  )(implicit scheduler: Scheduler, codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
+    val pg = randomTCPPeerGroup(scheduler, codec, bufferInstantiator)
+    try {
+      testCode(pg)
+    } finally {
+      pg.shutdown()
+    }
+  }
+
   def withTwoRandomTCPPeerGroups[M](
       testCode: (TCPPeerGroup[M], TCPPeerGroup[M]) => Any
   )(implicit scheduler: Scheduler, codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {

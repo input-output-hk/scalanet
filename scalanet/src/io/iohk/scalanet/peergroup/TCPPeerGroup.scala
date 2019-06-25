@@ -1,9 +1,9 @@
 package io.iohk.scalanet.peergroup
 
-import java.net.{InetAddress, InetSocketAddress}
+import java.net.{ConnectException, InetAddress, InetSocketAddress}
 import java.nio.ByteBuffer
 
-import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelSetupException, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
@@ -167,10 +167,16 @@ object TCPPeerGroup {
         }
       })
 
-    def initialize: Task[ClientChannelImpl[M]] = toTask(bootstrap.connect(inetSocketAddress)).map(_ => this)
+    def initialize: Task[ClientChannelImpl[M]] = {
+      toTask(bootstrap.connect(inetSocketAddress))
+        .onErrorRecoverWith {
+          case e: ConnectException =>
+            Task(throw new ChannelSetupException[InetMultiAddress](to, e))
+        }
+        .map(_ => this)
+    }
 
     override def sendMessage(message: M): Task[Unit] = {
-
       Task
         .fromFuture(activationF)
         .flatMap(ctx => {

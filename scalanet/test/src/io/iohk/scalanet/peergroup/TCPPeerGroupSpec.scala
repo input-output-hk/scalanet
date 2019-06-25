@@ -2,13 +2,15 @@ package io.iohk.scalanet.peergroup
 
 import io.iohk.decco.auto._
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-
+import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.peergroup.PeerGroup.ChannelSetupException
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
+import org.scalatest.RecoverMethods._
 import org.scalatest.{BeforeAndAfterAll, FlatSpec}
 
 import scala.concurrent.Future
@@ -20,6 +22,16 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5 seconds)
 
   behavior of "TCPPeerGroup"
+
+  it should "report an error for messaging to an invalid address" in
+    withARandomTCPPeerGroup[String] { alice =>
+      val invalidAddress = InetMultiAddress(NetUtils.aRandomAddress())
+
+      val aliceClient = recoverToExceptionIf[ChannelSetupException[InetMultiAddress]] {
+        alice.client(invalidAddress).runAsync
+      }
+      aliceClient.futureValue.to shouldBe invalidAddress
+    }
 
   it should "send and receive a message" in
     withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
