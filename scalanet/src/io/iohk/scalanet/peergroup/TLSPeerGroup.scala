@@ -1,14 +1,16 @@
 package io.iohk.scalanet.peergroup
 
-import java.net.InetSocketAddress
+import java.io.IOException
+import java.net.{ConnectException, InetSocketAddress}
 import java.nio.ByteBuffer
+import java.nio.channels.ClosedChannelException
 import java.security.PrivateKey
 import java.security.cert.{Certificate, X509Certificate}
 
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import io.iohk.decco._
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
-import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TLSPeerGroup._
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
@@ -194,6 +196,10 @@ object TLSPeerGroup {
         byteBuf.release()
       }
     }
+
+    override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
+      // swallow netty's default logging of the stack trace.
+    }
   }
 
   private class ClientChannelImpl[M](
@@ -255,7 +261,12 @@ object TLSPeerGroup {
       })
 
     def initialize: Task[ClientChannelImpl[M]] = {
-      toTask(bootstrap.connect(inetSocketAddress)).map(_ => this)
+      toTask(bootstrap.connect(inetSocketAddress))
+        .onErrorRecoverWith {
+          case e: ConnectException =>
+            Task(throw new ChannelSetupException[InetMultiAddress](to, e))
+        }
+        .map(_ => this)
     }
 
     override def sendMessage(message: M): Task[Unit] = {
@@ -269,6 +280,10 @@ object TLSPeerGroup {
           )
           toTask(ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message))))
         })
+        .onErrorRecoverWith {
+          case e: IOException =>
+            Task(throw new ChannelBrokenException[InetMultiAddress](to, e))
+        }
         .map(_ => ())
     }
 
@@ -305,6 +320,10 @@ object TLSPeerGroup {
 
     override def sendMessage(message: M): Task[Unit] = {
       toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message))))
+        .onErrorRecoverWith {
+          case e: ClosedChannelException =>
+            Task(throw new ChannelBrokenException[InetMultiAddress](to, e))
+        }
     }
 
     override def in: Observable[M] = messageSubject
