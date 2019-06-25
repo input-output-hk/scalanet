@@ -16,7 +16,6 @@ import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import io.iohk.decco._
 import io.iohk.scalanet.codec.StreamCodec
 
@@ -30,7 +29,8 @@ import scala.concurrent.Promise
   * that are not instances of TCPPeerGroup.
   *
   * @param config bind address etc. See the companion object.
-  * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
+  * @param codec a codec for reading writing messages to NIO ByteBuffer. This must be an instance of {{{StreamCodec}}}
+  *              to provide stream delimiting.
   * @tparam M the message type.
   */
 class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: BufferInstantiator[ByteBuffer])
@@ -62,7 +62,7 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
     .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
     .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
 
-  private val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
+  private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
 
   override def initialize(): Task[Unit] =
     toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}"))
@@ -115,7 +115,7 @@ object TCPPeerGroup {
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
-      toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message))))
+      toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
     }
 
     override def in: Observable[M] = messageSubject
@@ -177,7 +177,7 @@ object TCPPeerGroup {
             s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
               s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
           )
-          toTask(ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message))))
+          toTask(ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
         })
         .map(_ => ())
     }
@@ -211,7 +211,7 @@ object TCPPeerGroup {
           s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
             s"to local address ${ctx.channel().localAddress()}"
         )
-        codec.streamDecode(byteBuf.nioBuffer()).foreach(message => messageSubject.onNext(message))
+        codec.streamDecode(byteBuf.nioBuffer())(bi).foreach(message => messageSubject.onNext(message))
       } finally {
         byteBuf.release()
       }
