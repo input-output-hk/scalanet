@@ -1,9 +1,10 @@
 package io.iohk.scalanet.peergroup
 
+import java.io.IOException
 import java.net.{ConnectException, InetAddress, InetSocketAddress}
 import java.nio.ByteBuffer
 
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelSetupException, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
@@ -117,6 +118,10 @@ object TCPPeerGroup {
 
     override def sendMessage(message: M): Task[Unit] = {
       toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message))))
+        .onErrorRecoverWith {
+          case e: IOException =>
+            Task(throw new ChannelBrokenException[InetMultiAddress](to, e))
+        }
     }
 
     override def in: Observable[M] = messageSubject
@@ -186,6 +191,10 @@ object TCPPeerGroup {
           )
           toTask(ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message))))
         })
+        .onErrorRecoverWith {
+          case e: IOException =>
+            Task(throw new ChannelBrokenException[InetMultiAddress](to, e))
+        }
         .map(_ => ())
     }
 

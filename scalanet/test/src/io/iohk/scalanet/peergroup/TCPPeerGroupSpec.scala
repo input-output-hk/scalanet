@@ -5,7 +5,8 @@ import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.TaskValues._
-import io.iohk.scalanet.peergroup.PeerGroup.ChannelSetupException
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException}
+import monix.execution.CancelableFuture
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures
@@ -27,15 +28,43 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     withARandomTCPPeerGroup[String] { alice =>
       val invalidAddress = InetMultiAddress(NetUtils.aRandomAddress())
 
-      val aliceClient = recoverToExceptionIf[ChannelSetupException[InetMultiAddress]] {
+      val aliceError = recoverToExceptionIf[ChannelSetupException[InetMultiAddress]] {
         alice.client(invalidAddress).runAsync
       }
-      aliceClient.futureValue.to shouldBe invalidAddress
+
+      aliceError.futureValue.to shouldBe invalidAddress
+    }
+
+  it should "report an error for messaging on a closed channel -- server closes" in
+    withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
+      val alicesMessage = Random.alphanumeric.take(1024).mkString
+      bob.server().foreachL(channel => channel.close().runAsync).runAsync
+
+      val aliceClient = alice.client(bob.processAddress).evaluated
+      val aliceError = recoverToExceptionIf[ChannelBrokenException[InetMultiAddress]] {
+        aliceClient.sendMessage(alicesMessage).runAsync
+      }
+
+      aliceError.futureValue.to shouldBe bob.processAddress
+    }
+
+  it should "report an error for messaging on a closed channel -- client closes" in
+    withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
+      val bobsMessage = Random.alphanumeric.take(1024).mkString
+      bob.server().foreachL(channel => channel.sendMessage(bobsMessage).runAsync).runAsync
+      val bobChannel: CancelableFuture[Channel[InetMultiAddress, String]] = bob.server().headL.runAsync
+
+      val aliceClient = alice.client(bob.processAddress).evaluated
+      aliceClient.close().evaluated
+      val bobError = recoverToExceptionIf[ChannelBrokenException[InetMultiAddress]] {
+        bobChannel.futureValue.sendMessage(bobsMessage).runAsync
+      }
+
+      bobError.futureValue.to shouldBe alice.processAddress
     }
 
   it should "send and receive a message" in
     withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
-      println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
       val alicesMessage = Random.alphanumeric.take(1024).mkString
       val bobsMessage = Random.alphanumeric.take(1024).mkString
 
