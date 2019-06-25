@@ -22,36 +22,15 @@ import scala.concurrent.duration._
 import scala.util.Random
 import TLSPeerGroupSpec._
 import io.netty.handler.ssl.util.SelfSignedCertificate
+
 class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5 seconds)
 
   behavior of "TLSPeerGroup"
-  val clientAuth: Seq[Boolean] = Seq(true, false)
-
-  it should "send and receive a message when client auth is disabled/false or enabled/true" in clientAuth
-
-  for (value <- clientAuth) {
-    withTwoRandomTLSPeerGroups[String](value) { (alice, bob) =>
-      println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
-      val alicesMessage = Random.alphanumeric.take(1024).mkString
-      val bobsMessage = Random.alphanumeric.take(1024).mkString
-
-      bob.server().foreachL(channel => channel.sendMessage(bobsMessage).runAsync).runAsync
-      val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runAsync
-      val aliceClient = alice.client(bob.processAddress).evaluated
-      val aliceReceived = aliceClient.in.headL.runAsync
-
-      aliceClient.sendMessage(alicesMessage).evaluated
-
-      bobReceived.futureValue shouldBe alicesMessage
-      aliceReceived.futureValue shouldBe bobsMessage
-    }
-
-  }
 
   it should "send and receive a message" in {
-    withTwoTLSPeerGroups[String](selfSignedCertConfig, selfSignedCertConfig) { (alice, bob) =>
+    withTwoTLSPeerGroups[String](selfSignedCertConfig, signedCertConfig) { (alice, bob) =>
       val alicesMessage = Random.alphanumeric.take(1024 * 4).mkString
       val bobsMessage = Random.alphanumeric.take(1024 * 4).mkString
 
