@@ -219,4 +219,15 @@ object NetUtils {
       pg2.shutdown()
     }
   }
+
+  def withARandomUDPPeerGroup[M](
+      testCode: UDPPeerGroup[M] => Any
+  )(implicit scheduler: Scheduler, codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
+    val pg = randomUDPPeerGroup
+    try {
+      testCode(pg)
+    } finally {
+      pg.shutdown()
+    }
+  }
 }
