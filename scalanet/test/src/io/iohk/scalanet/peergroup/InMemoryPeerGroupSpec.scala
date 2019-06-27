@@ -11,6 +11,8 @@ import scala.util.Random
 
 class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
 
+  import InMemoryPeerGroup.Network
+
   implicit val n: Network[Int, String] = new Network[Int, String]()
 
   before {

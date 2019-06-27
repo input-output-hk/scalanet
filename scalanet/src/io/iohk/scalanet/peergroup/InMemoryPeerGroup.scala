@@ -9,37 +9,12 @@ import InMemoryPeerGroup._
 import scala.collection.concurrent.TrieMap
 import scala.util.Random
 
-// For simplicity we can model the network with three main interactions.
-// 1. Register to the network.
-// 2. Disconnect from the network.
-// 3. Send messages.
-class Network[A, M] {
-  private val peers: TrieMap[A, InMemoryPeerGroup[A, M]] = TrieMap()
-
-  def clear(): Unit = peers.clear()
-
-  def register(peer: InMemoryPeerGroup[A, M]): Result[Unit] =
-    if (peers.get(peer.processAddress).isEmpty) {
-      peers += (peer.processAddress -> peer)
-      allGood(())
-    } else error("The address is already in use")
-
-  def disconnect(peer: InMemoryPeerGroup[A, M]): Unit = peers -= peer.processAddress
-
-  def deliverMessage(channelID: ChannelID, from: A, to: A, message: M): Result[Unit] =
-    peers.get(to) match {
-      case None => error(s"Unreachable peer $to")
-      case Some(destination) =>
-        allGood(destination.receiveMessage(channelID, from, message))
-    }
-}
-
 class InMemoryPeerGroup[A, M](address: A)(implicit network: Network[A, M]) extends PeerGroup[A, M] {
 
   private var status: PeerStatus = PeerStatus.NotInitialized
   private val channelStream = ConcurrentSubject[InMemoryChannel[A, M]](MulticastStrategy.publish)
   private val channelsMap: TrieMap[ChannelID, InMemoryChannel[A, M]] = TrieMap()
-  def receiveMessage(channelID: ChannelID, from: A, msg: M): Unit = {
+  private def receiveMessage(channelID: ChannelID, from: A, msg: M): Unit = {
     channelsMap.get(channelID) match {
       case None =>
         val newChannel = new InMemoryChannel(channelID, processAddress, from)
@@ -52,27 +27,27 @@ class InMemoryPeerGroup[A, M](address: A)(implicit network: Network[A, M]) exten
   }
 
   // Public interface
-  def processAddress: A = address
-  def initialize(): Result[Unit] =
+  override def processAddress: A = address
+  override def initialize(): Result[Unit] =
     if (status == PeerStatus.Listening) error("Peer already connected")
     else {
       status = PeerStatus.Listening
       network.register(this)
     }
-  def client(to: A): Result[InMemoryChannel[A, M]] = {
+  override def client(to: A): Result[InMemoryChannel[A, M]] = {
     val channelID = newChannelID()
     val newChannel = new InMemoryChannel[A, M](channelID, processAddress, to)
     channelsMap += (channelID -> newChannel)
     allGood(newChannel)
   }
-  def server(): Observable[InMemoryChannel[A, M]] = {
+  override def server(): Observable[InMemoryChannel[A, M]] = {
     status match {
       case PeerStatus.NotInitialized => throw new Exception(s"Peer $processAddress is not initialized yet")
       case PeerStatus.Listening => channelStream
       case PeerStatus.ShutDowned => throw new Exception(s"Peer $processAddress was shut downed")
     }
   }
-  def shutdown(): Result[Unit] = {
+  override def shutdown(): Result[Unit] = {
     status match {
       case PeerStatus.NotInitialized =>
         allGood(()) // Should we return an error here?
@@ -81,12 +56,37 @@ class InMemoryPeerGroup[A, M](address: A)(implicit network: Network[A, M]) exten
         network.disconnect(this)
         allGood(())
       case PeerStatus.ShutDowned =>
-        error("The peer group was already down") // Should we return an error here?
+        error("The peer group was already down")
     }
   }
 }
 
 object InMemoryPeerGroup {
+
+  // For simplicity we can model the network with three main interactions.
+  // 1. Register to the network.
+  // 2. Disconnect from the network.
+  // 3. Send messages.
+  class Network[A, M] {
+    private val peers: TrieMap[A, InMemoryPeerGroup[A, M]] = TrieMap()
+
+    def clear(): Unit = peers.clear()
+
+    def register(peer: InMemoryPeerGroup[A, M]): Result[Unit] =
+      if (peers.get(peer.processAddress).isEmpty) {
+        peers += (peer.processAddress -> peer)
+        allGood(())
+      } else error("The address is already in use")
+
+    def disconnect(peer: InMemoryPeerGroup[A, M]): Unit = peers -= peer.processAddress
+
+    def deliverMessage(channelID: ChannelID, from: A, to: A, message: M): Result[Unit] =
+      peers.get(to) match {
+        case None => error(s"Unreachable peer $to")
+        case Some(destination) =>
+          allGood(destination.receiveMessage(channelID, from, message))
+      }
+  }
 
   implicit def inMemoryPeerGroupTestUtils(implicit n: Network[Int, String]): PeerUtils[Int, String, InMemoryPeerGroup] =
     PeerUtils.instance(
@@ -108,33 +108,33 @@ object InMemoryPeerGroup {
 
   trait ChannelStatus
   object ChannelStatus {
-    case object Open extends ChannelStatus
-    case object Close extends ChannelStatus
+    case object Opened extends ChannelStatus
+    case object Closed extends ChannelStatus
   }
 
   type Result[A] = Task[A]
   def allGood[A](x: A): Result[A] = Task.now(x)
-  def error(msg: String): Result[Nothing] = Task.now(throw new Exception(msg))
+  def error(msg: String): Result[Nothing] = Task.raiseError(new Exception(msg))
 
   // Reference Channel trait
   class InMemoryChannel[A, M](channelID: ChannelID, myAddress: A, destination: A)(implicit network: Network[A, M])
       extends Channel[A, M] {
-    private var channelStatus: ChannelStatus = ChannelStatus.Open
+    private var channelStatus: ChannelStatus = ChannelStatus.Opened
     private val messagesQueue = ConcurrentSubject[M](MulticastStrategy.replay)
-    def depositMessage(m: M): Unit = messagesQueue.onNext(m)
+    private[InMemoryPeerGroup] def depositMessage(m: M): Unit = messagesQueue.onNext(m)
 
     // Public interface
-    def to: A = destination
-    def sendMessage(message: M): Result[Unit] = network.deliverMessage(channelID, myAddress, to, message)
-    def in: Observable[M] = messagesQueue
-    def close(): Result[Unit] = {
+    override def to: A = destination
+    override def sendMessage(message: M): Result[Unit] = network.deliverMessage(channelID, myAddress, to, message)
+    override def in: Observable[M] = messagesQueue
+    override def close(): Result[Unit] = {
       // Note, what else should be done by close method? E.g. block messages that come to `in`?
       // what should happen to the other side of the channel?
       channelStatus match {
-        case ChannelStatus.Open =>
-          channelStatus = ChannelStatus.Close
+        case ChannelStatus.Opened =>
+          channelStatus = ChannelStatus.Closed
           allGood(())
-        case ChannelStatus.Close =>
+        case ChannelStatus.Closed =>
           error("Channel was already closed")
       }
     }
