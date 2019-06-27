@@ -25,7 +25,7 @@ class UDPPeerGroupSpec extends FlatSpec {
   it should "report an error for sending a message greater than the MTU" in
     withARandomUDPPeerGroup[Array[Byte]] { alice =>
       val address = InetMultiAddress(NetUtils.aRandomAddress())
-      val invalidMessage = NetUtils.randomBytes(16184)
+      val invalidMessage = NetUtils.randomBytes(16777216)
       val messageSize = Codec[Array[Byte]].encode(invalidMessage).capacity()
 
       val error = recoverToExceptionIf[MessageMTUException[InetMultiAddress]] {
