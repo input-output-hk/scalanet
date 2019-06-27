@@ -23,6 +23,7 @@ import scala.concurrent.{Await, Future}
 import scala.util.Random
 import DTLSPeerGroupSpec._
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
+import io.iohk.scalanet.peergroup.PeerGroup.MessageMTUException
 
 class DTLSPeerGroupSpec extends FlatSpec {
 
@@ -30,12 +31,25 @@ class DTLSPeerGroupSpec extends FlatSpec {
 
   behavior of "DTLSPeerGroup"
 
-  it should "send and receive a message" in {
-    withTwoDTLSPeerGroups[String](rawKeyConfig, signedCertConfig) { (alice, bob) =>
-      val alicesMessage = Random.alphanumeric.take(1024 * 4).mkString
-      val bobsMessage = Random.alphanumeric.take(1024 * 4).mkString
+  it should "report an error for sending a message greater than the MTU" in
+    withADTLSPeerGroup[Array[Byte]](rawKeyConfig) { alice =>
+      val address = InetMultiAddress(NetUtils.aRandomAddress())
+      val invalidMessage = NetUtils.randomBytes(16584)
+      val messageSize = Codec[Array[Byte]].encode(invalidMessage).capacity()
 
-      val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runAsync
+      val error = recoverToExceptionIf[MessageMTUException[InetMultiAddress]] {
+        alice.client(address).flatMap(channel => channel.sendMessage(invalidMessage)).runAsync
+      }.futureValue
+
+      error.size shouldBe messageSize
+    }
+
+  it should "send and receive a message" in {
+    withTwoDTLSPeerGroups[Array[Byte]](rawKeyConfig, signedCertConfig) { (alice, bob) =>
+      val alicesMessage = NetUtils.randomBytes(1500)
+      val bobsMessage = NetUtils.randomBytes(1500)
+
+      val bobReceived: Future[Array[Byte]] = bob.server().mergeMap(channel => channel.in).headL.runAsync
       bob.server().foreach(channel => channel.sendMessage(bobsMessage).runAsync)
 
       val aliceClient = alice.client(bob.processAddress).evaluated
@@ -48,8 +62,8 @@ class DTLSPeerGroupSpec extends FlatSpec {
   }
 
   it should "do multiplexing properly" in withTwoDTLSPeerGroups[String](rawKeyConfig) { (alice, bob) =>
-    val alicesMessage = Random.alphanumeric.take(1024 * 4).mkString
-    val bobsMessage = Random.alphanumeric.take(1024 * 4).mkString
+    val alicesMessage = Random.alphanumeric.take(1500).mkString
+    val bobsMessage = Random.alphanumeric.take(1500).mkString
 
     bob.server().foreach(channel => channel.sendMessage(bobsMessage).runAsync)
 
@@ -104,6 +118,17 @@ object DTLSPeerGroupSpec {
     } finally {
       pg1.shutdown()
       pg2.shutdown()
+    }
+  }
+
+  def withADTLSPeerGroup[M](cgens: (String => Config)*)(
+      testCode: DTLSPeerGroup[M] => Any
+  )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = cgens.foreach { cgen =>
+    val pg = dtlsPeerGroup[M](cgen("alice"))
+    try {
+      testCode(pg)
+    } finally {
+      pg.shutdown()
     }
   }
 

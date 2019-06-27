@@ -25,7 +25,7 @@ class UDPPeerGroupSpec extends FlatSpec {
   it should "report an error for sending a message greater than the MTU" in
     withARandomUDPPeerGroup[Array[Byte]] { alice =>
       val address = InetMultiAddress(NetUtils.aRandomAddress())
-      val invalidMessage = NetUtils.randomBytes(65535 + 1)
+      val invalidMessage = NetUtils.randomBytes(16184)
       val messageSize = Codec[Array[Byte]].encode(invalidMessage).capacity()
 
       val error = recoverToExceptionIf[MessageMTUException[InetMultiAddress]] {
@@ -33,14 +33,13 @@ class UDPPeerGroupSpec extends FlatSpec {
       }.futureValue
 
       error.size shouldBe messageSize
-      error.mtu shouldBe 65535
     }
 
-  it should "send and receive a message" in withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
-    val alicesMessage = NetUtils.randomBytes(1024).mkString
-    val bobsMessage = NetUtils.randomBytes(1024).mkString
+  it should "send and receive a message" in withTwoRandomUDPPeerGroups[Array[Byte]] { (alice, bob) =>
+    val alicesMessage = NetUtils.randomBytes(1500)
+    val bobsMessage = NetUtils.randomBytes(1500)
 
-    val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runAsync
+    val bobReceived: Future[Array[Byte]] = bob.server().mergeMap(channel => channel.in).headL.runAsync
     bob.server().foreach(channel => channel.sendMessage(bobsMessage).runAsync)
 
     val aliceClient = alice.client(bob.processAddress).evaluated

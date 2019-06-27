@@ -1,15 +1,16 @@
 package io.iohk.scalanet.peergroup
 
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelSetupException, MessageMTUException, TerminalPeerGroup}
-import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{getChannelId, toTask}
+import InetPeerGroupUtils.{ChannelId, getChannelId, toTask}
 import io.iohk.scalanet.peergroup.UDPPeerGroup._
 import io.netty.bootstrap.Bootstrap
-import io.netty.buffer.{ByteBuf, Unpooled}
+import io.netty.buffer.Unpooled
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
@@ -19,10 +20,8 @@ import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
-import InetPeerGroupUtils.ChannelId
 
 import scala.collection.JavaConverters._
-import scala.util.Try
 
 /**
   * PeerGroup implementation on top of UDP.
@@ -151,19 +150,12 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
         recipient: InetSocketAddress,
         nettyChannel: NioDatagramChannel
     ): Task[Unit] = {
-      Task
-        .fromTry(Try(getEncodedMessage(message, recipient)))
-        .flatMap(
-          encodedMessage => toTask(nettyChannel.writeAndFlush(new DatagramPacket(encodedMessage, recipient, sender)))
-        )
-    }
-
-    private def getEncodedMessage(message: M, recipient: InetSocketAddress): ByteBuf = {
-      val encodedMessage = Unpooled.wrappedBuffer(codec.encode(message))
-      if (encodedMessage.capacity() > 65535)
-        throw new MessageMTUException[InetMultiAddress](InetMultiAddress(recipient), encodedMessage.capacity(), 65535)
-      else
-        encodedMessage
+      val encodedMessage = codec.encode(message)
+      toTask(nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(encodedMessage), recipient, sender)))
+        .onErrorRecoverWith {
+          case _: IOException =>
+            Task(throw new MessageMTUException[InetMultiAddress](to, encodedMessage.capacity()))
+        }
     }
   }
 
@@ -206,6 +198,8 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
 }
 
 object UDPPeerGroup {
+
+  val mtu: Int = 16384
 
   case class Config(bindAddress: InetSocketAddress, processAddress: InetMultiAddress)
 

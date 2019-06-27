@@ -18,6 +18,8 @@ import org.eclipse.californium.scandium.config.DtlsConnectorConfig
 import org.eclipse.californium.scandium.dtls.cipher.CipherSuite._
 import InetPeerGroupUtils.ChannelId
 import InetPeerGroupUtils._
+import io.iohk.scalanet.peergroup.PeerGroup.MessageMTUException
+
 import scala.collection.JavaConverters._
 
 class DTLSPeerGroup[M](val config: Config)(
@@ -65,23 +67,28 @@ class DTLSPeerGroup[M](val config: Config)(
       import io.iohk.scalanet.peergroup.BufferConversionOps._
       val buffer = codec.encode(message)
 
-      Task.async[Unit] { (_, c) =>
-        val messageCallback = new MessageCallback {
-          override def onConnecting(): Unit = ()
-          override def onDtlsRetransmission(i: Int): Unit = ()
-          override def onContextEstablished(endpointContext: EndpointContext): Unit = ()
+      Task
+        .async[Unit] { (_, c) =>
+          val messageCallback = new MessageCallback {
+            override def onConnecting(): Unit = ()
+            override def onDtlsRetransmission(i: Int): Unit = ()
+            override def onContextEstablished(endpointContext: EndpointContext): Unit = ()
 
-          override def onSent(): Unit = c.onSuccess(())
-          override def onError(throwable: Throwable): Unit = c.onError(throwable)
+            override def onSent(): Unit = c.onSuccess(())
+            override def onError(throwable: Throwable): Unit = c.onError(throwable)
+          }
+
+          val rawData =
+            RawData.outbound(buffer.toArray, new AddressEndpointContext(to.inetSocketAddress), messageCallback, false)
+
+          dtlsConnector.send(rawData)
+
+          Cancelable.empty
         }
-
-        val rawData =
-          RawData.outbound(buffer.toArray, new AddressEndpointContext(to.inetSocketAddress), messageCallback, false)
-
-        dtlsConnector.send(rawData)
-
-        Cancelable.empty
-      }
+        .onErrorRecoverWith {
+          case _: IllegalArgumentException =>
+            Task(throw new MessageMTUException[InetMultiAddress](to, buffer.capacity()))
+        }
     }
 
     override def close(): Task[Unit] = {
