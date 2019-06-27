@@ -13,7 +13,7 @@ class FramingCodec[T](messageCodec: Codec[T]) extends StreamCodec[T] {
 
   private var state: State = LengthExpected
   private var length: Int = 0
-  private var db: ByteBuffer = null
+  private var db: ByteBuffer = _
   private val nlb = ByteBuffer.allocate(4)
 
   override def streamDecode[B](source: B)(implicit bi: BufferInstantiator[B]): Seq[T] = this.synchronized {
