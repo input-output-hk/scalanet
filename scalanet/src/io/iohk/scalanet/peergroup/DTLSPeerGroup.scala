@@ -19,6 +19,7 @@ import org.eclipse.californium.scandium.dtls.cipher.CipherSuite._
 import InetPeerGroupUtils.ChannelId
 import InetPeerGroupUtils._
 import io.iohk.scalanet.peergroup.PeerGroup.MessageMTUException
+import org.eclipse.californium.scandium.dtls.HandshakeException
 
 import scala.collection.JavaConverters._
 
@@ -75,7 +76,12 @@ class DTLSPeerGroup[M](val config: Config)(
             override def onContextEstablished(endpointContext: EndpointContext): Unit = ()
 
             override def onSent(): Unit = c.onSuccess(())
-            override def onError(throwable: Throwable): Unit = c.onError(throwable)
+            override def onError(throwable: Throwable): Unit = throwable match {
+              case h: HandshakeException =>
+                c.onError(new DTLSPeerGroup.HandshakeException[InetMultiAddress](to, h))
+              case _: IllegalArgumentException =>
+                c.onError(new MessageMTUException[InetMultiAddress](to, buffer.capacity()))
+            }
           }
 
           val rawData =
@@ -84,10 +90,6 @@ class DTLSPeerGroup[M](val config: Config)(
           dtlsConnector.send(rawData)
 
           Cancelable.empty
-        }
-        .onErrorRecoverWith {
-          case _: IllegalArgumentException =>
-            Task(throw new MessageMTUException[InetMultiAddress](to, buffer.capacity()))
         }
     }
 
@@ -244,4 +246,8 @@ object DTLSPeerGroup {
         CertAuthenticated(bindAddress, InetMultiAddress(bindAddress), certificateChain, privateKey, trustedCerts)
     }
   }
+
+  class HandshakeException[A](val to: A, val cause: Throwable)
+      extends RuntimeException(s"Handshake failed to $to.", cause)
+
 }

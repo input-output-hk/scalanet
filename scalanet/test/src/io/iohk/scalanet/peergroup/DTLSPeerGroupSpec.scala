@@ -31,6 +31,19 @@ class DTLSPeerGroupSpec extends FlatSpec {
 
   behavior of "DTLSPeerGroup"
 
+  it should "report an error for a handshake failure" in
+    withTwoDTLSPeerGroups[Array[Byte]](duffKeyConfig) { (alice, bob) =>
+      val alicesMessage = NetUtils.randomBytes(1500)
+
+      val aliceClient = alice.client(bob.processAddress).evaluated
+
+      val error = recoverToExceptionIf[DTLSPeerGroup.HandshakeException[InetMultiAddress]] {
+        aliceClient.sendMessage(alicesMessage).runAsync
+      }.futureValue
+
+      error.to shouldBe bob.processAddress
+    }
+
   it should "report an error for sending a message greater than the MTU" in
     withADTLSPeerGroup[Array[Byte]](rawKeyConfig) { alice =>
       val address = InetMultiAddress(NetUtils.aRandomAddress())
@@ -93,6 +106,10 @@ object DTLSPeerGroupSpec {
 
   def rawKeyConfig(alias: String): Config = {
     Unauthenticated(aRandomAddress(), certAt(alias).getPublicKey, keyAt(alias))
+  }
+
+  def duffKeyConfig(alias: String): Config = {
+    Unauthenticated(aRandomAddress(), certAt("alice").getPublicKey, keyAt("bob"))
   }
 
   def signedCertConfig(alias: String): Config = {
