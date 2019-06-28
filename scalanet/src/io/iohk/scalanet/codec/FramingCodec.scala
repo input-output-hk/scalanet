@@ -9,37 +9,45 @@ import io.iohk.scalanet.codec.FramingCodec._
 
 import scala.collection.mutable
 
-class FramingCodec[T](messageCodec: Codec[T]) extends StreamCodec[T] {
+class FramingCodec[T](val messageCodec: Codec[T], val maxBufferLength: Int = Int.MaxValue) extends StreamCodec[T] {
 
-  private var state: State = LengthExpected
-  private var length: Int = 0
-  private var db: ByteBuffer = _
-  private val nlb = ByteBuffer.allocate(4)
+  private[codec] var state: State = LengthExpected
+  private[codec] var length: Int = 0
+  private[codec] var db: ByteBuffer = ByteBuffer.allocate(0)
+  private[codec] val nlb = ByteBuffer.allocate(4)
 
   override def streamDecode[B](source: B)(implicit bi: BufferInstantiator[B]): Seq[T] = this.synchronized {
     val b = bi.asByteBuffer(source)
     val s = mutable.ListBuffer[T]()
-    while (b.remaining() > 0) {
+    while (b.hasRemaining) {
       state match {
         case LengthExpected =>
           while (b.remaining() > 0 && nlb.position() < 4) {
             nlb.put(b.get())
           }
           if (nlb.position() == 4) {
-            length = nlb.getInt(0)
-            nlb.clear()
-            db = ByteBuffer.allocate(length)
-            state = BytesExpected
+            val l = nlb.getInt(0)
+            if (l > maxBufferLength) {
+              nlb.clear()
+              throw new IllegalArgumentException(
+                s"Refusing to decode buffer with length header greater than maxLength ($l > $maxBufferLength)."
+              )
+            } else {
+              length = nlb.getInt(0)
+              nlb.clear()
+              db = ByteBuffer.allocate(length)
+              state = BytesExpected
+            }
           }
         case BytesExpected =>
           val remainingBytes = length - db.position()
           if (b.remaining() >= remainingBytes) {
-            read(remainingBytes, b, db)
+            readUnchecked(remainingBytes, b, db)
             db.position(0)
             messageCodec.decode(bi.asB(db)).foreach(message => s += message)
             state = LengthExpected
           } else { // (b.remaining() < remainingBytes)
-            read(b.remaining(), b, db)
+            readUnchecked(b.remaining(), b, db)
           }
       }
     }
@@ -69,7 +77,7 @@ object FramingCodec {
     case object BytesExpected extends State
   }
 
-  def read(n: Int, from: ByteBuffer, to: ByteBuffer): Unit = {
+  private def readUnchecked(n: Int, from: ByteBuffer, to: ByteBuffer): Unit = {
     var m: Int = 0
     while (m < n) {
       to.put(from.get())
