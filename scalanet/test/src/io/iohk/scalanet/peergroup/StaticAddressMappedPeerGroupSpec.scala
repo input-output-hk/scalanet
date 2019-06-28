@@ -48,8 +48,8 @@ class StaticAddressMappedPeerGroupSpec extends FlatSpec {
       ) => Any
   ): Unit = {
 
-    val underlying1 = randomTCPPeerGroup[String]
-    val underlying2 = randomTCPPeerGroup[String]
+    val underlying1 = randomUDPPeerGroup[String]
+    val underlying2 = randomUDPPeerGroup[String]
 
     val routingTable = Map(a -> underlying1.processAddress, b -> underlying2.processAddress)
 
