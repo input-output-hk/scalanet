@@ -2,9 +2,11 @@ package io.iohk.scalanet.peergroup
 
 import io.iohk.decco.auto._
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+import io.iohk.decco.Codec
 import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.codec.FramingCodec
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException}
 import monix.execution.CancelableFuture
 import monix.execution.Scheduler.Implicits.global
@@ -21,6 +23,8 @@ import scala.util.Random
 class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5 seconds)
+
+  implicit val codec = new FramingCodec(Codec[String])
 
   behavior of "TCPPeerGroup"
 

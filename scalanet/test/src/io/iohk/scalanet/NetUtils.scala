@@ -6,6 +6,7 @@ import java.security.KeyStore
 import java.security.cert.Certificate
 
 import io.iohk.decco.{BufferInstantiator, Codec}
+import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.peergroup._
 import io.netty.handler.ssl.util.SelfSignedCertificate
 import monix.execution.Scheduler
@@ -88,25 +89,10 @@ object NetUtils {
     Random.nextBytes(a)
     a
   }
-  sealed trait SimpleTerminalPeerGroup
-  case object TcpTerminalPeerGroup extends SimpleTerminalPeerGroup
-  case object UdpTerminalPeerGroup extends SimpleTerminalPeerGroup
-
-  def randomTerminalPeerGroup[M](
-      t: SimpleTerminalPeerGroup
-  )(
-      implicit scheduler: Scheduler,
-      codec: Codec[M],
-      bufferInstantiator: BufferInstantiator[ByteBuffer]
-  ): PeerGroup[InetMultiAddress, M] =
-    t match {
-      case TcpTerminalPeerGroup => randomTCPPeerGroup
-      case UdpTerminalPeerGroup => randomUDPPeerGroup
-    }
 
   def randomTCPPeerGroup[M](
       implicit scheduler: Scheduler,
-      codec: Codec[M],
+      codec: StreamCodec[M],
       bufferInstantiator: BufferInstantiator[ByteBuffer]
   ): TCPPeerGroup[M] = {
     val pg = new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
@@ -115,7 +101,7 @@ object NetUtils {
   }
   def randomTLSPeerGroup[M](
       implicit scheduler: Scheduler,
-      codec: Codec[M],
+      codec: StreamCodec[M],
       bufferInstantiator: BufferInstantiator[ByteBuffer]
   ): TLSPeerGroup[M] = {
     val sc1 = new SelfSignedCertificate()
@@ -136,7 +122,7 @@ object NetUtils {
 
   def withARandomTCPPeerGroup[M](
       testCode: TCPPeerGroup[M] => Any
-  )(implicit scheduler: Scheduler, codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
+  )(implicit scheduler: Scheduler, codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
     val pg = randomTCPPeerGroup(scheduler, codec, bufferInstantiator)
     try {
       testCode(pg)
@@ -147,7 +133,7 @@ object NetUtils {
 
   def withTwoRandomTCPPeerGroups[M](
       testCode: (TCPPeerGroup[M], TCPPeerGroup[M]) => Any
-  )(implicit scheduler: Scheduler, codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
+  )(implicit scheduler: Scheduler, codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
     val (pg1, pg2) = random2TCPPeerGroup(scheduler, codec, bufferInstantiator)
     try {
       testCode(pg1, pg2)
@@ -159,7 +145,7 @@ object NetUtils {
 
   def withTwoRandomTLSPeerGroups[M](clientAuth: Boolean = false)(
       testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
-  )(implicit scheduler: Scheduler, codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
+  )(implicit scheduler: Scheduler, codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
     val (pg1, pg2) = random2TLSPPeerGroup(clientAuth)(scheduler, codec, bufferInstantiator)
     try {
       testCode(pg1, pg2)
@@ -173,7 +159,7 @@ object NetUtils {
       clientAuth: Boolean
   )(
       implicit scheduler: Scheduler,
-      codec: Codec[M],
+      codec: StreamCodec[M],
       bufferInstantiator: BufferInstantiator[ByteBuffer]
   ): (TLSPeerGroup[M], TLSPeerGroup[M]) = {
     val address1 = aRandomAddress()
@@ -192,7 +178,7 @@ object NetUtils {
 
   def random2TCPPeerGroup[M](
       implicit scheduler: Scheduler,
-      codec: Codec[M],
+      codec: StreamCodec[M],
       bufferInstantiator: BufferInstantiator[ByteBuffer]
   ): (TCPPeerGroup[M], TCPPeerGroup[M]) = {
     val address = aRandomAddress()

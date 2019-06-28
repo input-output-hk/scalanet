@@ -21,14 +21,17 @@ import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.util.Random
 import TLSPeerGroupSpec._
+import io.iohk.scalanet.codec.{FramingCodec, StreamCodec}
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException}
 import io.netty.handler.ssl.util.SelfSignedCertificate
+
 import monix.execution.CancelableFuture
 import org.scalatest.RecoverMethods.recoverToExceptionIf
 
 class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5 seconds)
+  implicit val codec = new FramingCodec(Codec[String])
 
   behavior of "TLSPeerGroup"
 
@@ -131,17 +134,15 @@ object TLSPeerGroupSpec {
   }
 
   def selfSignedCertConfig(alias: String): Config = {
-
     val key = keyStore.getKey(alias, "password".toCharArray).asInstanceOf[PrivateKey]
     val certChain = keyStore.getCertificateChain(alias).toList
     val trustStore = List(keyStore.getCertificate("bob"))
     Config(aRandomAddress(), key, certChain, trustStore)
-
   }
 
   def withTwoTLSPeerGroups[M](cgens: (String => Config)*)(
       testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
-  )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = cgens.foreach { cgen =>
+  )(implicit codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = cgens.foreach { cgen =>
     val pg1 = tlsPeerGroup[M](cgen("alice"))
     val pg2 = tlsPeerGroup[M](cgen("bob"))
     println(s"Alice is ${pg1.processAddress}")
@@ -156,7 +157,7 @@ object TLSPeerGroupSpec {
 
   def withATLSPeerGroup[M](cgens: (String => Config)*)(
       testCode: TLSPeerGroup[M] => Any
-  )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = cgens.foreach { cgen =>
+  )(implicit codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = cgens.foreach { cgen =>
     val pg = tlsPeerGroup[M](cgen("alice"))
     try {
       testCode(pg)
@@ -167,7 +168,7 @@ object TLSPeerGroupSpec {
 
   def tlsPeerGroup[M](
       config: Config
-  )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): TLSPeerGroup[M] = {
+  )(implicit codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): TLSPeerGroup[M] = {
     val pg = new TLSPeerGroup[M](config)
     Await.result(pg.initialize().runAsync, Duration.Inf)
     pg

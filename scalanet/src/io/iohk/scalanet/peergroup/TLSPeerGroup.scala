@@ -7,8 +7,6 @@ import java.nio.channels.ClosedChannelException
 import java.security.PrivateKey
 import java.security.cert.{Certificate, X509Certificate}
 
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-import io.iohk.decco._
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TLSPeerGroup._
@@ -18,13 +16,14 @@ import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
-import io.netty.handler.codec.bytes.ByteArrayEncoder
-import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
 import io.netty.handler.ssl.{SslContext, SslContextBuilder, SslHandshakeCompletionEvent}
 import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
+
+import io.iohk.decco._
+import io.iohk.scalanet.codec.StreamCodec
 
 import scala.concurrent.Promise
 import scala.collection.JavaConverters._
@@ -37,11 +36,13 @@ import scala.collection.JavaConverters._
   * that are not instances of TLSPeerGroup.
   *
   * @param config bind address etc. See the companion object.
-  * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
+  * @param codec  a decco codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer])
-    extends TerminalPeerGroup[InetMultiAddress, M]() {
+class TLSPeerGroup[M](val config: Config)(
+    implicit codec: StreamCodec[M],
+    bi: BufferInstantiator[ByteBuffer]
+) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -71,7 +72,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
-        val newChannel = new ServerChannelImpl[M](ch, sslServerCtx)
+        val newChannel = new ServerChannelImpl[M](ch, sslServerCtx, codec, bi)
         channelSubject.onNext(newChannel)
         log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
@@ -80,7 +81,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
     .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
     .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
 
-  private val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
+  private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
 
   override def initialize(): Task[Unit] =
     toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}"))
@@ -88,7 +89,7 @@ class TLSPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
   override def processAddress: InetMultiAddress = config.processAddress
 
   override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
-    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, sslClientCtx).initialize
+    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, sslClientCtx, codec, bi).initialize
   }
 
   override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
@@ -158,8 +159,11 @@ object TLSPeerGroup {
     "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA"
   )
 
-  private class MessageNotifier[M](val messageSubject: Subject[M, M])(implicit codec: Codec[M])
-      extends ChannelInboundHandlerAdapter {
+  private class MessageNotifier[M](
+      val messageSubject: Subject[M, M],
+      codec: StreamCodec[M],
+      bi: BufferInstantiator[ByteBuffer]
+  ) extends ChannelInboundHandlerAdapter {
 
     private val log = LoggerFactory.getLogger(getClass)
 
@@ -181,17 +185,17 @@ object TLSPeerGroup {
       }
       super.userEventTriggered(ctx, evt)
     }
+
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val byteBuf = msg.asInstanceOf[ByteBuf]
       try {
-        val messageE: Either[Codec.Failure, M] = codec.decode(byteBuf.nioBuffer().asReadOnlyBuffer())
         log.debug(
           s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
-            s"to local address ${ctx.channel().localAddress()}, ${messageE.getOrElse("decode failed")}"
+            s"to local address ${ctx.channel().localAddress()}"
         )
-        messageE.foreach { message =>
-          messageSubject.onNext(message)
-        }
+        codec
+          .streamDecode(byteBuf.nioBuffer().asReadOnlyBuffer())(bi)
+          .foreach(message => messageSubject.onNext(message))
       } finally {
         byteBuf.release()
       }
@@ -205,9 +209,9 @@ object TLSPeerGroup {
   private class ClientChannelImpl[M](
       inetSocketAddress: InetSocketAddress,
       clientBootstrap: Bootstrap,
-      sslClientCtx: SslContext
-  )(
-      implicit codec: Codec[M]
+      sslClientCtx: SslContext,
+      codec: StreamCodec[M],
+      bi: BufferInstantiator[ByteBuffer]
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
@@ -230,9 +234,6 @@ object TLSPeerGroup {
           val sslHandler = sslClientCtx.newHandler(ch.alloc())
           pipeline
             .addLast("ssl", sslHandler) //This needs to be first
-            .addLast("frameEncoder", new LengthFieldPrepender(4))
-            .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
-            .addLast(new ByteArrayEncoder())
             .addLast(new ChannelInboundHandlerAdapter() {
               override def channelInactive(ctx: ChannelHandlerContext): Unit = {
                 deactivation.success(())
@@ -256,7 +257,7 @@ object TLSPeerGroup {
                 super.userEventTriggered(ctx, evt)
               }
             })
-            .addLast(new MessageNotifier[M](messageSubject))
+            .addLast(new MessageNotifier[M](messageSubject, codec, bi))
         }
       })
 
@@ -278,7 +279,7 @@ object TLSPeerGroup {
             s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
               s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
           )
-          toTask(ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message))))
+          toTask(ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
         })
         .onErrorRecoverWith {
           case e: IOException =>
@@ -298,8 +299,11 @@ object TLSPeerGroup {
     }
   }
 
-  private[scalanet] class ServerChannelImpl[M](val nettyChannel: SocketChannel, sslServerCtx: SslContext)(
-      implicit codec: Codec[M]
+  private[scalanet] class ServerChannelImpl[M](
+      val nettyChannel: SocketChannel,
+      sslServerCtx: SslContext,
+      codec: StreamCodec[M],
+      bi: BufferInstantiator[ByteBuffer]
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
@@ -312,14 +316,12 @@ object TLSPeerGroup {
     nettyChannel
       .pipeline()
       .addLast("ssl", sslServerCtx.newHandler(nettyChannel.alloc())) //This needs to be first
-      .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
-      .addLast("frameEncoder", new LengthFieldPrepender(4))
-      .addLast(new MessageNotifier(messageSubject))
+      .addLast(new MessageNotifier(messageSubject, codec, bi))
 
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
-      toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message))))
+      toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
         .onErrorRecoverWith {
           case e: ClosedChannelException =>
             Task(throw new ChannelBrokenException[InetMultiAddress](to, e))
@@ -333,4 +335,5 @@ object TLSPeerGroup {
       toTask(nettyChannel.close())
     }
   }
+
 }
