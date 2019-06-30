@@ -78,7 +78,7 @@ class DTLSPeerGroup[M](val config: Config)(
             override def onSent(): Unit = c.onSuccess(())
             override def onError(throwable: Throwable): Unit = throwable match {
               case h: HandshakeException =>
-                c.onError(new DTLSPeerGroup.HandshakeException[InetMultiAddress](to, h))
+                c.onError(new PeerGroup.HandshakeException[InetMultiAddress](to, h))
               case _: IllegalArgumentException =>
                 c.onError(new MessageMTUException[InetMultiAddress](to, buffer.capacity()))
             }
@@ -246,8 +246,4 @@ object DTLSPeerGroup {
         CertAuthenticated(bindAddress, InetMultiAddress(bindAddress), certificateChain, privateKey, trustedCerts)
     }
   }
-
-  class HandshakeException[A](val to: A, val cause: Throwable)
-      extends RuntimeException(s"Handshake failed to $to.", cause)
-
 }

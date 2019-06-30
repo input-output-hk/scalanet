@@ -171,4 +171,8 @@ object PeerGroup {
 
   class MessageMTUException[A](val to: A, val size: Long)
       extends RuntimeException(s"Unsupported message of length $size.")
+
+  class HandshakeException[A](val to: A, val cause: Throwable)
+    extends RuntimeException(s"Handshake failed to $to.", cause)
+
 }

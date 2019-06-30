@@ -23,7 +23,7 @@ import scala.concurrent.{Await, Future}
 import scala.util.Random
 import DTLSPeerGroupSpec._
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
-import io.iohk.scalanet.peergroup.PeerGroup.MessageMTUException
+import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, MessageMTUException}
 
 class DTLSPeerGroupSpec extends FlatSpec {
 
@@ -37,7 +37,7 @@ class DTLSPeerGroupSpec extends FlatSpec {
 
       val aliceClient = alice.client(bob.processAddress).evaluated
 
-      val error = recoverToExceptionIf[DTLSPeerGroup.HandshakeException[InetMultiAddress]] {
+      val error = recoverToExceptionIf[HandshakeException[InetMultiAddress]] {
         aliceClient.sendMessage(alicesMessage).runAsync
       }.futureValue
 
