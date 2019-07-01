@@ -7,8 +7,13 @@ import java.nio.channels.ClosedChannelException
 import java.security.PrivateKey
 import java.security.cert.{Certificate, X509Certificate}
 
+import io.iohk
+import io.iohk.decco._
+import io.iohk.scalanet
+import io.iohk.scalanet.codec.StreamCodec
+import io.iohk.scalanet.peergroup
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TLSPeerGroup._
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
@@ -17,16 +22,14 @@ import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.ssl.{SslContext, SslContextBuilder, SslHandshakeCompletionEvent}
+import javax.net.ssl.SSLKeyException
 import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
 
-import io.iohk.decco._
-import io.iohk.scalanet.codec.StreamCodec
-
-import scala.concurrent.Promise
 import scala.collection.JavaConverters._
+import scala.concurrent.Promise
 
 /**
   * PeerGroup implementation on top of TLS.
@@ -170,22 +173,6 @@ object TLSPeerGroup {
     override def channelInactive(channelHandlerContext: ChannelHandlerContext): Unit =
       messageSubject.onComplete()
 
-    override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
-      evt match {
-        case e: SslHandshakeCompletionEvent =>
-          log.debug(
-            s"Ssl Handshake Server channel from ${ctx.channel().localAddress()} " +
-              s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
-          )
-        case _ =>
-          log.debug(
-            s"User Event Server channel from ${ctx.channel().localAddress()} " +
-              s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
-          )
-      }
-      super.userEventTriggered(ctx, evt)
-    }
-
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val byteBuf = msg.asInstanceOf[ByteBuf]
       try {
@@ -246,7 +233,11 @@ object TLSPeerGroup {
                       s"Ssl Handshake client channel from ${ctx.channel().localAddress()} " +
                         s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
                     )
-                    if (e.isSuccess) activation.success(ctx) else activation.failure(e.cause())
+                    if (e.isSuccess)
+                      activation.success(ctx)
+                    else {
+                      activation.failure(e.cause())
+                    }
 
                   case _ =>
                     log.debug(
@@ -254,20 +245,32 @@ object TLSPeerGroup {
                         s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
                     )
                 }
-                super.userEventTriggered(ctx, evt)
+//                super.userEventTriggered(ctx, evt)
               }
             })
             .addLast(new MessageNotifier[M](messageSubject, codec, bi))
         }
       })
 
+    private def mapException(t: Throwable): Throwable = t match {
+      case _: ClosedChannelException =>
+        new peergroup.PeerGroup.ChannelBrokenException[InetMultiAddress](to, t)
+      case _: ConnectException =>
+        new scalanet.peergroup.PeerGroup.ChannelSetupException[InetMultiAddress](to, t)
+      case _: SSLKeyException =>
+        new iohk.scalanet.peergroup.PeerGroup.HandshakeException[InetMultiAddress](to, t)
+      case _ =>
+        t
+    }
+
     def initialize: Task[ClientChannelImpl[M]] = {
       toTask(bootstrap.connect(inetSocketAddress))
-        .onErrorRecoverWith {
-          case e: ConnectException =>
-            Task(throw new ChannelSetupException[InetMultiAddress](to, e))
-        }
+        .flatMap(_ => Task.fromFuture(activationF))
         .map(_ => this)
+        .onErrorRecoverWith {
+          case t: Throwable =>
+            Task.raiseError(mapException(t))
+        }
     }
 
     override def sendMessage(message: M): Task[Unit] = {

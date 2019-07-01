@@ -1,7 +1,7 @@
 package io.iohk.scalanet.peergroup
 
 import java.nio.ByteBuffer
-import java.security.{KeyStore, PrivateKey}
+import java.security.PrivateKey
 import java.security.cert.{Certificate, CertificateFactory}
 
 import io.iohk.decco.auto._
@@ -22,9 +22,7 @@ import scala.concurrent.duration._
 import scala.util.Random
 import TLSPeerGroupSpec._
 import io.iohk.scalanet.codec.{FramingCodec, StreamCodec}
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException}
-import io.netty.handler.ssl.util.SelfSignedCertificate
-
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, HandshakeException}
 import monix.execution.CancelableFuture
 import org.scalatest.RecoverMethods.recoverToExceptionIf
 
@@ -34,6 +32,15 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   implicit val codec = new FramingCodec(Codec[String])
 
   behavior of "TLSPeerGroup"
+
+  it should "report an error for a handshake failure" in
+    withTwoTLSPeerGroups[String](duffKeyConfig) { (alice, bob) =>
+      val error = recoverToExceptionIf[HandshakeException[InetMultiAddress]] {
+        alice.client(bob.processAddress).runAsync
+      }.futureValue
+
+      error.to shouldBe bob.processAddress
+    }
 
   // TODO this is a copy/paste version of the test in TCPPeerGroupSpec
   it should "report an error for messaging to an invalid address" in
@@ -51,9 +58,10 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   it should "report an error for messaging on a closed channel -- server closes" in
     withTwoTLSPeerGroups[String](selfSignedCertConfig) { (alice, bob) =>
       val alicesMessage = Random.alphanumeric.take(1024).mkString
-      bob.server().foreachL(channel => channel.close().runAsync).runAsync
+      val bobsChannelF = bob.server().headL.runAsync
 
       val aliceClient = alice.client(bob.processAddress).evaluated
+      bobsChannelF.futureValue.close().evaluated
       val aliceError = recoverToExceptionIf[ChannelBrokenException[InetMultiAddress]] {
         aliceClient.sendMessage(alicesMessage).runAsync
       }
@@ -122,6 +130,13 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
 object TLSPeerGroupSpec {
 
+  def duffKeyConfig(alias: String): Config = {
+    val key: PrivateKey = keyStore.getKey("alice", "password".toCharArray).asInstanceOf[PrivateKey]
+    val trustStore = List(keyStore.getCertificate("bob"))
+    val certChain = trustStore
+    Config(aRandomAddress(), key, certChain, trustStore)
+  }
+
   def signedCertConfig(alias: String): Config = {
     import scala.collection.JavaConverters._
     val fact = CertificateFactory.getInstance("X.509")
@@ -174,21 +189,6 @@ object TLSPeerGroupSpec {
     pg
   }
 
-  val keyStore = {
-    val keyStore = KeyStore.getInstance("JKS")
-    keyStore.load(null)
-    val aliceSc = new SelfSignedCertificate()
-    val bobSc = new SelfSignedCertificate()
-
-    keyStore.setCertificateEntry("alice", bobSc.cert())
-    keyStore.setKeyEntry("alice", aliceSc.key(), "password".toCharArray, Array(aliceSc.cert()))
-
-    keyStore.setCertificateEntry("bob", aliceSc.cert())
-    keyStore.setKeyEntry("bob", bobSc.key(), "password".toCharArray, Array(bobSc.cert()))
-
-    keyStore
-  }
-
   def keyAt(alias: String): PrivateKey = {
     NetUtils.keyStore.getKey(alias, "password".toCharArray).asInstanceOf[PrivateKey]
   }
@@ -196,4 +196,5 @@ object TLSPeerGroupSpec {
   def certAt(alias: String): Certificate = {
     NetUtils.keyStore.getCertificate(alias)
   }
+
 }

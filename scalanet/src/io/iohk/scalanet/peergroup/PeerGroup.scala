@@ -173,6 +173,6 @@ object PeerGroup {
       extends RuntimeException(s"Unsupported message of length $size.")
 
   class HandshakeException[A](val to: A, val cause: Throwable)
-    extends RuntimeException(s"Handshake failed to $to.", cause)
+      extends RuntimeException(s"Handshake failed to $to.", cause)
 
 }
