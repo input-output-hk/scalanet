@@ -18,7 +18,7 @@ class FramingCodecSpec extends FlatSpec {
 
   behavior of "FramingCodec"
 
-  it should "skip over length frames" in {
+  it should "skip over length frames while remaining aligned with frame boundary" in {
     val messageCodec = Codec[String]
     val sourceMessage1 = Random.nextString(4)
     val sourceMessage2 = Random.nextString(2)
@@ -26,11 +26,10 @@ class FramingCodecSpec extends FlatSpec {
 
     val framingCodec = new FramingCodec(messageCodec, maxFrameLength)
 
-    val frame1: ByteBuffer = framingCodec.encode(sourceMessage1)
-    val frame2: ByteBuffer = framingCodec.encode(sourceMessage2)
+    val frame1 = split(framingCodec.encode(sourceMessage1), packetSize = 4)
+    val frame2 = split(framingCodec.encode(sourceMessage2), packetSize = 4)
 
-    framingCodec.streamDecode(frame1) shouldBe Seq.empty
-    framingCodec.streamDecode(frame2) shouldBe Seq(sourceMessage2)
+    (frame1 ++ frame2).flatMap(packet => framingCodec.streamDecode(packet)) shouldBe Seq(sourceMessage2)
   }
 
   it should "handle a message split over several packets" in {
