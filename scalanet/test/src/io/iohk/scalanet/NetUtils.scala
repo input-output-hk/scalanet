@@ -64,6 +64,13 @@ object NetUtils {
     a
   }
 
+  def concat(bs: ByteBuffer*): ByteBuffer = {
+    val bb = ByteBuffer.allocate(bs.map(_.capacity()).sum)
+    bs.foreach(b => bb.put(b))
+    bb.position(0)
+    bb
+  }
+
   def withAddressInUse(testCode: InetSocketAddress => Any): Unit = {
     val address = aRandomAddress()
     val socket = new ServerSocket(address.getPort, 0, InetAddress.getLoopbackAddress)

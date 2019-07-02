@@ -10,7 +10,6 @@ import monix.reactive.Observable
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import io.iohk.scalanet.TaskValues._
-import io.iohk.scalanet.codec.FramingCodec.State.LengthExpected
 import monix.execution.Scheduler.Implicits.global
 
 import scala.util.Random
@@ -19,24 +18,19 @@ class FramingCodecSpec extends FlatSpec {
 
   behavior of "FramingCodec"
 
-  it should "not reserve a buffer for a length field greater than max length" in {
-    val maxBufferLength = 1
-    val fc = new FramingCodec(Codec[String], maxBufferLength)
-    val sourceMessage = lengthFieldSection(maxBufferLength + 1)
+  it should "skip over length frames" in {
+    val messageCodec = Codec[String]
+    val sourceMessage1 = Random.nextString(4)
+    val sourceMessage2 = Random.nextString(2)
+    val maxFrameLength = messageCodec.encode(sourceMessage2).capacity() + 1
 
-    a[IllegalArgumentException] should be thrownBy fc.streamDecode(sourceMessage)
+    val framingCodec = new FramingCodec(messageCodec, maxFrameLength)
 
-    fc.length shouldBe 0
-    fc.db.capacity() shouldBe 0
-    fc.state shouldBe LengthExpected
-    fc.nlb.position shouldBe 0
-  }
+    val frame1: ByteBuffer = framingCodec.encode(sourceMessage1)
+    val frame2: ByteBuffer = framingCodec.encode(sourceMessage2)
 
-  private def lengthFieldSection(length: Int): ByteBuffer = {
-    val b = ByteBuffer.allocate(4)
-    b.putInt(length)
-    b.position(0)
-    b
+    framingCodec.streamDecode(frame1) shouldBe Seq.empty
+    framingCodec.streamDecode(frame2) shouldBe Seq(sourceMessage2)
   }
 
   it should "handle a message split over several packets" in {
