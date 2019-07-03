@@ -4,26 +4,25 @@ import java.nio.ByteBuffer
 import java.security.PrivateKey
 import java.security.cert.{Certificate, CertificateFactory}
 
-import io.iohk.decco.auto._
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+import io.iohk.decco.auto._
 import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils.{aRandomAddress, isListeningUDP}
 import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config._
+import io.iohk.scalanet.peergroup.DTLSPeerGroupSpec._
+import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, MessageMTUException}
+import io.iohk.scalanet.peergroup.ScalanetTestSuite.{messagingTest, serverMultiplexingTest}
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
-import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.RecoverMethods._
+import org.scalatest.concurrent.ScalaFutures._
 
-import scala.concurrent.duration.Duration
-import scala.concurrent.duration._
-import scala.concurrent.{Await, Future}
-import scala.util.Random
-import DTLSPeerGroupSpec._
-import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
-import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, MessageMTUException}
+import scala.concurrent.Await
+import scala.concurrent.duration.{Duration, _}
 
 class DTLSPeerGroupSpec extends FlatSpec {
 
@@ -57,40 +56,15 @@ class DTLSPeerGroupSpec extends FlatSpec {
       error.size shouldBe messageSize
     }
 
-  it should "send and receive a message" in {
-    withTwoDTLSPeerGroups[Array[Byte]](rawKeyConfig, signedCertConfig) { (alice, bob) =>
-      val alicesMessage = NetUtils.randomBytes(1500)
-      val bobsMessage = NetUtils.randomBytes(1500)
-
-      val bobReceived: Future[Array[Byte]] = bob.server().mergeMap(channel => channel.in).headL.runAsync
-      bob.server().foreach(channel => channel.sendMessage(bobsMessage).runAsync)
-
-      val aliceClient = alice.client(bob.processAddress).evaluated
-      val aliceReceived = aliceClient.in.headL.runAsync
-      aliceClient.sendMessage(alicesMessage).runAsync
-
-      bobReceived.futureValue shouldBe alicesMessage
-      aliceReceived.futureValue shouldBe bobsMessage
+  it should "send and receive a message" in
+    withTwoDTLSPeerGroups[String](rawKeyConfig, signedCertConfig) { (alice, bob) =>
+      messagingTest(alice, bob)
     }
-  }
 
-  it should "do multiplexing properly" in withTwoDTLSPeerGroups[String](rawKeyConfig) { (alice, bob) =>
-    val alicesMessage = Random.alphanumeric.take(1500).mkString
-    val bobsMessage = Random.alphanumeric.take(1500).mkString
-
-    bob.server().foreach(channel => channel.sendMessage(bobsMessage).runAsync)
-
-    val aliceClient1 = alice.client(bob.processAddress).evaluated
-    val aliceClient2 = alice.client(bob.processAddress).evaluated
-
-    val aliceReceived1 = aliceClient1.in.headL.runAsync
-    val aliceReceived2 = aliceClient2.in.headL.runAsync
-
-    aliceClient1.sendMessage(alicesMessage).runAsync
-
-    aliceReceived1.futureValue shouldBe bobsMessage
-    recoverToSucceededIf[IllegalStateException](aliceReceived2)
-  }
+  it should "do multiplexing properly" in
+    withTwoDTLSPeerGroups[String](rawKeyConfig) { (alice, bob) =>
+      serverMultiplexingTest(alice, bob)
+    }
 
   it should "shutdown cleanly" in {
     val pg1 = dtlsPeerGroup[String](rawKeyConfig("alice"))

@@ -13,7 +13,8 @@ import io.iohk.scalanet
 import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.peergroup
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ServerEvent, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TLSPeerGroup._
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
@@ -59,7 +60,7 @@ class TLSPeerGroup[M](val config: Config)(
     .ciphers(TLSPeerGroup.supportedCipherSuites.asJava)
     .build()
 
-  private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
+  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -76,7 +77,7 @@ class TLSPeerGroup[M](val config: Config)(
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
         val newChannel = new ServerChannelImpl[M](ch, sslServerCtx, codec, bi)
-        channelSubject.onNext(newChannel)
+        serverSubject.onNext(ChannelCreated(newChannel))
         log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })
@@ -95,10 +96,10 @@ class TLSPeerGroup[M](val config: Config)(
     new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, sslClientCtx, codec, bi).initialize
   }
 
-  override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
+  override def server(): Observable[ServerEvent[InetMultiAddress, M]] = serverSubject
 
   override def shutdown(): Task[Unit] = {
-    channelSubject.onComplete()
+    serverSubject.onComplete()
     for {
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())

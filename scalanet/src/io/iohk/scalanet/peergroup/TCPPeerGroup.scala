@@ -4,7 +4,12 @@ import java.io.IOException
 import java.net.{ConnectException, InetAddress, InetSocketAddress}
 import java.nio.ByteBuffer
 
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.{
+  ChannelBrokenException,
+  ChannelSetupException,
+  ServerEvent,
+  TerminalPeerGroup
+}
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
@@ -19,6 +24,7 @@ import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
 import io.iohk.decco._
 import io.iohk.scalanet.codec.StreamCodec
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 
 import scala.concurrent.Promise
 
@@ -39,7 +45,7 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
+  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -55,7 +61,7 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
         val newChannel = new ServerChannelImpl[M](ch, codec.cleanSlate, bi)
-        channelSubject.onNext(newChannel)
+        serverSubject.onNext(ChannelCreated(newChannel))
         log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })
@@ -74,10 +80,10 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
     new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, codec.cleanSlate, bi).initialize
   }
 
-  override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
+  override def server(): Observable[ServerEvent[InetMultiAddress, M]] = serverSubject
 
   override def shutdown(): Task[Unit] = {
-    channelSubject.onComplete()
+    serverSubject.onComplete()
     for {
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())

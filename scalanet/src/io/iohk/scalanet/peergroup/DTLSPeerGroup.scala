@@ -18,7 +18,8 @@ import org.eclipse.californium.scandium.config.DtlsConnectorConfig
 import org.eclipse.californium.scandium.dtls.cipher.CipherSuite._
 import InetPeerGroupUtils.ChannelId
 import InetPeerGroupUtils._
-import io.iohk.scalanet.peergroup.PeerGroup.MessageMTUException
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
+import io.iohk.scalanet.peergroup.PeerGroup.{MessageMTUException, ServerEvent}
 import org.eclipse.californium.scandium.dtls.HandshakeException
 
 import scala.collection.JavaConverters._
@@ -31,7 +32,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
   private val serverConnector = createServerConnector()
 
-  private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
+  private val channelSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
 
   private val activeChannels = new ConcurrentHashMap[ChannelId, ChannelImpl]().asScala
 
@@ -51,7 +52,7 @@ class DTLSPeerGroup[M](val config: Config)(
     channel
   }
 
-  override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
+  override def server(): Observable[ServerEvent[InetMultiAddress, M]] = channelSubject
 
   override def shutdown(): Task[Unit] =
     for {
@@ -151,7 +152,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
       private def createNewChannel(rawData: RawData): ChannelImpl = {
         val newChannel = new ChannelImpl(InetMultiAddress(rawData.getInetSocketAddress), connector)
-        channelSubject.onNext(newChannel)
+        channelSubject.onNext(ChannelCreated(newChannel))
         newChannel
       }
     })

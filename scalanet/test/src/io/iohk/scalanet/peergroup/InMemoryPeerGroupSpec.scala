@@ -1,6 +1,8 @@
 package io.iohk.scalanet.peergroup
 
 import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.peergroup.InMemoryPeerGroup.{Network, PeerStatus}
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.{BeforeAndAfter, FlatSpec}
 import org.scalatest.Matchers._
@@ -13,20 +15,20 @@ class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
 
   import InMemoryPeerGroup.Network
 
-  implicit val n: Network[Int, String] = new Network[Int, String]()
+  val n: Network[Int, String] = new Network[Int, String]()
 
   before {
     n.clear()
   }
 
-  val peerUtils = PeerUtils[Int, String, InMemoryPeerGroup]
+  val peerUtils = InMemoryPeerGroupSpec.inMemoryPeerGroupTestUtils(n)
 
   def isListening(p: InMemoryPeerGroup[Int, String]): Boolean =
     peerUtils.isListening(p)
   def generateRandomPeerGroup(): InMemoryPeerGroup[Int, String] =
     peerUtils.generateRandomPeerGroup()
 
-  behavior of "InMemoryPeerGroupSpec.scala"
+  behavior of "InMemoryPeerGroup"
 
   it should "not listen to the network before initialization" in {
     val peer = generateRandomPeerGroup()
@@ -40,7 +42,7 @@ class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
     peerUtils.withTwoRandomPeerGroups { (alice, bob) =>
       val aliceMessage = Random.alphanumeric.take(1024).mkString
 
-      val bobServer = bob.server().headL.runAsync
+      val bobServer = bob.server(ChannelCreated.collector).headL.runAsync
 
       val aliceClient = alice.client(bob.processAddress).evaluated
 
@@ -61,7 +63,7 @@ class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
       val aliceClient1 = alice.client(bob.processAddress).evaluated
       aliceClient1.sendMessage(aliceMessage1).runAsync
 
-      val bobServer = bob.server().headL.runAsync
+      val bobServer = bob.server(ChannelCreated.collector).headL.runAsync
 
       intercept[Exception] {
         bobServer.futureValue.to shouldBe alice.processAddress
@@ -80,8 +82,8 @@ class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
       val alicesMessage = Random.alphanumeric.take(1024).mkString
       val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-      bob.server().headL.runAsync.map(_.sendMessage(bobsMessage).runAsync)
-      val bobReceived: Future[String] = bob.server().mergeMap(_.in).headL.runAsync
+      bob.server(ChannelCreated.collector).headL.runAsync.map(_.sendMessage(bobsMessage).runAsync)
+      val bobReceived: Future[String] = bob.server(ChannelCreated.collector).mergeMap(_.in).headL.runAsync
 
       val aliceClient = alice.client(bob.processAddress).evaluated
       val aliceReceived = aliceClient.in.headL.runAsync
@@ -104,8 +106,8 @@ class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
     peerUtils.withTwoRandomPeerGroups { (alice, bob) =>
       val aliceMessage = Random.alphanumeric.take(1024).mkString
 
-      val firstInbound = bob.server().headL.runAsync
-      val secondInbound = bob.server().drop(1).headL.runAsync
+      val firstInbound = bob.server(ChannelCreated.collector).headL.runAsync
+      val secondInbound = bob.server(ChannelCreated.collector).drop(1).headL.runAsync
 
       val aliceClient1 = alice.client(bob.processAddress).evaluated
       val aliceClient2 = alice.client(bob.processAddress).evaluated
@@ -116,4 +118,14 @@ class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
       firstInbound.futureValue.to shouldBe alice.processAddress
       secondInbound.futureValue.to shouldBe alice.processAddress
     }
+}
+
+object InMemoryPeerGroupSpec {
+  def inMemoryPeerGroupTestUtils(n: Network[Int, String]): PeerUtils[Int, String, InMemoryPeerGroup] =
+    PeerUtils.instance(
+      _.status == PeerStatus.Listening,
+      () => new InMemoryPeerGroup[Int, String](Random.nextInt())(n),
+      _.shutdown(),
+      _.initialize()
+    )
 }

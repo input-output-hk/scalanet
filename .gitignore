@@ -6,3 +6,4 @@ target/
 *.log
 *.iml
 scalafmt
+.DS_Store
