@@ -110,11 +110,6 @@ object FramingCodec {
     }
   }
 
-  private def skipUnchecked(n: Int, from: ByteBuffer): Unit = {
-    var m: Int = 0
-    while (m < n) {
-      from.get()
-      m += 1
-    }
-  }
+  private def skipUnchecked(n: Int, from: ByteBuffer): Unit =
+    from.position(from.position() + n)
 }
