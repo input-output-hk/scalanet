@@ -34,7 +34,16 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   behavior of "TLSPeerGroup"
 
-  it should "report an error for a handshake failure" in
+  it should "report an error for a handshake failure -- server receives" in
+    withTwoTLSPeerGroups[String](duffKeyConfig) { (alice, bob) =>
+      val handshakeF = bob.server().collectHandshakeFailure.headL.runAsync
+
+      alice.client(bob.processAddress).runAsync
+
+      handshakeF.futureValue.to shouldBe alice.processAddress
+    }
+
+  it should "report an error for a handshake failure -- client receives" in
     withTwoTLSPeerGroups[String](duffKeyConfig) { (alice, bob) =>
       val error = recoverToExceptionIf[HandshakeException[InetMultiAddress]] {
         alice.client(bob.processAddress).runAsync

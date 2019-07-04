@@ -14,7 +14,7 @@ import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.peergroup
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ServerEvent, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, HandshakeException, ServerEvent, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TLSPeerGroup._
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
@@ -76,7 +76,7 @@ class TLSPeerGroup[M](val config: Config)(
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
-        val newChannel = new ServerChannelImpl[M](ch, sslServerCtx, codec, bi)
+        val newChannel = new ServerChannelImpl[M](serverSubject, ch, sslServerCtx, codec, bi)
         serverSubject.onNext(ChannelCreated(newChannel))
         log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
@@ -246,7 +246,6 @@ object TLSPeerGroup {
                         s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
                     )
                 }
-//                super.userEventTriggered(ctx, evt)
               }
             })
             .addLast(new MessageNotifier[M](messageSubject, codec, bi))
@@ -304,6 +303,7 @@ object TLSPeerGroup {
   }
 
   private[scalanet] class ServerChannelImpl[M](
+      serverSubject: PublishSubject[ServerEvent[InetMultiAddress, M]],
       val nettyChannel: SocketChannel,
       sslServerCtx: SslContext,
       codec: StreamCodec[M],
@@ -320,6 +320,22 @@ object TLSPeerGroup {
     nettyChannel
       .pipeline()
       .addLast("ssl", sslServerCtx.newHandler(nettyChannel.alloc())) //This needs to be first
+      .addLast(new ChannelInboundHandlerAdapter() {
+        override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
+          evt match {
+            case e: SslHandshakeCompletionEvent =>
+              val localAddress = InetMultiAddress(ctx.channel().localAddress().asInstanceOf[InetSocketAddress])
+              val remoteAddress = InetMultiAddress(ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress])
+              log.debug(
+                s"Ssl Handshake server channel from $localAddress " +
+                  s"to $remoteAddress with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
+              )
+              if (!e.isSuccess)
+                serverSubject
+                  .onNext(PeerGroup.ServerEvent.HandshakeFailed(new HandshakeException(remoteAddress, e.cause())))
+          }
+        }
+      })
       .addLast(new MessageNotifier(messageSubject, codec, bi))
 
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())

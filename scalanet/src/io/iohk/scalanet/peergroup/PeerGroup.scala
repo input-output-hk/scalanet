@@ -142,7 +142,7 @@ object PeerGroup {
       def collector[A, M]: PartialFunction[ServerEvent[A, M], Channel[A, M]] = { case ChannelCreated(c) => c }
     }
 
-    case class HandshakeFailed[A](failure: HandshakeException[A]) extends ServerEvent[A, Nothing]
+    case class HandshakeFailed[A, M](failure: HandshakeException[A]) extends ServerEvent[A, M]
 
     object HandshakeFailed {
       def collector[A]: PartialFunction[ServerEvent[A, _], HandshakeException[A]] = {
