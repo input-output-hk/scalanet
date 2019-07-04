@@ -39,12 +39,8 @@ object scalanet extends ScalaModule {
   )
 
   override def repositories = {
-    super.repositories ++ Seq(
-      MavenRepository("https://oss.sonatype.org/content/repositories/snapshots")
-    )
+    mavenRepo
   }
-
-  def scoverageVersion = "1.3.1"
 
   object test extends Tests {
     override def ivyDeps = Agg(
@@ -57,9 +53,7 @@ object scalanet extends ScalaModule {
     )
 
     override def repositories = {
-      super.repositories ++ Seq(
-        MavenRepository("https://oss.sonatype.org/content/repositories/snapshots")
-      )
+      mavenRepo
     }
 
     override def moduleDeps: Seq[JavaModule] =
@@ -72,5 +66,11 @@ object scalanet extends ScalaModule {
     }
 
     override def scalaVersion = "2.12.7"
+  }
+
+  private def mavenRepo = {
+    super.repositories ++ Seq(
+      MavenRepository("https://oss.sonatype.org/content/repositories/snapshots")
+    )
   }
 }
