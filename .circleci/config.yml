@@ -12,6 +12,10 @@ jobs:
           command: curl -L -o coursier https://git.io/vgvpD && chmod +x coursier
 
       - run:
+          name: install haveged
+          command: apt-get install haveged
+
+      - run:
           name: install scalafmt
           command: ./coursier bootstrap org.scalameta:scalafmt-cli_2.12:2.0.0-RC4 -r bintray:scalameta/maven -o scalafmt --main org.scalafmt.cli.Cli
 
