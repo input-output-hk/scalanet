@@ -10,6 +10,9 @@ jobs:
       - run:
           name: install coursier
           command: curl -L -o coursier https://git.io/vgvpD && chmod +x coursier
+      - run:
+          name: install coursier
+          command: apt update && apt install -y haveged
 
       - run:
           name: install scalafmt
