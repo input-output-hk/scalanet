@@ -7,7 +7,7 @@ import $ivy.`com.lihaoyi::mill-contrib-buildinfo:0.4.1`
 //import mill.contrib.scoverage.ScoverageModule
 import coursier.maven.MavenRepository
 
-object scalanet extends ScalaModule  {
+object scalanet extends ScalaModule {
 
   def scalaVersion = "2.12.7"
 
@@ -41,9 +41,9 @@ object scalanet extends ScalaModule  {
 
   override def repositories = {
     super.repositories ++ Seq(
-        MavenRepository("https://oss.sonatype.org/content/repositories/snapshots")
-      )
-    }
+      MavenRepository("https://oss.sonatype.org/content/repositories/snapshots")
+    )
+  }
 
   def scoverageVersion = "1.3.1"
 
