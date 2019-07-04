@@ -2,18 +2,17 @@ package io.iohk.scalanet.peergroup
 
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.scalanet.peergroup.SimplePeerGroup.Config
-
-import scala.collection.mutable
-import scala.collection.JavaConverters._
 import io.iohk.decco._
-import SimplePeerGroup._
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
-import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.{ChannelCreated, serverEventCata}
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
+import io.iohk.scalanet.peergroup.SimplePeerGroup.{Config, _}
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
 import org.slf4j.LoggerFactory
+
+import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 /**
   * Another fairly trivial example of a higher-level peer group. This class
@@ -48,15 +47,11 @@ class SimplePeerGroup[A, AA, M](
   }
 
   override def server(): Observable[ServerEvent[A, M]] = {
-    underLyingPeerGroup.server().map { underlyingEvent: ServerEvent[AA, Either[ControlMessage[A, AA], M]] =>
-      val fChannelCreated = (underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]]) => {
+    underLyingPeerGroup.server().collectChannelCreated.map {
+      underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]] =>
         val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
         val a = reverseLookup(underlyingChannel.to)
-        debug(s"Received new server channel from $a")
         ChannelCreated(new ChannelImpl(a, List(underlyingChannel)))
-      }
-
-      serverEventCata(fChannelCreated)(underlyingEvent)
     }
   }
 
@@ -66,7 +61,8 @@ class SimplePeerGroup[A, AA, M](
     routingTable += processAddress -> underLyingPeerGroup.processAddress
 
     underLyingPeerGroup
-      .server(ChannelCreated.collector[AA, Either[ControlMessage[A, AA], M]])
+      .server()
+      .collect(ChannelCreated.collector)
       .mergeMap(channel => channel.in)
       .collect {
         case Left(e: EnrolMe[A, AA]) => e
@@ -78,7 +74,8 @@ class SimplePeerGroup[A, AA, M](
       routingTable += knownPeerAddress -> knownPeerAddressUnderlying
 
       val enrolledTask: Task[Unit] = underLyingPeerGroup
-        .server(ChannelCreated.collector[AA, Either[ControlMessage[A, AA], M]])
+        .server()
+        .collectChannelCreated
         .mergeMap(channel => channel.in)
         .collect {
           case Left(e: Enrolled[A, AA]) =>

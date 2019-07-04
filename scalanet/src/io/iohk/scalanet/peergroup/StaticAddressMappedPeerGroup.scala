@@ -1,7 +1,7 @@
 package io.iohk.scalanet.peergroup
 
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
-import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
 import io.iohk.scalanet.peergroup.StaticAddressMappedPeerGroup.Config
 import monix.eval.Task
 import monix.reactive.Observable
@@ -32,13 +32,10 @@ class StaticAddressMappedPeerGroup[A, AA, M](
   override def server(): Observable[ServerEvent[A, M]] = {
     underLyingPeerGroup
       .server()
-      .map { underlyingEvent =>
-        val fChannelCreated = (underlyingChannel: Channel[AA, M]) => {
-          val a = reverseLookup(underlyingChannel.to)
-          ChannelCreated(new ChannelImpl(a, underlyingChannel))
-        }
-
-        ServerEvent.serverEventCata(fChannelCreated)(underlyingEvent)
+      .collectChannelCreated
+      .map { underlyingChannel =>
+        val a = reverseLookup(underlyingChannel.to)
+        ChannelCreated(new ChannelImpl(a, underlyingChannel))
       }
   }
 

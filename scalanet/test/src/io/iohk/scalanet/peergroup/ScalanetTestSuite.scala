@@ -4,7 +4,7 @@ import scala.concurrent.Future
 import scala.util.Random
 import org.scalatest.concurrent.ScalaFutures._
 import io.iohk.scalanet.TaskValues._
-import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
 import monix.execution.Scheduler
 import org.scalatest.Matchers._
 import org.scalatest.RecoverMethods.recoverToSucceededIf
@@ -16,8 +16,8 @@ object ScalanetTestSuite {
     val bobsMessage = Random.alphanumeric.take(1024).mkString
 
     val bobReceived: Future[String] =
-      bob.server(ChannelCreated.collector).mergeMap(channel => channel.in).headL.runAsync
-    bob.server(ChannelCreated.collector).foreach(channel => channel.sendMessage(bobsMessage).runAsync)
+      bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runAsync
+    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
 
     val aliceClient = alice.client(bob.processAddress).evaluated
     val aliceReceived = aliceClient.in.headL.runAsync
@@ -33,7 +33,7 @@ object ScalanetTestSuite {
     val alicesMessage = Random.alphanumeric.take(1024).mkString
     val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-    bob.server(ChannelCreated.collector).foreach(channel => channel.sendMessage(bobsMessage).runAsync)
+    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
 
     val aliceClient1 = alice.client(bob.processAddress).evaluated
     val aliceClient2 = alice.client(bob.processAddress).evaluated

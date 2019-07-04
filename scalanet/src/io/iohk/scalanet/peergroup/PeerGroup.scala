@@ -112,8 +112,6 @@ trait PeerGroup[A, M] {
     */
   def server(): Observable[ServerEvent[A, M]]
 
-  def server[R](f: ServerEvent[A, M] => R): Observable[R] = server().map(f)
-
   /**
     * This methods clean resources of the current instance of a PeerGroup.
     *
@@ -144,11 +142,44 @@ object PeerGroup {
       def collector[A, M]: PartialFunction[ServerEvent[A, M], Channel[A, M]] = { case ChannelCreated(c) => c }
     }
 
-    def serverEventCata[A, M, R](fChannelCreated: Channel[A, M] => R)(serverEvent: ServerEvent[A, M]): R =
-      serverEvent match {
-        case ChannelCreated(c) =>
-          fChannelCreated(c)
+    case class HandshakeFailed[A](failure: HandshakeException[A]) extends ServerEvent[A, Nothing]
+
+    object HandshakeFailed {
+      def collector[A]: PartialFunction[ServerEvent[A, _], HandshakeException[A]] = {
+        case HandshakeFailed(failure) => failure
       }
+    }
+
+    implicit class ServerOps[A, M](observable: Observable[ServerEvent[A, M]]) {
+      def collectChannelCreated: Observable[Channel[A, M]] = observable.collect(ChannelCreated.collector)
+      def collectHandshakeFailure: Observable[HandshakeException[A]] = observable.collect(HandshakeFailed.collector)
+    }
+//    def skip[R, T](r: R, t: T): R = r
+//    def skip[R, T]: (R, T) => R = (r, _) => r
+//
+//    def serverEventCata[A, M, R](
+//        fChannelCreated: (R, Channel[A, M]) => R,
+//        fHandshakeFailed: (R, HandshakeException[A]) => R(
+//        acc: R,
+//        next: ServerEvent[A, M]): R =
+//      next match {
+//        case ChannelCreated(c) =>
+//          fChannelCreated(acc, c)
+//        case HandshakeFailed(failure) =>
+//          fHandshakeFailed(acc, failure)
+//      }
+//
+//    def serverEventCata[A, M](
+//        fChannelCreated: Channel[A, M] => ,
+//        fHandshakeFailed: (R, HandshakeException[A]) => R(
+//        acc: R,
+//        next: ServerEvent[A, M]): R =
+//      next match {
+//        case ChannelCreated(c) =>
+//          fChannelCreated(acc, c)
+//        case HandshakeFailed(failure) =>
+//          fHandshakeFailed(acc, failure)
+//      }
   }
 
   /**
