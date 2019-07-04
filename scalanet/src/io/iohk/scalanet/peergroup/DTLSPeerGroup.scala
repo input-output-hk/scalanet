@@ -8,6 +8,9 @@ import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
+import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{ChannelId, _}
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
+import io.iohk.scalanet.peergroup.PeerGroup.{MessageMTUException, ServerEvent}
 import monix.eval.Task
 import monix.execution.{Cancelable, Scheduler}
 import monix.reactive.Observable
@@ -16,11 +19,7 @@ import org.eclipse.californium.elements._
 import org.eclipse.californium.scandium.DTLSConnector
 import org.eclipse.californium.scandium.config.DtlsConnectorConfig
 import org.eclipse.californium.scandium.dtls.cipher.CipherSuite._
-import InetPeerGroupUtils.ChannelId
-import InetPeerGroupUtils._
-import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import io.iohk.scalanet.peergroup.PeerGroup.{MessageMTUException, ServerEvent}
-import org.eclipse.californium.scandium.dtls.HandshakeException
+import org.eclipse.californium.scandium.dtls.{HandshakeException, Handshaker, SessionAdapter}
 
 import scala.collection.JavaConverters._
 
@@ -137,7 +136,19 @@ class DTLSPeerGroup[M](val config: Config)(
   private def createServerConnector(): DTLSConnector = {
     val connectorConfig = config.scandiumConfigBuilder.build()
 
-    val connector = new DTLSConnector(connectorConfig)
+    val connector = new DTLSConnector(connectorConfig) {
+      override def onInitializeHandshaker(handshaker: Handshaker): Unit = {
+        super.onInitializeHandshaker(handshaker)
+        handshaker.addSessionListener(new SessionAdapter() {
+          override def handshakeFailed(handshaker: Handshaker, error: Throwable): Unit = {
+            channelSubject.onNext(
+              ServerEvent
+                .HandshakeFailed(new PeerGroup.HandshakeException(InetMultiAddress(handshaker.getPeerAddress), error))
+            )
+          }
+        })
+      }
+    }
 
     connector.setRawDataReceiver(new RawDataChannel {
       override def receiveData(rawData: RawData): Unit = {
