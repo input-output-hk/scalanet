@@ -4,7 +4,6 @@ import scalalib._
 import ammonite.ops._
 import mill.scalalib.publish.{Developer, License, PomSettings, VersionControl}
 import $ivy.`com.lihaoyi::mill-contrib-buildinfo:0.4.1`
-//import mill.contrib.scoverage.ScoverageModule
 import coursier.maven.MavenRepository
 
 object scalanet extends ScalaModule {
