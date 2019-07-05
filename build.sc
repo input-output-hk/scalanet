@@ -17,13 +17,13 @@ object scalanet extends ScalaModule with PublishModule {
 
   def publishVersion = "0.1-SNAPSHOT"
 
-  def repositories =
+  override def repositories =
     super.repositories ++ Seq(
       MavenRepository("https://oss.sonatype.org/content/repositories/releases"),
       MavenRepository("https://oss.sonatype.org/content/repositories/snapshots")
     )
 
-  def scalacOptions = Seq(
+  override def scalacOptions = Seq(
     "-unchecked",
     "-language:postfixOps",
     "-deprecation",
@@ -40,7 +40,7 @@ object scalanet extends ScalaModule with PublishModule {
     "utf-8"
   )
 
-  def ivyDeps = Agg(
+  override def ivyDeps = Agg(
     ivy"io.monix::monix:3.0.0-RC1",
     ivy"com.chuusai::shapeless:2.3.3",
     ivy"org.slf4j:slf4j-api:1.7.25",
@@ -66,7 +66,7 @@ object scalanet extends ScalaModule with PublishModule {
   // Scoverage disabled
   // object test extends ScoverageTests {
   object test extends Tests {
-    def ivyDeps = Agg(
+    override def ivyDeps = Agg(
       ivy"org.scalatest::scalatest:3.0.5",
       ivy"org.scalacheck::scalacheck:1.14.0",
       ivy"ch.qos.logback:logback-core:1.2.3",
