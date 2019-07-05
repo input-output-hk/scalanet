@@ -4,12 +4,13 @@ import scala.concurrent.Future
 import scala.util.Random
 import org.scalatest.concurrent.ScalaFutures._
 import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.peergroup.PeerGroup.ChannelSetupException
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
 import monix.execution.Scheduler
 import org.scalatest.Matchers._
-import org.scalatest.RecoverMethods.recoverToSucceededIf
+import org.scalatest.RecoverMethods.{recoverToExceptionIf, recoverToSucceededIf}
 
-object ScalanetTestSuite {
+object StandardTestPack {
 
   def messagingTest[A](alice: PeerGroup[A, String], bob: PeerGroup[A, String])(implicit scheduler: Scheduler): Unit = {
     val alicesMessage = Random.alphanumeric.take(1024).mkString
@@ -45,5 +46,16 @@ object ScalanetTestSuite {
 
     aliceReceived1.futureValue shouldBe bobsMessage
     recoverToSucceededIf[IllegalStateException](aliceReceived2)
+  }
+
+  def shouldErrorForMessagingAnInvalidAddress[A](alice: PeerGroup[A, String], invalidAddress: A)(
+      implicit scheduler: Scheduler
+  ): Unit = {
+
+    val aliceError = recoverToExceptionIf[ChannelSetupException[InetMultiAddress]] {
+      alice.client(invalidAddress).runAsync
+    }
+
+    aliceError.futureValue.to shouldBe invalidAddress
   }
 }

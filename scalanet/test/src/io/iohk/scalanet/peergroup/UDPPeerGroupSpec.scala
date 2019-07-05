@@ -12,7 +12,7 @@ import io.iohk.scalanet.NetUtils
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.concurrent.ScalaFutures._
 import io.iohk.scalanet.peergroup.PeerGroup.MessageMTUException
-import io.iohk.scalanet.peergroup.ScalanetTestSuite.messagingTest
+import io.iohk.scalanet.peergroup.StandardTestPack.messagingTest
 import org.scalatest.RecoverMethods._
 
 class UDPPeerGroupSpec extends FlatSpec {

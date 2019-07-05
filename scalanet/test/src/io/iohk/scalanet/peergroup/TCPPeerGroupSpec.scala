@@ -1,21 +1,21 @@
 package io.iohk.scalanet.peergroup
 
-import io.iohk.decco.auto._
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import io.iohk.decco.Codec
+import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.TaskValues._
 import io.iohk.scalanet.codec.FramingCodec
+import io.iohk.scalanet.peergroup.PeerGroup.ChannelBrokenException
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException}
-import io.iohk.scalanet.peergroup.ScalanetTestSuite.messagingTest
+import io.iohk.scalanet.peergroup.StandardTestPack.messagingTest
 import monix.execution.CancelableFuture
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.Matchers._
+import org.scalatest.RecoverMethods._
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
-import org.scalatest.RecoverMethods._
 import org.scalatest.{BeforeAndAfterAll, FlatSpec}
 
 import scala.concurrent.duration._
@@ -31,13 +31,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   it should "report an error for messaging to an invalid address" in
     withARandomTCPPeerGroup[String] { alice =>
-      val invalidAddress = InetMultiAddress(NetUtils.aRandomAddress())
-
-      val aliceError = recoverToExceptionIf[ChannelSetupException[InetMultiAddress]] {
-        alice.client(invalidAddress).runAsync
-      }
-
-      aliceError.futureValue.to shouldBe invalidAddress
+      StandardTestPack.shouldErrorForMessagingAnInvalidAddress(alice, InetMultiAddress(NetUtils.aRandomAddress()))
     }
 
   it should "report an error for messaging on a closed channel -- server closes" in
@@ -85,6 +79,6 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   it should "report the same address for two inbound channels" in
     withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
-      ScalanetTestSuite.serverMultiplexingTest(alice, bob)
+      StandardTestPack.serverMultiplexingTest(alice, bob)
     }
 }

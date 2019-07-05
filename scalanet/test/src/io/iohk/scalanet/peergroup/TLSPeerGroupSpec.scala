@@ -12,7 +12,8 @@ import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.TaskValues._
 import io.iohk.scalanet.codec.{FramingCodec, StreamCodec}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, HandshakeException}
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, HandshakeException}
+import io.iohk.scalanet.peergroup.StandardTestPack.messagingTest
 import io.iohk.scalanet.peergroup.TLSPeerGroup._
 import io.iohk.scalanet.peergroup.TLSPeerGroupSpec._
 import monix.execution.CancelableFuture
@@ -52,16 +53,9 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
       error.to shouldBe bob.processAddress
     }
 
-  // TODO this is a copy/paste version of the test in TCPPeerGroupSpec
   it should "report an error for messaging to an invalid address" in
     withATLSPeerGroup[String](selfSignedCertConfig) { alice =>
-      val invalidAddress = InetMultiAddress(NetUtils.aRandomAddress())
-
-      val aliceError = recoverToExceptionIf[ChannelSetupException[InetMultiAddress]] {
-        alice.client(invalidAddress).runAsync
-      }
-
-      aliceError.futureValue.to shouldBe invalidAddress
+      StandardTestPack.shouldErrorForMessagingAnInvalidAddress(alice, InetMultiAddress(NetUtils.aRandomAddress()))
     }
 
   // TODO this is a copy/paste version of the test in TCPPeerGroupSpec
@@ -96,10 +90,9 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
       bobError.futureValue.to shouldBe alice.processAddress
     }
 
-  // TODO this is a copy/paste version of the test in TCPPeerGroupSpec
   it should "send and receive a message" in withTwoTLSPeerGroups[String](selfSignedCertConfig, signedCertConfig) {
     (alice, bob) =>
-      ScalanetTestSuite.messagingTest(alice, bob)
+      messagingTest(alice, bob)
   }
 
   // TODO this is a copy/paste version of the test in TCPPeerGroupSpec

@@ -14,7 +14,7 @@ import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config._
 import io.iohk.scalanet.peergroup.DTLSPeerGroupSpec._
 import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, MessageMTUException}
-import io.iohk.scalanet.peergroup.ScalanetTestSuite.{messagingTest, serverMultiplexingTest}
+import io.iohk.scalanet.peergroup.StandardTestPack.{messagingTest, serverMultiplexingTest}
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
@@ -39,7 +39,7 @@ class DTLSPeerGroupSpec extends FlatSpec {
       handshakeF.futureValue.to shouldBe alice.processAddress
     }
 
-  ignore should "report an error for a handshake failure -- client receives" in
+  it should "report an error for a handshake failure -- client receives" in
     withTwoDTLSPeerGroups[Array[Byte]](duffKeyConfig) { (alice, bob) =>
       val alicesMessage = NetUtils.randomBytes(1500)
 
@@ -52,7 +52,7 @@ class DTLSPeerGroupSpec extends FlatSpec {
       error.to shouldBe bob.processAddress
     }
 
-  ignore should "report an error for sending a message greater than the MTU" in
+  it should "report an error for sending a message greater than the MTU" in
     withADTLSPeerGroup[Array[Byte]](rawKeyConfig) { alice =>
       val address = InetMultiAddress(NetUtils.aRandomAddress())
       val invalidMessage = NetUtils.randomBytes(16584)
@@ -65,17 +65,17 @@ class DTLSPeerGroupSpec extends FlatSpec {
       error.size shouldBe messageSize
     }
 
-  ignore should "send and receive a message" in
+  it should "send and receive a message" in
     withTwoDTLSPeerGroups[String](rawKeyConfig, signedCertConfig) { (alice, bob) =>
       messagingTest(alice, bob)
     }
 
-  ignore should "do multiplexing properly" in
+  it should "do multiplexing properly" in
     withTwoDTLSPeerGroups[String](rawKeyConfig) { (alice, bob) =>
       serverMultiplexingTest(alice, bob)
     }
 
-  ignore should "shutdown cleanly" in {
+  it should "shutdown cleanly" in {
     val pg1 = dtlsPeerGroup[String](rawKeyConfig("alice"))
     isListeningUDP(pg1.config.bindAddress) shouldBe true
 
