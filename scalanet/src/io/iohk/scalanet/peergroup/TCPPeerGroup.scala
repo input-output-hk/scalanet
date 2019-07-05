@@ -12,14 +12,12 @@ import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
-import io.netty.handler.codec.bytes.ByteArrayEncoder
 import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import io.iohk.decco._
-import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
+import io.iohk.scalanet.codec.StreamCodec
 
 import scala.concurrent.Promise
 
@@ -31,10 +29,11 @@ import scala.concurrent.Promise
   * that are not instances of TCPPeerGroup.
   *
   * @param config bind address etc. See the companion object.
-  * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
+  * @param codec a codec for reading writing messages to NIO ByteBuffer. This must be an instance of {{{StreamCodec}}}
+  *              to provide stream delimiting.
   * @tparam M the message type.
   */
-class TCPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer])
+class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: BufferInstantiator[ByteBuffer])
     extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
@@ -54,7 +53,7 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
-        val newChannel = new ServerChannelImpl[M](ch)
+        val newChannel = new ServerChannelImpl[M](ch, codec.cleanSlate, bi)
         channelSubject.onNext(newChannel)
         log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
@@ -63,7 +62,7 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
     .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
     .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
 
-  private val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
+  private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
 
   override def initialize(): Task[Unit] =
     toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}"))
@@ -71,7 +70,7 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
   override def processAddress: InetMultiAddress = config.processAddress
 
   override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
-    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap).initialize
+    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, codec.cleanSlate, bi).initialize
   }
 
   override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
@@ -93,11 +92,13 @@ object TCPPeerGroup {
   )
 
   object Config {
-    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, new InetMultiAddress(bindAddress))
+    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, InetMultiAddress(bindAddress))
   }
 
-  private[scalanet] class ServerChannelImpl[M](val nettyChannel: SocketChannel)(
-      implicit codec: Codec[M]
+  private[scalanet] class ServerChannelImpl[M](
+      val nettyChannel: SocketChannel,
+      codec: StreamCodec[M],
+      bi: BufferInstantiator[ByteBuffer]
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
@@ -109,17 +110,12 @@ object TCPPeerGroup {
 
     nettyChannel
       .pipeline()
-      .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
-      .addLast("frameEncoder", new LengthFieldPrepender(4))
-      .addLast(new MessageNotifier(messageSubject))
+      .addLast(new MessageNotifier(messageSubject, codec, bi))
 
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
-      toTask({
-        nettyChannel
-          .writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
-      })
+      toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
     }
 
     override def in: Observable[M] = messageSubject
@@ -130,8 +126,11 @@ object TCPPeerGroup {
     }
   }
 
-  private class ClientChannelImpl[M](inetSocketAddress: InetSocketAddress, clientBootstrap: Bootstrap)(
-      implicit codec: Codec[M]
+  private class ClientChannelImpl[M](
+      inetSocketAddress: InetSocketAddress,
+      clientBootstrap: Bootstrap,
+      codec: StreamCodec[M],
+      bi: BufferInstantiator[ByteBuffer]
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
@@ -150,9 +149,6 @@ object TCPPeerGroup {
       .handler(new ChannelInitializer[SocketChannel]() {
         def initChannel(ch: SocketChannel): Unit = {
           ch.pipeline()
-            .addLast("frameEncoder", new LengthFieldPrepender(4))
-            .addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Int.MaxValue, 0, 4, 0, 4))
-            .addLast(new ByteArrayEncoder())
             .addLast(new ChannelInboundHandlerAdapter() {
               override def channelActive(ctx: ChannelHandlerContext): Unit = {
                 log.debug(
@@ -166,7 +162,7 @@ object TCPPeerGroup {
                 deactivation.success(())
               }
             })
-            .addLast(new MessageNotifier[M](messageSubject))
+            .addLast(new MessageNotifier[M](messageSubject, codec, bi))
         }
       })
 
@@ -176,12 +172,12 @@ object TCPPeerGroup {
 
       Task
         .fromFuture(activationF)
-        .map(ctx => {
+        .flatMap(ctx => {
           log.debug(
             s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
               s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
           )
-          ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)))
+          toTask(ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
         })
         .map(_ => ())
     }
@@ -197,8 +193,11 @@ object TCPPeerGroup {
     }
   }
 
-  private class MessageNotifier[M](val messageSubject: Subject[M, M])(implicit codec: Codec[M])
-      extends ChannelInboundHandlerAdapter {
+  private class MessageNotifier[M](
+      val messageSubject: Subject[M, M],
+      codec: StreamCodec[M],
+      bi: BufferInstantiator[ByteBuffer]
+  ) extends ChannelInboundHandlerAdapter {
 
     private val log = LoggerFactory.getLogger(getClass)
 
@@ -206,15 +205,15 @@ object TCPPeerGroup {
       messageSubject.onComplete()
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-
-      val messageE: Either[Codec.Failure, M] = codec.decode(msg.asInstanceOf[ByteBuf].nioBuffer().asReadOnlyBuffer())
-      log.debug(
-        s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
-          s"to local address ${ctx.channel().localAddress()}, ${messageE.getOrElse("decode failed")}"
-      )
-
-      messageE.foreach { message =>
-        messageSubject.onNext(message)
+      val byteBuf = msg.asInstanceOf[ByteBuf]
+      try {
+        log.debug(
+          s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
+            s"to local address ${ctx.channel().localAddress()}"
+        )
+        codec.streamDecode(byteBuf.nioBuffer())(bi).foreach(message => messageSubject.onNext(message))
+      } finally {
+        byteBuf.release()
       }
     }
   }

@@ -10,7 +10,7 @@ object InetPeerGroupUtils {
 
   type ChannelId = (InetSocketAddress, InetSocketAddress)
 
-  def toTask(f: util.concurrent.Future[_]): Task[Unit] = {
+  def toTask(f: => util.concurrent.Future[_]): Task[Unit] = {
     Task.create[Unit] { (_, cb) =>
       f.addListener(
         (future: util.concurrent.Future[_]) => if (future.isSuccess) cb.onSuccess(()) else cb.onError(future.cause())

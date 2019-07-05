@@ -2,9 +2,10 @@ package io.iohk.scalanet.peergroup
 
 import io.iohk.decco.auto._
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-
+import io.iohk.decco.Codec
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.codec.FramingCodec
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures
@@ -14,9 +15,12 @@ import org.scalatest.{BeforeAndAfterAll, FlatSpec}
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Random
+
 class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5 seconds)
+
+  implicit val codec = new FramingCodec(Codec[String])
 
   behavior of "TCPPeerGroup"
 
