@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+set -euv
+
+if [[ "$CIRCLE_BRANCH" == "develop" ]]; then
+
+echo $GPG_KEY | base64 --decode | gpg --batch --import
+
+gpg --passphrase $GPG_PASSPHRASE --batch --yes -a -b LICENSE
+
+mill mill.scalalib.PublishModule/publishAll \
+    "$OSS_USERNAME":"$OSS_PASSWORD" \
+    "$GPG_PASSPHRASE" \
+    __.publishArtifacts
+
+else
+
+  echo "Skipping publish step"
+
+fi

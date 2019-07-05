@@ -1,19 +1,15 @@
-version: 2
+version: 2.1
 jobs:
   build:
     docker:
       - image: openjdk:8
     working_directory: ~/repo
+    parameters:
+      publish:
+        type: boolean
+        default: false
     steps:
       - checkout
-
-      - run: 
-          name: initialize decco submodule
-          command: git clone https://github.com/input-output-hk/decco.git decco
-
-      - run:
-          name: Initialize submodules
-          command: git submodule init && git submodule update --remote
 
       - run:
           name: install coursier
@@ -29,11 +25,47 @@ jobs:
 
       - run:
           name: test
-          command: mill scalanet.test && mill scalanet.scoverage.htmlReport
+          #command: mill scalanet.test && mill scalanet.scoverage.htmlReport
+          command: mill scalanet.test
 
       - run:
           name: check that the code is formatted properly
           command: ./scalafmt --test
 
-      - store_artifacts:
-          path: out/scalanet/scoverage/htmlReport/
+      - when:
+          condition: << parameters.publish >>
+          steps:
+            - run:
+                name: install gpg2
+                # GPG in docker needs to be run with some additional flags
+                # and we are not able to change how mill uses it
+                # this is why we're creating wrapper that adds the flags
+                command: sh -c "apt update && apt install -y gnupg2 && mv /usr/bin/gpg /usr/bin/gpg-vanilla && echo '#!/bin/sh\n\n/usr/bin/gpg-vanilla --no-tty --pinentry loopback \$@' > /usr/bin/gpg && chmod 755 /usr/bin/gpg && cat /usr/bin/gpg"
+
+            - run:
+                name: install base64
+                command: apt update && apt install -y cl-base64
+
+            - run:
+                name: publish into Sonatype
+                command: .circleci/publish
+
+      # scoverage disabled
+      #- store_artifacts:
+          #path: out/scalanet/scoverage/htmlReport/
+
+workflows:
+  build_and_publish:
+    jobs:
+      - build:
+          publish: true
+          filters:
+            branches:
+              only:
+                - develop
+      - build:
+          publish: false
+          filters:
+            branches:
+              ignore:
+                - develop
