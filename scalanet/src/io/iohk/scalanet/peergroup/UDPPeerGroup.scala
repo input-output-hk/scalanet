@@ -6,8 +6,9 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.decco.{BufferInstantiator, Codec}
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelSetupException, MessageMTUException, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelSetupException, MessageMTUException, ServerEvent, TerminalPeerGroup}
 import InetPeerGroupUtils.{ChannelId, getChannelId, toTask}
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.UDPPeerGroup._
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
@@ -35,7 +36,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
+  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -109,7 +110,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
                   val channel = new ChannelImpl(nettyChannel, localAddress, remoteAddress, ReplaySubject[M]())
                   log.debug(s"Channel with id $channelId NOT found in active channels table. Creating a new one")
                   activeChannels.put(channelId, channel)
-                  channelSubject.onNext(channel)
+                  serverSubject.onNext(ChannelCreated(channel))
                   messageE.foreach(message => channel.messageSubject.onNext(message))
                 }
               } finally {
@@ -186,10 +187,10 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
       }
   }
 
-  override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
+  override def server(): Observable[ServerEvent[InetMultiAddress, M]] = serverSubject
 
   override def shutdown(): Task[Unit] = {
-    channelSubject.onComplete()
+    serverSubject.onComplete()
     for {
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())

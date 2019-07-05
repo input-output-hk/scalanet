@@ -2,6 +2,7 @@ package io.iohk.scalanet.peergroup
 
 import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
@@ -33,6 +34,7 @@ trait Channel[A, M] {
 
   /**
     * Send a typed message down the channel.
+    *
     * @param message the message to send
     * @return Where the underlying technology supports ACKs, implementations
     *         should wait for the ack and return a successful or unsuccessful Task accordingly.
@@ -48,6 +50,7 @@ trait Channel[A, M] {
 
   /**
     * Terminate the Channel and clean up any resources.
+    *
     * @return Implementations should wait for termination of the underlying network resources
     *         and return a successful Task.
     */
@@ -79,12 +82,14 @@ trait PeerGroup[A, M] {
     * represent.
     * The `processAddress` method returns the address of the self peer within the group. This is the address
     * that can be used to interact one-on-one with this peer.
+    *
     * @return the current peer address.
     */
   def processAddress: A
 
   /**
     * This method initializes the PeerGroup.
+    *
     * @return a task that will be completed at the end of the initialization.
     */
   def initialize(): Task[Unit]
@@ -92,6 +97,7 @@ trait PeerGroup[A, M] {
   /**
     * This method builds a communication channel for the current peer to communicate messages with the
     * desired address,
+    *
     * @param to the address of the entity that would receive our messages. Note that this address can
     *           be the address to refer to a single peer as well as a multicast address (to refer to a
     *           set of peers).
@@ -100,18 +106,15 @@ trait PeerGroup[A, M] {
   def client(to: A): Task[Channel[A, M]]
 
   /**
-    * This method provides a stream of the channels that have been created to communicate to the
-    * peer identified with the address returned by `processAddress`. Note that if a peer A opens
-    * a multicast channel, every peer referenced by the multicast address will receive a channel
-    * in the stream returned by this method. This returned channel, could refer either to reply
-    * only to A or to the whole group that is referenced by the multicast address. Different
-    * implementations could handle this logic differently.
-    * @return the stream of opened channels that are referencing this peer.
+    * This method provides a stream of the events received by the server.
+    *
+    * @return the stream of server events received by this peer.
     */
-  def server(): Observable[Channel[A, M]]
+  def server(): Observable[ServerEvent[A, M]]
 
   /**
     * This methods clean resources of the current instance of a PeerGroup.
+    *
     * @return a task that will be completed at the end of the shutdown procedure.
     */
   def shutdown(): Task[Unit]
@@ -121,8 +124,67 @@ object PeerGroup {
 
   abstract class TerminalPeerGroup[A, M](implicit codec: Codec[M]) extends PeerGroup[A, M]
 
+  sealed trait ServerEvent[A, M]
+
+  object ServerEvent {
+
+    /**
+      * Channels that have been created to communicate to the
+      * peer identified with the address returned by `processAddress`. Note that if a peer A opens
+      * a multicast channel, every peer referenced by the multicast address will receive a channel
+      * in the stream returned by this method. This returned channel, could refer either to reply
+      * only to A or to the whole group that is referenced by the multicast address. Different
+      * implementations could handle this logic differently.
+      */
+    case class ChannelCreated[A, M](channel: Channel[A, M]) extends ServerEvent[A, M]
+
+    object ChannelCreated {
+      def collector[A, M]: PartialFunction[ServerEvent[A, M], Channel[A, M]] = { case ChannelCreated(c) => c }
+    }
+
+    case class HandshakeFailed[A, M](failure: HandshakeException[A]) extends ServerEvent[A, M]
+
+    object HandshakeFailed {
+      def collector[A]: PartialFunction[ServerEvent[A, _], HandshakeException[A]] = {
+        case HandshakeFailed(failure) => failure
+      }
+    }
+
+    implicit class ServerOps[A, M](observable: Observable[ServerEvent[A, M]]) {
+      def collectChannelCreated: Observable[Channel[A, M]] = observable.collect(ChannelCreated.collector)
+      def collectHandshakeFailure: Observable[HandshakeException[A]] = observable.collect(HandshakeFailed.collector)
+    }
+//    def skip[R, T](r: R, t: T): R = r
+//    def skip[R, T]: (R, T) => R = (r, _) => r
+//
+//    def serverEventCata[A, M, R](
+//        fChannelCreated: (R, Channel[A, M]) => R,
+//        fHandshakeFailed: (R, HandshakeException[A]) => R(
+//        acc: R,
+//        next: ServerEvent[A, M]): R =
+//      next match {
+//        case ChannelCreated(c) =>
+//          fChannelCreated(acc, c)
+//        case HandshakeFailed(failure) =>
+//          fHandshakeFailed(acc, failure)
+//      }
+//
+//    def serverEventCata[A, M](
+//        fChannelCreated: Channel[A, M] => ,
+//        fHandshakeFailed: (R, HandshakeException[A]) => R(
+//        acc: R,
+//        next: ServerEvent[A, M]): R =
+//      next match {
+//        case ChannelCreated(c) =>
+//          fChannelCreated(acc, c)
+//        case HandshakeFailed(failure) =>
+//          fHandshakeFailed(acc, failure)
+//      }
+  }
+
   /**
     * This function provides a consistent approach to creating and initializing peer group instances.
+    *
     * @param pg lazy peer group instance.
     * @param config the peer group config. Only used for error reporting.
     * @param scheduler a monix scheduler to the run the peer group's initialization.
@@ -143,6 +205,7 @@ object PeerGroup {
 
   /**
     * This function provides a consistent approach to creating and initializing peer group instances.
+    *
     * @param pg lazy peer group instance.
     * @param config the peer group config. Only used for error reporting.
     * @param scheduler a monix scheduler to the run the peer group's initialization.
