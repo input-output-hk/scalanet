@@ -12,9 +12,10 @@ import scala.collection.concurrent.TrieMap
 
 class InMemoryPeerGroup[A, M](address: A)(implicit network: Network[A, M]) extends PeerGroup[A, M] {
 
-  var status: PeerStatus = PeerStatus.NotInitialized
-  val channelStream = ConcurrentSubject[ServerEvent[A, M]](MulticastStrategy.publish)
-  val channelsMap: TrieMap[ChannelID, InMemoryChannel[A, M]] = TrieMap()
+  private[peergroup] var status: PeerStatus = PeerStatus.NotInitialized
+  private[peergroup] val channelStream = ConcurrentSubject[ServerEvent[A, M]](MulticastStrategy.publish)
+  private[peergroup] val channelsMap: TrieMap[ChannelID, InMemoryChannel[A, M]] = TrieMap()
+
   def receiveMessage(channelID: ChannelID, from: A, msg: M): Unit = {
     channelsMap.get(channelID) match {
       case None =>

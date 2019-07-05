@@ -154,32 +154,6 @@ object PeerGroup {
       def collectChannelCreated: Observable[Channel[A, M]] = observable.collect(ChannelCreated.collector)
       def collectHandshakeFailure: Observable[HandshakeException[A]] = observable.collect(HandshakeFailed.collector)
     }
-//    def skip[R, T](r: R, t: T): R = r
-//    def skip[R, T]: (R, T) => R = (r, _) => r
-//
-//    def serverEventCata[A, M, R](
-//        fChannelCreated: (R, Channel[A, M]) => R,
-//        fHandshakeFailed: (R, HandshakeException[A]) => R(
-//        acc: R,
-//        next: ServerEvent[A, M]): R =
-//      next match {
-//        case ChannelCreated(c) =>
-//          fChannelCreated(acc, c)
-//        case HandshakeFailed(failure) =>
-//          fHandshakeFailed(acc, failure)
-//      }
-//
-//    def serverEventCata[A, M](
-//        fChannelCreated: Channel[A, M] => ,
-//        fHandshakeFailed: (R, HandshakeException[A]) => R(
-//        acc: R,
-//        next: ServerEvent[A, M]): R =
-//      next match {
-//        case ChannelCreated(c) =>
-//          fChannelCreated(acc, c)
-//        case HandshakeFailed(failure) =>
-//          fHandshakeFailed(acc, failure)
-//      }
   }
 
   /**

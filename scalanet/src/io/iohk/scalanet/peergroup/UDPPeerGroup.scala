@@ -6,17 +6,17 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.decco.{BufferInstantiator, Codec}
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelSetupException, MessageMTUException, ServerEvent, TerminalPeerGroup}
-import InetPeerGroupUtils.{ChannelId, getChannelId, toTask}
+import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{ChannelId, getChannelId, toTask}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelSetupException, MessageMTUException, ServerEvent, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.UDPPeerGroup._
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
+import io.netty.channel
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
-import io.netty.channel
 import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
