@@ -47,6 +47,7 @@ object scalanet extends ScalaModule with PublishModule {
     ivy"io.netty:netty-all:4.1.31.Final",
     ivy"org.eclipse.californium:scandium:2.0.0-M15",
     ivy"org.eclipse.californium:element-connector:2.0.0-M15",
+    ivy"org.scodec::scodec-bits:1.1.6",
     ivy"io.iohk::decco:1.0-SNAPSHOT",
     ivy"io.iohk::decco-auto:1.0-SNAPSHOT"
   )
