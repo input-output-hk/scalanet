@@ -12,14 +12,22 @@ class KBucketsSpec extends FlatSpec {
 
   behavior of "KBuckets"
 
-  val kb = new KBuckets(aRandomBitVector(16))
+  val kb = new KBuckets(aRandomBitVector())
 
-  they should "retrieve any node added via put" in forAll(genBitVector(16)) { v =>
+  they should "retrieve the base node id" in {
+    val id = aRandomBitVector()
+    val kBuckets = new KBuckets(id)
+
+    kBuckets.contains(id) shouldBe true
+    kBuckets.closestNodes(id, Int.MaxValue) shouldBe List(id)
+  }
+
+  they should "retrieve any node added via put" in forAll(genBitVector()) { v =>
     kb.add(v)
     kb.contains(v) shouldBe true
   }
 
-  they should "not retrieve any node removed via remove" in forAll(genBitVector(16)) { v =>
+  they should "not retrieve any node removed via remove" in forAll(genBitVector()) { v =>
     kb.add(v)
 
     kb.remove(v)
@@ -35,7 +43,7 @@ class KBucketsSpec extends FlatSpec {
 
   they should "return the n closest nodes when N are available" in {
 
-    val ids: Seq[BitVector] = genBitVectorExhaustive(3)
+    val ids: Seq[BitVector] = genBitVectorExhaustive(4)
     val arbitraryId: BitVector = ids(Random.nextInt(ids.length))
     val kBuckets = new KBuckets(arbitraryId)
 
@@ -46,5 +54,18 @@ class KBucketsSpec extends FlatSpec {
     val closestNodes = kBuckets.closestNodes(arbitraryId, ids.length)
 
     closestNodes shouldBe exptectedRecords
+  }
+
+  they should "require the closest single node is the node itself" in {
+
+    val ids: Seq[BitVector] = genBitVectorExhaustive(4)
+    val arbitraryId: BitVector = ids(Random.nextInt(ids.length))
+    val kBuckets = new KBuckets(arbitraryId)
+
+    ids.foreach(nodeId => kBuckets.add(nodeId))
+
+    ids.foreach { nodeId =>
+      kBuckets.closestNodes(nodeId, 1) shouldBe List(nodeId)
+    }
   }
 }

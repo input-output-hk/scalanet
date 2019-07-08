@@ -38,11 +38,10 @@ class XorSpec extends FlatSpec {
     }
   }
 
-  it should "provide the correct maximal distance" in forAll(posNum[Byte]) {
-    bitCount =>
-      val zero = BitVector.low(bitCount)
-      val max = BitVector.high(bitCount)
+  it should "provide the correct maximal distance" in forAll(posNum[Byte]) { bitCount =>
+    val zero = BitVector.low(bitCount)
+    val max = BitVector.high(bitCount)
 
-      d(zero, max) shouldBe bitCount
+    d(zero, max) shouldBe bitCount
   }
 }

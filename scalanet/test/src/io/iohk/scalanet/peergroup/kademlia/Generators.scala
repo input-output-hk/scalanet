@@ -9,19 +9,21 @@ import scala.util.Random
 
 object Generators {
 
-  def genBitVector(bitLength: Int): Gen[BitVector] =
+  val defaultBitLength = 16
+
+  def genBitVector(bitLength: Int = defaultBitLength): Gen[BitVector] =
     for {
       bools <- Gen.listOfN(bitLength, arbitrary[Boolean])
     } yield BitVector.bits(bools)
 
-  def genBitVectorPairs(bitLength: Int): Gen[(BitVector, BitVector)] =
+  def genBitVectorPairs(bitLength: Int = defaultBitLength): Gen[(BitVector, BitVector)] =
     for {
       v1 <- genBitVector(bitLength)
       v2 <- genBitVector(bitLength)
     } yield (v1, v2)
 
   def genBitVectorTrips(
-    bitLength: Int
+      bitLength: Int = defaultBitLength
   ): Gen[(BitVector, BitVector, BitVector)] =
     for {
       v1 <- genBitVector(bitLength)
@@ -29,7 +31,7 @@ object Generators {
       v3 <- genBitVector(bitLength)
     } yield (v1, v2, v3)
 
-  def genBitVectorExhaustive(bitLength: Int): List[BitVector] = {
+  def genBitVectorExhaustive(bitLength: Int = defaultBitLength): List[BitVector] = {
     def loop(acc: ListBuffer[BitVector], b: BitVector, i: Int, n: Int): Unit = {
       if (i == n) {
         acc.append(b)
@@ -44,6 +46,6 @@ object Generators {
     l.toList
   }
 
-  def aRandomBitVector(bitLength: Int): BitVector =
-    BitVector.bits(Range(0, bitLength).map(i => Random.nextBoolean()))
+  def aRandomBitVector(bitLength: Int = defaultBitLength): BitVector =
+    BitVector.bits(Range(0, bitLength).map(_ => Random.nextBoolean()))
 }

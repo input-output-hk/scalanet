@@ -12,7 +12,7 @@ class KBuckets(val baseId: BitVector) {
 
   private val buckets = new ConcurrentHashMap[Int, KBucket]().asScala
 
-  private val ordering = new XorOrdering(baseId)
+  add(baseId)
 
   /**
     * Find the n nodes closest to nodeId in kBuckets.
@@ -32,7 +32,7 @@ class KBuckets(val baseId: BitVector) {
     // find the prefix
 
     // replace with routing tree described in kademlia paper...
-    iterator.toList.sorted(ordering).take(n)
+    iterator.toList.sorted(new XorOrdering(nodeId)).take(n)
   }
 
   /**
@@ -93,6 +93,10 @@ class KBuckets(val baseId: BitVector) {
             .foreach(record => bucket.remove(record))
       )
     this
+  }
+
+  override def toString: String = {
+    s"KBuckets(baseId = ${baseId.toBin}): ${iterator.toList.sorted(new XorOrdering(baseId)).map(id => id.toBin).mkString(", ")}"
   }
 
   private def newKBucket: KBucket =
