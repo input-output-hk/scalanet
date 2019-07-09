@@ -155,7 +155,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
       toTask(nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(encodedMessage), recipient, sender)))
         .onErrorRecoverWith {
           case _: IOException =>
-            Task(throw new MessageMTUException[InetMultiAddress](to, encodedMessage.capacity()))
+            Task.raiseError(new MessageMTUException[InetMultiAddress](to, encodedMessage.capacity()))
         }
     }
   }
@@ -183,7 +183,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
       }
       .onErrorRecoverWith {
         case e: Throwable =>
-          Task(throw new ChannelSetupException[InetMultiAddress](to, e))
+          Task.raiseError(new ChannelSetupException[InetMultiAddress](to, e))
       }
   }
 

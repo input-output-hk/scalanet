@@ -286,7 +286,7 @@ object TLSPeerGroup {
         })
         .onErrorRecoverWith {
           case e: IOException =>
-            Task(throw new ChannelBrokenException[InetMultiAddress](to, e))
+            Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
         }
         .map(_ => ())
     }
@@ -344,7 +344,7 @@ object TLSPeerGroup {
       toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
         .onErrorRecoverWith {
           case e: ClosedChannelException =>
-            Task(throw new ChannelBrokenException[InetMultiAddress](to, e))
+            Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
         }
     }
 

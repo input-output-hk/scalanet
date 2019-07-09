@@ -125,7 +125,7 @@ object TCPPeerGroup {
       toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
         .onErrorRecoverWith {
           case e: IOException =>
-            Task(throw new ChannelBrokenException[InetMultiAddress](to, e))
+            Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
         }
     }
 
@@ -181,7 +181,7 @@ object TCPPeerGroup {
       toTask(bootstrap.connect(inetSocketAddress))
         .onErrorRecoverWith {
           case e: ConnectException =>
-            Task(throw new ChannelSetupException[InetMultiAddress](to, e))
+            Task.raiseError(new ChannelSetupException[InetMultiAddress](to, e))
         }
         .map(_ => this)
     }
@@ -198,7 +198,7 @@ object TCPPeerGroup {
         })
         .onErrorRecoverWith {
           case e: IOException =>
-            Task(throw new ChannelBrokenException[InetMultiAddress](to, e))
+            Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
         }
         .map(_ => ())
     }
