@@ -3,8 +3,8 @@ package io.iohk.scalanet.peergroup
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.decco._
-import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
-import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
+import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, ServerEvent}
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.{ChannelCreated, HandshakeFailed}
 import io.iohk.scalanet.peergroup.SimplePeerGroup.{Config, _}
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -47,11 +47,15 @@ class SimplePeerGroup[A, AA, M](
   }
 
   override def server(): Observable[ServerEvent[A, M]] = {
-    underLyingPeerGroup.server().collectChannelCreated.map {
-      underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]] =>
-        val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
+    // FIXME pt1 addressing done as part of own proto
+    // FIXME pt2 somehow addressing as QoS option in underlying peer group allows fallback to underlying addressing?
+    val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
+    underLyingPeerGroup.server().map {
+      case ChannelCreated(underlyingChannel) =>
         val a = reverseLookup(underlyingChannel.to)
         ChannelCreated(new ChannelImpl(a, List(underlyingChannel)))
+      case HandshakeFailed(failure) =>
+        HandshakeFailed[A, M](new HandshakeException[A](reverseLookup(failure.to), failure.cause))
     }
   }
 

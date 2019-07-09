@@ -1,6 +1,6 @@
 package io.iohk.scalanet.peergroup
 
-import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
+import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, ServerEvent}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
 import io.iohk.scalanet.peergroup.StaticAddressMappedPeerGroup.Config
 import monix.eval.Task
@@ -30,13 +30,13 @@ class StaticAddressMappedPeerGroup[A, AA, M](
     }
 
   override def server(): Observable[ServerEvent[A, M]] = {
-    underLyingPeerGroup
-      .server()
-      .collectChannelCreated
-      .map { underlyingChannel =>
+    underLyingPeerGroup.server().map {
+      case ChannelCreated(underlyingChannel) =>
         val a = reverseLookup(underlyingChannel.to)
         ChannelCreated(new ChannelImpl(a, underlyingChannel))
-      }
+      case HandshakeFailed(failure) =>
+        HandshakeFailed[A, M](new HandshakeException[A](reverseLookup(failure.to), failure.cause))
+    }
   }
 
   override def shutdown(): Task[Unit] =
