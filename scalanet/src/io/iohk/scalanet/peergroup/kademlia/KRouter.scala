@@ -12,7 +12,7 @@ import scodec.bits.BitVector
 
 import scala.collection.JavaConverters._
 import scala.concurrent.{Await, Future}
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 import scala.concurrent.duration._
 
 class KRouter[V](val config: Config[V], network: KNetwork[V])(
@@ -29,17 +29,19 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
     case (peerId, peerRecord) => add(peerId, peerRecord)
   }
 
-  info("Joining the network...")
-  config.knownPeers.foreach {
-    case (id, record) =>
-      info(s"Connecting to known peer (${id.toHex}, $record)...")
-      Await.result(lookup(config.nodeId), 2 seconds)
+  info("Executing initial enrolment process to join the network...")
+  Try(Await.result(lookup(config.nodeId), 2 seconds)).toEither match {
+    case Left(t) =>
+      info(s"Enrolment lookup failed with exception: $t")
+    case Right(nodes) =>
+      debug(s"Enrolment looked completed with network nodes ${nodes.map(t => (t._1.toHex, t._2)).mkString(",")}")
+      info(
+        s"Initialization complete. ${nodeRecords.size} peers identified " +
+          s"(of which 1 is myself and ${config.knownPeers.size} are preconfigured bootstrap peers)."
+      )
   }
-  info(
-    s"Initialization complete. ${nodeRecords.size} peers identified " +
-      s"(of which 1 is myself and ${config.knownPeers.size} are preconfigured bootstrap peers)."
-  )
 
+  // Handle findNodes requests...
   network.server
     .collect {
       case (channel, message) =>
@@ -66,14 +68,6 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
         }
     }
     .subscribe()
-
-  private def debug(msg: String): Unit = {
-    log.debug(s"${config.nodeId.toHex} $msg")
-  }
-
-  private def info(msg: String): Unit = {
-    log.debug(s"${config.nodeId.toHex} $msg")
-  }
 
   def get(key: BitVector): Option[V] = {
     for {
@@ -160,6 +154,14 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
     kBuckets.add(nodeId)
     nodeRecords.put(nodeId, nodeRecord)
     debug(s"Added record (${nodeId.toHex}, $nodeRecord) to the routing table.")
+  }
+
+  private def debug(msg: String): Unit = {
+    log.debug(s"${config.nodeId.toHex} $msg")
+  }
+
+  private def info(msg: String): Unit = {
+    log.debug(s"${config.nodeId.toHex} $msg")
   }
 }
 
