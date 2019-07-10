@@ -25,17 +25,11 @@ class KRouterSpec extends FreeSpec {
     }
 
     "should locate any bootstrap nodes" in {
-      val bootstrapNodes: Map[BitVector, String] =
-        (0 to 3)
-          .map(i => aRandomBitVector(keySizeBits) -> s"some-bootstrap-record-$i")
-          .toMap
+      val knodes = a2NodeNetwork
+      val n0 = knodes(0) // the bootstrap node
+      val n1 = knodes(1) // the new joiner
 
-      val krouter = aKRouter(bootstrapNodes)
-
-      bootstrapNodes.foreach {
-        case (bootstrapId, bootstrapRecord) =>
-          krouter.get(bootstrapId) shouldBe Some(bootstrapRecord)
-      }
+      n1.get(n0.config.nodeId) shouldBe Some(n0.config.nodeRecord)
     }
 
     "should not locate any other node" in {
@@ -56,16 +50,16 @@ class KRouterSpec extends FreeSpec {
       n0.get(n1.config.nodeId) shouldBe Some(n1.config.nodeRecord)
     }
 
-//    "should inform the new node of its neighbourhood" in {
-//      val knodes = a3NodeNetwork
-//      val n0 = knodes(0)
-//      val n1 = knodes(1) // n1 and n2 will not know each other
-//      val n2 = knodes(2) // because they bootstrap from n0
-//
-//      // assert that n1 and n2 now know about each other after
-//      n2.get(n1.config.nodeId) shouldBe Some(n1.config.nodeRecord)
-//      n1.get(n2.config.nodeId) shouldBe Some(n2.config.nodeRecord)
-//    }
+    "should inform the new node of its neighbourhood" in {
+      val knodes = a3NodeNetwork
+      val n0 = knodes(0)
+      val n1 = knodes(1) // n1 and n2 will not know each other
+      val n2 = knodes(2) // because they bootstrap from n0
+
+      // assert that n1 and n2 now know about each other after
+      n2.get(n1.config.nodeId) shouldBe Some(n1.config.nodeRecord)
+      n1.get(n2.config.nodeId) shouldBe Some(n2.config.nodeRecord)
+    }
   }
 
 }
@@ -94,18 +88,17 @@ object KRouterSpec {
       knownPeers: Map[BitVector, String] = Map.empty
   )(implicit scheduler: Scheduler): KRouter[String] = {
 
-    val peerGroup = new InMemoryPeerGroup[String, KMessage[String]](
-      Random.nextString(4)
-    )(networkSim)
+    val underlyingAddress = Random.alphanumeric.take(4).mkString
+
+    val underlyingPeerGroup = new InMemoryPeerGroup[String, KMessage[String]](underlyingAddress)(networkSim)
 
     import io.iohk.scalanet.TaskValues._
-    peerGroup.initialize().evaluated
+    underlyingPeerGroup.initialize().evaluated
 
-    val knetwork = new KNetworkScalanetImpl[String](peerGroup)
+    val knetwork = new KNetworkScalanetImpl[String](underlyingPeerGroup)
 
     val nodeId = Generators.aRandomBitVector(keySizeBits)
-    val nodeRecord = Random.nextString(4)
-    val config = Config(nodeId, nodeRecord, knownPeers)
+    val config = Config(nodeId, underlyingAddress, knownPeers)
 
     new KRouter[String](config, knetwork)
   }

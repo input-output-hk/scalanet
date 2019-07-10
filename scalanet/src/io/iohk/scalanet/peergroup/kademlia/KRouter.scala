@@ -12,7 +12,7 @@ import scodec.bits.BitVector
 
 import scala.collection.JavaConverters._
 import scala.concurrent.{Await, Future}
-import scala.util.Success
+import scala.util.{Failure, Success}
 import scala.concurrent.duration._
 
 class KRouter[V](val config: Config[V], network: KNetwork[V])(
@@ -36,7 +36,8 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
       Await.result(lookup(config.nodeId), 2 seconds)
   }
   info(
-    s"Initialization complete. ${nodeRecords.size} peers identified (of which 1 is myself and ${config.knownPeers.size} are preconfigured bootstrap peers)."
+    s"Initialization complete. ${nodeRecords.size} peers identified " +
+      s"(of which 1 is myself and ${config.knownPeers.size} are preconfigured bootstrap peers)."
   )
 
   network.server
@@ -45,7 +46,7 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
         message match {
           case FindNodes(uuid, nodeId, nodeRecord, targetNodeId) =>
             debug(
-              s"Received FindNodes(${nodeId.toHex}, $nodeRecord, ${targetNodeId.toHex})"
+              s"Received request FindNodes(${nodeId.toHex}, $nodeRecord, ${targetNodeId.toHex})"
             )
             add(nodeId, nodeRecord)
             val result =
@@ -55,6 +56,13 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
                 Nodes(uuid, config.nodeId, config.nodeRecord, result)
               )
               .runAsync
+              .onComplete {
+                case Failure(t) =>
+                  log.info(
+                    s"Nodes response $uuid to ${channel.to} failed with exception: $t"
+                  )
+                case _ =>
+              }
         }
     }
     .subscribe()
@@ -83,12 +91,14 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
     def loop(querySet: Set[BitVector], closestNodes: Seq[BitVector]): Future[Unit] = {
 
       debug(
-        s"Performing lookup for ${targetNodeId.toHex} with ${closestNodes.length} closest nodes: ${closestNodes.map(_.toHex).mkString(",")}"
+        s"Performing lookup for ${targetNodeId.toHex} with ${closestNodes.length} " +
+          s"closest nodes: ${closestNodes.map(_.toHex).mkString(",")}"
       )
 
       // the initiator then sends find node rpcs to these nodes
       val fs = closestNodes
-        .filterNot(nodeId => querySet.contains(nodeId))
+        .filterNot(querySet.contains)
+        .filterNot(_ == config.nodeId)
         .take(config.alpha)
         .map { knownNode =>
           val findNodesRequest = FindNodes[V](
@@ -98,8 +108,23 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
             knownNode
           )
 
-          network.findNodes(nodeRecords(knownNode), findNodesRequest).flatMap { kNodes: Nodes[V] =>
+          val knownNodeRecord = nodeRecords(knownNode)
+          debug(
+            s"Issuing " +
+              s"findNodes request to (${knownNode.toHex}, $knownNodeRecord). " +
+              s"RequestId = ${findNodesRequest.requestId}, " +
+              s"Target = ${knownNode.toHex}."
+          )
+
+          network.findNodes(knownNodeRecord, findNodesRequest).flatMap { kNodes: Nodes[V] =>
             // verify uuids of request/response match (TODO)
+
+            debug(
+              s"Received Nodes response " +
+                s"RequestId = ${kNodes.requestId}, " +
+                s"From = (${kNodes.nodeId.toHex}, ${kNodes.nodeRecord})," +
+                s"Results = ${kNodes.nodes.map(_._1.toHex).mkString(",")}."
+            )
 
             kNodes.nodes.foreach { case (id, record) => add(id, record) }
 
@@ -120,7 +145,7 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
     }
 
     val closestKnownNodes: Seq[BitVector] =
-      kBuckets.closestNodes(targetNodeId, config.alpha)
+      kBuckets.closestNodes(targetNodeId, config.alpha).filterNot(_ == config.nodeId)
 
     loop(Set.empty, closestKnownNodes).transform(
       _ => Success(embellish(kBuckets.closestNodes(targetNodeId, config.k)))

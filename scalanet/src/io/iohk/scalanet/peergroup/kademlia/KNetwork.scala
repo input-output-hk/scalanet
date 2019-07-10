@@ -6,8 +6,10 @@ import io.iohk.scalanet.peergroup.kademlia.KademliaMessage.KResponse.Nodes
 import io.iohk.scalanet.peergroup.{Channel, PeerGroup}
 import monix.execution.Scheduler
 import monix.reactive.Observable
+import org.slf4j.LoggerFactory
 
 import scala.concurrent.Future
+import scala.util.Failure
 
 trait KNetwork[A] {
   def server: Observable[(Channel[A, KMessage[A]], KRequest[A])]
@@ -20,10 +22,13 @@ object KNetwork {
   class KNetworkScalanetImpl[A](peerGroup: PeerGroup[A, KMessage[A]])(
       implicit scheduler: Scheduler
   ) extends KNetwork[A] {
+
+    private val log = LoggerFactory.getLogger(getClass)
+
     override def server: Observable[(Channel[A, KMessage[A]], KRequest[A])] = {
       peerGroup.server().mergeMap { channel =>
         channel.in.collect {
-          case f @ FindNodes(_, _, _) =>
+          case f @ FindNodes(_, _, _, _) =>
             (channel, f)
         }
       }
@@ -33,8 +38,12 @@ object KNetwork {
       peerGroup
         .client(to)
         .flatMap { channel =>
-          channel.sendMessage(message).runAsync
-          channel.in.collect { case n @ Nodes(_, _, _) => n }.headL
+          channel.sendMessage(message).runAsync.onComplete {
+            case Failure(exception) =>
+              log.info(s"findNodes request to $to failed to send. Got error: $exception")
+            case _ =>
+          }
+          channel.in.collect { case n @ Nodes(_, _, _, _) => n }.headL
         }
         .runAsync
     }
