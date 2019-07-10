@@ -7,11 +7,8 @@ import java.nio.channels.ClosedChannelException
 import java.security.PrivateKey
 import java.security.cert.{Certificate, X509Certificate}
 
-import io.iohk
 import io.iohk.decco._
-import io.iohk.scalanet
 import io.iohk.scalanet.codec.StreamCodec
-import io.iohk.scalanet.peergroup
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, HandshakeException, ServerEvent, TerminalPeerGroup}
@@ -254,11 +251,11 @@ object TLSPeerGroup {
 
     private def mapException(t: Throwable): Throwable = t match {
       case _: ClosedChannelException =>
-        new peergroup.PeerGroup.ChannelBrokenException[InetMultiAddress](to, t)
+        new PeerGroup.ChannelBrokenException(to, t)
       case _: ConnectException =>
-        new scalanet.peergroup.PeerGroup.ChannelSetupException[InetMultiAddress](to, t)
+        new PeerGroup.ChannelSetupException(to, t)
       case _: SSLKeyException =>
-        new iohk.scalanet.peergroup.PeerGroup.HandshakeException[InetMultiAddress](to, t)
+        new PeerGroup.HandshakeException(to, t)
       case _ =>
         t
     }
