@@ -13,6 +13,8 @@ import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
+
 import scala.util.Random
 
 class SimplePeerGroupSpec extends FlatSpec {
@@ -23,7 +25,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 
   it should "send a message to itself" in withASimplePeerGroup("Alice") { alice =>
     val message = Random.alphanumeric.take(1044).mkString
-    val aliceReceived = alice.server().mergeMap(_.in).headL.runAsync
+    val aliceReceived = alice.server().collectChannelCreated.mergeMap(_.in).headL.runAsync
     val aliceClient: Channel[String, String] = alice.client(alice.processAddress).evaluated
     aliceClient.sendMessage(message).runAsync
     aliceReceived.futureValue shouldBe message
@@ -37,8 +39,8 @@ class SimplePeerGroupSpec extends FlatSpec {
     val alicesMessage = "hi bob, from alice"
     val bobsMessage = "hi alice, from bob"
 
-    val bobReceived = bob.server().mergeMap(_.in).headL.runAsync
-    bob.server().foreach(channel => channel.sendMessage(bobsMessage).evaluated)
+    val bobReceived = bob.server().collectChannelCreated.mergeMap(_.in).headL.runAsync
+    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
     val aliceClient = alice.client(bob.processAddress).evaluated
 
@@ -57,8 +59,8 @@ class SimplePeerGroupSpec extends FlatSpec {
     val bobsMessage = "HI Alice"
     val alicesMessage = "HI Bob"
 
-    val bobReceived = bob.server().mergeMap(_.in).headL.runAsync
-    bob.server().foreach(channel => channel.sendMessage(bobsMessage).evaluated)
+    val bobReceived = bob.server().collectChannelCreated.mergeMap(_.in).headL.runAsync
+    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
     val aliceClient = alice.client(bob.processAddress).evaluated
 
@@ -72,6 +74,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 
     val bobReceivedNews = bob
       .server()
+      .collectChannelCreated
       .mergeMap { channel =>
         channel.in.filter(msg => msg == messageNews)
       }
@@ -82,6 +85,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 
     val bobSportsUpdate = bob
       .server()
+      .collectChannelCreated
       .mergeMap { channel =>
         channel.in.filter(msg => msg == sportUpdates)
       }
@@ -109,8 +113,8 @@ class SimplePeerGroupSpec extends FlatSpec {
       val bobsMessage = "HI Alice"
       val alicesMessage = "HI Bob"
 
-      val bobReceived = bob.server().mergeMap(_.in).headL.runAsync
-      bob.server().foreach(channel => channel.sendMessage(bobsMessage).evaluated)
+      val bobReceived = bob.server().collectChannelCreated.mergeMap(_.in).headL.runAsync
+      bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
       val aliceClient = alice.client(bob.processAddress).evaluated
 
@@ -124,6 +128,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 
       val bobReceivedNews = bob
         .server()
+        .collectChannelCreated
         .mergeMap { channel =>
           channel.in.filter(msg => msg == messageNews)
         }
@@ -132,6 +137,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 
       val charlieReceivedNews = charlie
         .server()
+        .collectChannelCreated
         .mergeMap { channel =>
           channel.in.filter(msg => msg == messageNews)
         }
@@ -148,6 +154,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 
       val bobSportsUpdate = bob
         .server()
+        .collectChannelCreated
         .mergeMap { channel =>
           channel.in.filter(msg => msg == sportUpdates)
         }
@@ -156,6 +163,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 
       val charlieSportsUpdate = charlie
         .server()
+        .collectChannelCreated
         .mergeMap { channel =>
           channel.in.filter(msg => msg == sportUpdates)
         }
