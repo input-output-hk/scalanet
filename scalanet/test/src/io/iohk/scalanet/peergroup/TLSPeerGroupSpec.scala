@@ -1,28 +1,32 @@
 package io.iohk.scalanet.peergroup
 
 import java.nio.ByteBuffer
-import java.security.{KeyStore, PrivateKey}
+import java.security.PrivateKey
 import java.security.cert.{Certificate, CertificateFactory}
 
+import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import io.iohk.decco.auto._
+import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.codec.{FramingCodec, StreamCodec}
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, HandshakeException}
+import io.iohk.scalanet.peergroup.StandardTestPack.messagingTest
+import io.iohk.scalanet.peergroup.TLSPeerGroup._
+import io.iohk.scalanet.peergroup.TLSPeerGroupSpec._
+import monix.execution.CancelableFuture
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.Matchers._
+import org.scalatest.RecoverMethods.recoverToExceptionIf
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.{BeforeAndAfterAll, FlatSpec}
-import io.iohk.scalanet.peergroup.TLSPeerGroup._
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-import io.iohk.decco.{BufferInstantiator, Codec}
 
-import scala.concurrent.{Await, Future}
+import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.Random
-import TLSPeerGroupSpec._
-import io.iohk.scalanet.codec.{FramingCodec, StreamCodec}
-import io.netty.handler.ssl.util.SelfSignedCertificate
 
 class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
@@ -30,46 +34,68 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   implicit val codec = new FramingCodec(Codec[String])
 
   behavior of "TLSPeerGroup"
-  val clientAuth: Seq[Boolean] = Seq(true, false)
 
-  it should "send and receive a message when client auth is disabled/false or enabled/true" in clientAuth
+  it should "report an error for a handshake failure -- server receives" in
+    withTwoTLSPeerGroups[String](duffKeyConfig) { (alice, bob) =>
+      val handshakeF = bob.server().collectHandshakeFailure.headL.runAsync
 
-  for (value <- clientAuth) {
-    withTwoRandomTLSPeerGroups[String](value) { (alice, bob) =>
-      println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
+      alice.client(bob.processAddress).runAsync
+
+      handshakeF.futureValue.to shouldBe alice.processAddress
+    }
+
+  it should "report an error for a handshake failure -- client receives" in
+    withTwoTLSPeerGroups[String](duffKeyConfig) { (alice, bob) =>
+      val error = recoverToExceptionIf[HandshakeException[InetMultiAddress]] {
+        alice.client(bob.processAddress).runAsync
+      }.futureValue
+
+      error.to shouldBe bob.processAddress
+    }
+
+  it should "report an error for messaging to an invalid address" in
+    withATLSPeerGroup[String](selfSignedCertConfig) { alice =>
+      StandardTestPack.shouldErrorForMessagingAnInvalidAddress(alice, InetMultiAddress(NetUtils.aRandomAddress()))
+    }
+
+  // TODO this is a copy/paste version of the test in TCPPeerGroupSpec
+  it should "report an error for messaging on a closed channel -- server closes" in
+    withTwoTLSPeerGroups[String](selfSignedCertConfig) { (alice, bob) =>
       val alicesMessage = Random.alphanumeric.take(1024).mkString
+      val bobsChannelF = bob.server().collectChannelCreated.headL.runAsync
+
+      val aliceClient = alice.client(bob.processAddress).evaluated
+      bobsChannelF.futureValue.close().evaluated
+      val aliceError = recoverToExceptionIf[ChannelBrokenException[InetMultiAddress]] {
+        aliceClient.sendMessage(alicesMessage).runAsync
+      }
+
+      aliceError.futureValue.to shouldBe bob.processAddress
+    }
+
+  // TODO this is a copy/paste version of the test in TCPPeerGroupSpec
+  it should "report an error for messaging on a closed channel -- client closes" in
+    withTwoTLSPeerGroups[String](selfSignedCertConfig) { (alice, bob) =>
       val bobsMessage = Random.alphanumeric.take(1024).mkString
-
-      bob.server().foreachL(channel => channel.sendMessage(bobsMessage).runAsync).runAsync
-      val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runAsync
-      val aliceClient = alice.client(bob.processAddress).evaluated
-      val aliceReceived = aliceClient.in.headL.runAsync
-
-      aliceClient.sendMessage(alicesMessage).evaluated
-
-      bobReceived.futureValue shouldBe alicesMessage
-      aliceReceived.futureValue shouldBe bobsMessage
-    }
-
-  }
-
-  it should "send and receive a message" in {
-    withTwoTLSPeerGroups[String](selfSignedCertConfig, selfSignedCertConfig) { (alice, bob) =>
-      val alicesMessage = Random.alphanumeric.take(1024 * 4).mkString
-      val bobsMessage = Random.alphanumeric.take(1024 * 4).mkString
-
-      val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runAsync
-      bob.server().foreach(channel => channel.sendMessage(bobsMessage).runAsync)
+      bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).runAsync).runAsync
+      val bobChannel: CancelableFuture[Channel[InetMultiAddress, String]] =
+        bob.server().collectChannelCreated.headL.runAsync
 
       val aliceClient = alice.client(bob.processAddress).evaluated
-      val aliceReceived = aliceClient.in.headL.runAsync
-      aliceClient.sendMessage(alicesMessage).runAsync
+      aliceClient.close().evaluated
+      val bobError = recoverToExceptionIf[ChannelBrokenException[InetMultiAddress]] {
+        bobChannel.futureValue.sendMessage(bobsMessage).runAsync
+      }
 
-      bobReceived.futureValue shouldBe alicesMessage
-      aliceReceived.futureValue shouldBe bobsMessage
+      bobError.futureValue.to shouldBe alice.processAddress
     }
+
+  it should "send and receive a message" in withTwoTLSPeerGroups[String](selfSignedCertConfig, signedCertConfig) {
+    (alice, bob) =>
+      messagingTest(alice, bob)
   }
 
+  // TODO this is a copy/paste version of the test in TCPPeerGroupSpec
   it should "shutdown a TLSPeerGroup properly" in {
     val tlsPeerGroup = randomTLSPeerGroup[String]
     isListening(tlsPeerGroup.config.bindAddress) shouldBe true
@@ -79,10 +105,11 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     isListening(tlsPeerGroup.config.bindAddress) shouldBe false
   }
 
+  // TODO this is a copy/paste version of the test in TCPPeerGroupSpec
   it should "report the same address for two inbound channels" in
     withTwoRandomTLSPeerGroups[String](false) { (alice, bob) =>
-      val firstInbound = bob.server().headL.runAsync
-      val secondInbound = bob.server().drop(1).headL.runAsync
+      val firstInbound = bob.server().collectChannelCreated.headL.runAsync
+      val secondInbound = bob.server().collectChannelCreated.drop(1).headL.runAsync
 
       alice.client(bob.processAddress).evaluated
       alice.client(bob.processAddress).evaluated
@@ -94,6 +121,13 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 }
 
 object TLSPeerGroupSpec {
+
+  def duffKeyConfig(alias: String): Config = {
+    val key: PrivateKey = keyStore.getKey("alice", "password".toCharArray).asInstanceOf[PrivateKey]
+    val trustStore = List(keyStore.getCertificate("bob"))
+    val certChain = trustStore
+    Config(aRandomAddress(), key, certChain, trustStore)
+  }
 
   def signedCertConfig(alias: String): Config = {
     import scala.collection.JavaConverters._
@@ -128,27 +162,23 @@ object TLSPeerGroupSpec {
     }
   }
 
+  def withATLSPeerGroup[M](cgens: (String => Config)*)(
+      testCode: TLSPeerGroup[M] => Any
+  )(implicit codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = cgens.foreach { cgen =>
+    val pg = tlsPeerGroup[M](cgen("alice"))
+    try {
+      testCode(pg)
+    } finally {
+      pg.shutdown()
+    }
+  }
+
   def tlsPeerGroup[M](
       config: Config
   )(implicit codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): TLSPeerGroup[M] = {
     val pg = new TLSPeerGroup[M](config)
     Await.result(pg.initialize().runAsync, Duration.Inf)
     pg
-  }
-
-  val keyStore = {
-    val keyStore = KeyStore.getInstance("JKS")
-    keyStore.load(null)
-    val aliceSc = new SelfSignedCertificate()
-    val bobSc = new SelfSignedCertificate()
-
-    keyStore.setCertificateEntry("alice", bobSc.cert())
-    keyStore.setKeyEntry("alice", aliceSc.key(), "password".toCharArray, Array(aliceSc.cert()))
-
-    keyStore.setCertificateEntry("bob", aliceSc.cert())
-    keyStore.setKeyEntry("bob", bobSc.key(), "password".toCharArray, Array(bobSc.cert()))
-
-    keyStore
   }
 
   def keyAt(alias: String): PrivateKey = {
@@ -158,4 +188,5 @@ object TLSPeerGroupSpec {
   def certAt(alias: String): Certificate = {
     NetUtils.keyStore.getCertificate(alias)
   }
+
 }

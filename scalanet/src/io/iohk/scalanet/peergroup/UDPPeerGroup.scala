@@ -1,25 +1,27 @@
 package io.iohk.scalanet.peergroup
 
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.decco.{BufferInstantiator, Codec}
-import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
-import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{getChannelId, toTask}
+import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{ChannelId, getChannelId, toTask}
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelSetupException, MessageMTUException, ServerEvent, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.UDPPeerGroup._
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
+import io.netty.channel
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
-import io.netty.channel
 import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
-import InetPeerGroupUtils.ChannelId
+
 import scala.collection.JavaConverters._
 
 /**
@@ -34,7 +36,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
+  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -59,7 +61,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
                 val remoteAddress = datagram.sender()
                 val localAddress = datagram.recipient()
                 val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
-                log.info(s"Client channel read message $messageE with remote $remoteAddress and local $localAddress")
+                log.info(s"Client channel read message with remote $remoteAddress and local $localAddress")
 
                 val channelId = getChannelId(remoteAddress, localAddress)
 
@@ -92,7 +94,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
 
               try {
                 val remoteAddress = datagram.sender()
-                val localAddress = processAddress.inetSocketAddress //datagram.recipient()
+                val localAddress = processAddress.inetSocketAddress
 
                 val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
 
@@ -108,7 +110,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
                   val channel = new ChannelImpl(nettyChannel, localAddress, remoteAddress, ReplaySubject[M]())
                   log.debug(s"Channel with id $channelId NOT found in active channels table. Creating a new one")
                   activeChannels.put(channelId, channel)
-                  channelSubject.onNext(channel)
+                  serverSubject.onNext(ChannelCreated(channel))
                   messageE.foreach(message => channel.messageSubject.onNext(message))
                 }
               } finally {
@@ -149,9 +151,12 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
         recipient: InetSocketAddress,
         nettyChannel: NioDatagramChannel
     ): Task[Unit] = {
-      toTask(
-        nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(codec.encode(message)), recipient, sender))
-      )
+      val encodedMessage = codec.encode(message)
+      toTask(nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(encodedMessage), recipient, sender)))
+        .onErrorRecoverWith {
+          case _: IOException =>
+            Task.raiseError(new MessageMTUException[InetMultiAddress](to, encodedMessage.capacity()))
+        }
     }
   }
 
@@ -166,22 +171,26 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
     val cf = clientBootstrap.connect(to.inetSocketAddress)
     val ct: Task[NioDatagramChannel] = toTask(cf).map(_ => cf.channel().asInstanceOf[NioDatagramChannel])
     ct.map { nettyChannel =>
-      val localAddress = nettyChannel.localAddress()
-      log.debug(s"Generated local address for new client is $localAddress")
-      val channelId = getChannelId(to.inetSocketAddress, localAddress)
+        val localAddress = nettyChannel.localAddress()
+        log.debug(s"Generated local address for new client is $localAddress")
+        val channelId = getChannelId(to.inetSocketAddress, localAddress)
 
-      assert(!activeChannels.contains(channelId), s"HOUSTON, WE HAVE A MULTIPLEXING PROBLEM")
+        assert(!activeChannels.contains(channelId), s"HOUSTON, WE HAVE A MULTIPLEXING PROBLEM")
 
-      val channel = new ChannelImpl(nettyChannel, localAddress, to.inetSocketAddress, ReplaySubject[M]())
-      activeChannels.put(channelId, channel)
-      channel
-    }
+        val channel = new ChannelImpl(nettyChannel, localAddress, to.inetSocketAddress, ReplaySubject[M]())
+        activeChannels.put(channelId, channel)
+        channel
+      }
+      .onErrorRecoverWith {
+        case e: Throwable =>
+          Task.raiseError(new ChannelSetupException[InetMultiAddress](to, e))
+      }
   }
 
-  override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
+  override def server(): Observable[ServerEvent[InetMultiAddress, M]] = serverSubject
 
   override def shutdown(): Task[Unit] = {
-    channelSubject.onComplete()
+    serverSubject.onComplete()
     for {
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
@@ -190,6 +199,8 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
 }
 
 object UDPPeerGroup {
+
+  val mtu: Int = 16384
 
   case class Config(bindAddress: InetSocketAddress, processAddress: InetMultiAddress)
 

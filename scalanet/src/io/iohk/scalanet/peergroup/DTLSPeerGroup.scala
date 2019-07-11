@@ -8,6 +8,9 @@ import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
+import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{ChannelId, _}
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
+import io.iohk.scalanet.peergroup.PeerGroup.{MessageMTUException, ServerEvent}
 import monix.eval.Task
 import monix.execution.{Cancelable, Scheduler}
 import monix.reactive.Observable
@@ -16,8 +19,8 @@ import org.eclipse.californium.elements._
 import org.eclipse.californium.scandium.DTLSConnector
 import org.eclipse.californium.scandium.config.DtlsConnectorConfig
 import org.eclipse.californium.scandium.dtls.cipher.CipherSuite._
-import InetPeerGroupUtils.ChannelId
-import InetPeerGroupUtils._
+import org.eclipse.californium.scandium.dtls.{HandshakeException, Handshaker, SessionAdapter}
+
 import scala.collection.JavaConverters._
 
 class DTLSPeerGroup[M](val config: Config)(
@@ -28,7 +31,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
   private val serverConnector = createServerConnector()
 
-  private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
+  private val channelSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
 
   private val activeChannels = new ConcurrentHashMap[ChannelId, ChannelImpl]().asScala
 
@@ -48,7 +51,7 @@ class DTLSPeerGroup[M](val config: Config)(
     channel
   }
 
-  override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
+  override def server(): Observable[ServerEvent[InetMultiAddress, M]] = channelSubject
 
   override def shutdown(): Task[Unit] =
     for {
@@ -65,23 +68,29 @@ class DTLSPeerGroup[M](val config: Config)(
       import io.iohk.scalanet.peergroup.BufferConversionOps._
       val buffer = codec.encode(message)
 
-      Task.async[Unit] { (_, c) =>
-        val messageCallback = new MessageCallback {
-          override def onConnecting(): Unit = ()
-          override def onDtlsRetransmission(i: Int): Unit = ()
-          override def onContextEstablished(endpointContext: EndpointContext): Unit = ()
+      Task
+        .async[Unit] { (_, c) =>
+          val messageCallback = new MessageCallback {
+            override def onConnecting(): Unit = ()
+            override def onDtlsRetransmission(i: Int): Unit = ()
+            override def onContextEstablished(endpointContext: EndpointContext): Unit = ()
 
-          override def onSent(): Unit = c.onSuccess(())
-          override def onError(throwable: Throwable): Unit = c.onError(throwable)
+            override def onSent(): Unit = c.onSuccess(())
+            override def onError(throwable: Throwable): Unit = throwable match {
+              case h: HandshakeException =>
+                c.onError(new PeerGroup.HandshakeException[InetMultiAddress](to, h))
+              case _: IllegalArgumentException =>
+                c.onError(new MessageMTUException[InetMultiAddress](to, buffer.capacity()))
+            }
+          }
+
+          val rawData =
+            RawData.outbound(buffer.toArray, new AddressEndpointContext(to.inetSocketAddress), messageCallback, false)
+
+          dtlsConnector.send(rawData)
+
+          Cancelable.empty
         }
-
-        val rawData =
-          RawData.outbound(buffer.toArray, new AddressEndpointContext(to.inetSocketAddress), messageCallback, false)
-
-        dtlsConnector.send(rawData)
-
-        Cancelable.empty
-      }
     }
 
     override def close(): Task[Unit] = {
@@ -127,7 +136,19 @@ class DTLSPeerGroup[M](val config: Config)(
   private def createServerConnector(): DTLSConnector = {
     val connectorConfig = config.scandiumConfigBuilder.build()
 
-    val connector = new DTLSConnector(connectorConfig)
+    val connector = new DTLSConnector(connectorConfig) {
+      override def onInitializeHandshaker(handshaker: Handshaker): Unit = {
+        super.onInitializeHandshaker(handshaker)
+        handshaker.addSessionListener(new SessionAdapter() {
+          override def handshakeFailed(handshaker: Handshaker, error: Throwable): Unit = {
+            channelSubject.onNext(
+              ServerEvent
+                .HandshakeFailed(new PeerGroup.HandshakeException(InetMultiAddress(handshaker.getPeerAddress), error))
+            )
+          }
+        })
+      }
+    }
 
     connector.setRawDataReceiver(new RawDataChannel {
       override def receiveData(rawData: RawData): Unit = {
@@ -142,7 +163,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
       private def createNewChannel(rawData: RawData): ChannelImpl = {
         val newChannel = new ChannelImpl(InetMultiAddress(rawData.getInetSocketAddress), connector)
-        channelSubject.onNext(newChannel)
+        channelSubject.onNext(ChannelCreated(newChannel))
         newChannel
       }
     })
