@@ -1,12 +1,17 @@
 package io.iohk.scalanet.peergroup
 
-import java.net.InetSocketAddress
+import java.io.IOException
+import java.net.{ConnectException, InetSocketAddress}
 import java.nio.ByteBuffer
+import java.nio.channels.ClosedChannelException
 import java.security.PrivateKey
 import java.security.cert.{Certificate, X509Certificate}
 
+import io.iohk.decco._
+import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
-import io.iohk.scalanet.peergroup.PeerGroup.TerminalPeerGroup
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, HandshakeException, ServerEvent, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TLSPeerGroup._
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
@@ -15,16 +20,14 @@ import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.ssl.{SslContext, SslContextBuilder, SslHandshakeCompletionEvent}
+import javax.net.ssl.SSLKeyException
 import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
 
-import io.iohk.decco._
-import io.iohk.scalanet.codec.StreamCodec
-
-import scala.concurrent.Promise
 import scala.collection.JavaConverters._
+import scala.concurrent.Promise
 
 /**
   * PeerGroup implementation on top of TLS.
@@ -54,7 +57,7 @@ class TLSPeerGroup[M](val config: Config)(
     .ciphers(TLSPeerGroup.supportedCipherSuites.asJava)
     .build()
 
-  private val channelSubject = PublishSubject[Channel[InetMultiAddress, M]]()
+  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -70,8 +73,8 @@ class TLSPeerGroup[M](val config: Config)(
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
-        val newChannel = new ServerChannelImpl[M](ch, sslServerCtx, codec, bi)
-        channelSubject.onNext(newChannel)
+        val newChannel = new ServerChannelImpl[M](serverSubject, ch, sslServerCtx, codec, bi)
+        serverSubject.onNext(ChannelCreated(newChannel))
         log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })
@@ -90,10 +93,10 @@ class TLSPeerGroup[M](val config: Config)(
     new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, sslClientCtx, codec, bi).initialize
   }
 
-  override def server(): Observable[Channel[InetMultiAddress, M]] = channelSubject
+  override def server(): Observable[ServerEvent[InetMultiAddress, M]] = serverSubject
 
   override def shutdown(): Task[Unit] = {
-    channelSubject.onComplete()
+    serverSubject.onComplete()
     for {
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
@@ -168,22 +171,6 @@ object TLSPeerGroup {
     override def channelInactive(channelHandlerContext: ChannelHandlerContext): Unit =
       messageSubject.onComplete()
 
-    override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
-      evt match {
-        case e: SslHandshakeCompletionEvent =>
-          log.debug(
-            s"Ssl Handshake Server channel from ${ctx.channel().localAddress()} " +
-              s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
-          )
-        case _ =>
-          log.debug(
-            s"User Event Server channel from ${ctx.channel().localAddress()} " +
-              s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
-          )
-      }
-      super.userEventTriggered(ctx, evt)
-    }
-
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val byteBuf = msg.asInstanceOf[ByteBuf]
       try {
@@ -197,6 +184,10 @@ object TLSPeerGroup {
       } finally {
         byteBuf.release()
       }
+    }
+
+    override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
+      // swallow netty's default logging of the stack trace.
     }
   }
 
@@ -240,7 +231,11 @@ object TLSPeerGroup {
                       s"Ssl Handshake client channel from ${ctx.channel().localAddress()} " +
                         s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
                     )
-                    if (e.isSuccess) activation.success(ctx) else activation.failure(e.cause())
+                    if (e.isSuccess)
+                      activation.success(ctx)
+                    else {
+                      activation.failure(e.cause())
+                    }
 
                   case _ =>
                     log.debug(
@@ -248,15 +243,31 @@ object TLSPeerGroup {
                         s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
                     )
                 }
-                super.userEventTriggered(ctx, evt)
               }
             })
             .addLast(new MessageNotifier[M](messageSubject, codec, bi))
         }
       })
 
+    private def mapException(t: Throwable): Throwable = t match {
+      case _: ClosedChannelException =>
+        new PeerGroup.ChannelBrokenException(to, t)
+      case _: ConnectException =>
+        new PeerGroup.ChannelSetupException(to, t)
+      case _: SSLKeyException =>
+        new PeerGroup.HandshakeException(to, t)
+      case _ =>
+        t
+    }
+
     def initialize: Task[ClientChannelImpl[M]] = {
-      toTask(bootstrap.connect(inetSocketAddress)).map(_ => this)
+      toTask(bootstrap.connect(inetSocketAddress))
+        .flatMap(_ => Task.fromFuture(activationF))
+        .map(_ => this)
+        .onErrorRecoverWith {
+          case t: Throwable =>
+            Task.raiseError(mapException(t))
+        }
     }
 
     override def sendMessage(message: M): Task[Unit] = {
@@ -270,6 +281,10 @@ object TLSPeerGroup {
           )
           toTask(ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
         })
+        .onErrorRecoverWith {
+          case e: IOException =>
+            Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
+        }
         .map(_ => ())
     }
 
@@ -285,6 +300,7 @@ object TLSPeerGroup {
   }
 
   private[scalanet] class ServerChannelImpl[M](
+      serverSubject: PublishSubject[ServerEvent[InetMultiAddress, M]],
       val nettyChannel: SocketChannel,
       sslServerCtx: SslContext,
       codec: StreamCodec[M],
@@ -301,12 +317,32 @@ object TLSPeerGroup {
     nettyChannel
       .pipeline()
       .addLast("ssl", sslServerCtx.newHandler(nettyChannel.alloc())) //This needs to be first
+      .addLast(new ChannelInboundHandlerAdapter() {
+        override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
+          evt match {
+            case e: SslHandshakeCompletionEvent =>
+              val localAddress = InetMultiAddress(ctx.channel().localAddress().asInstanceOf[InetSocketAddress])
+              val remoteAddress = InetMultiAddress(ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress])
+              log.debug(
+                s"Ssl Handshake server channel from $localAddress " +
+                  s"to $remoteAddress with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
+              )
+              if (!e.isSuccess)
+                serverSubject
+                  .onNext(PeerGroup.ServerEvent.HandshakeFailed(new HandshakeException(remoteAddress, e.cause())))
+          }
+        }
+      })
       .addLast(new MessageNotifier(messageSubject, codec, bi))
 
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
       toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
+        .onErrorRecoverWith {
+          case e: ClosedChannelException =>
+            Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
+        }
     }
 
     override def in: Observable[M] = messageSubject

@@ -2,16 +2,17 @@ package io.iohk.scalanet.peergroup
 
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.scalanet.peergroup.SimplePeerGroup.Config
-
-import scala.collection.mutable
-import scala.collection.JavaConverters._
 import io.iohk.decco._
-import SimplePeerGroup._
+import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, ServerEvent}
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.{ChannelCreated, HandshakeFailed}
+import io.iohk.scalanet.peergroup.SimplePeerGroup.{Config, _}
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
 import org.slf4j.LoggerFactory
+
+import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 /**
   * Another fairly trivial example of a higher-level peer group. This class
@@ -45,12 +46,16 @@ class SimplePeerGroup[A, AA, M](
     underlyingChannels.map(new ChannelImpl(to, _))
   }
 
-  override def server(): Observable[Channel[A, M]] = {
-    underLyingPeerGroup.server().map { underlyingChannel: Channel[AA, Either[ControlMessage[A, AA], M]] =>
-      val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
-      val a = reverseLookup(underlyingChannel.to)
-      debug(s"Received new server channel from $a")
-      new ChannelImpl(a, List(underlyingChannel))
+  override def server(): Observable[ServerEvent[A, M]] = {
+    // FIXME pt1 addressing done as part of own proto
+    // FIXME pt2 somehow addressing as QoS option in underlying peer group allows fallback to underlying addressing?
+    val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
+    underLyingPeerGroup.server().map {
+      case ChannelCreated(underlyingChannel) =>
+        val a = reverseLookup(underlyingChannel.to)
+        ChannelCreated(new ChannelImpl(a, List(underlyingChannel)))
+      case HandshakeFailed(failure) =>
+        HandshakeFailed[A, M](new HandshakeException[A](reverseLookup(failure.to), failure.cause))
     }
   }
 
@@ -61,6 +66,7 @@ class SimplePeerGroup[A, AA, M](
 
     underLyingPeerGroup
       .server()
+      .collect(ChannelCreated.collector)
       .mergeMap(channel => channel.in)
       .collect {
         case Left(e: EnrolMe[A, AA]) => e
@@ -73,6 +79,7 @@ class SimplePeerGroup[A, AA, M](
 
       val enrolledTask: Task[Unit] = underLyingPeerGroup
         .server()
+        .collectChannelCreated
         .mergeMap(channel => channel.in)
         .collect {
           case Left(e: Enrolled[A, AA]) =>

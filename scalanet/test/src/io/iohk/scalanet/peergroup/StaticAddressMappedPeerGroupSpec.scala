@@ -12,6 +12,7 @@ import org.scalatest.concurrent.ScalaFutures._
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
 
 import scala.util.Random
 
@@ -30,8 +31,9 @@ class StaticAddressMappedPeerGroupSpec extends FlatSpec {
       val alicesMessage = Random.alphanumeric.take(1024).mkString
       val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-      bob.server().foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runAsync
-      val bobReceived: Future[String] = bob.server().mergeMap(channel => channel.in).headL.runAsync
+      bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runAsync
+      val bobReceived: Future[String] =
+        bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runAsync
 
       val aliceClient = alice.client(bob.processAddress).evaluated
       val aliceReceived = aliceClient.in.headL.runAsync

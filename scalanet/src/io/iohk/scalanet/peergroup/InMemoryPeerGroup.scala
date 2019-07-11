@@ -5,22 +5,24 @@ import monix.reactive.{MulticastStrategy, Observable}
 import monix.reactive.subjects.ConcurrentSubject
 import monix.execution.Scheduler.Implicits.global
 import InMemoryPeerGroup._
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 
 import scala.collection.concurrent.TrieMap
-import scala.util.Random
 
 class InMemoryPeerGroup[A, M](address: A)(implicit network: Network[A, M]) extends PeerGroup[A, M] {
 
-  private var status: PeerStatus = PeerStatus.NotInitialized
-  private val channelStream = ConcurrentSubject[InMemoryChannel[A, M]](MulticastStrategy.publish)
-  private val channelsMap: TrieMap[ChannelID, InMemoryChannel[A, M]] = TrieMap()
-  private def receiveMessage(channelID: ChannelID, from: A, msg: M): Unit = {
+  private[peergroup] var status: PeerStatus = PeerStatus.NotInitialized
+  private[peergroup] val channelStream = ConcurrentSubject[ServerEvent[A, M]](MulticastStrategy.publish)
+  private[peergroup] val channelsMap: TrieMap[ChannelID, InMemoryChannel[A, M]] = TrieMap()
+
+  def receiveMessage(channelID: ChannelID, from: A, msg: M): Unit = {
     channelsMap.get(channelID) match {
       case None =>
         val newChannel = new InMemoryChannel(channelID, processAddress, from)
         channelsMap += (channelID -> newChannel)
         newChannel.depositMessage(msg)
-        channelStream.onNext(newChannel)
+        channelStream.onNext(ChannelCreated(newChannel))
       case Some(ch) =>
         ch.depositMessage(msg)
     }
@@ -40,7 +42,7 @@ class InMemoryPeerGroup[A, M](address: A)(implicit network: Network[A, M]) exten
     channelsMap += (channelID -> newChannel)
     allGood(newChannel)
   }
-  override def server(): Observable[InMemoryChannel[A, M]] = {
+  override def server(): Observable[ServerEvent[A, M]] = {
     status match {
       case PeerStatus.NotInitialized => throw new Exception(s"Peer $processAddress is not initialized yet")
       case PeerStatus.Listening => channelStream
@@ -87,14 +89,6 @@ object InMemoryPeerGroup {
           allGood(destination.receiveMessage(channelID, from, message))
       }
   }
-
-  implicit def inMemoryPeerGroupTestUtils(implicit n: Network[Int, String]): PeerUtils[Int, String, InMemoryPeerGroup] =
-    PeerUtils.instance(
-      _.status == PeerStatus.Listening,
-      () => new InMemoryPeerGroup[Int, String](Random.nextInt()),
-      _.shutdown(),
-      _.initialize()
-    )
 
   type ChannelID = java.util.UUID
   def newChannelID(): ChannelID = java.util.UUID.randomUUID()
