@@ -41,7 +41,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
   override def initialize(): Task[Unit] = {
     Task(serverConnector.start()).onErrorRecoverWith {
-      case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage,e.getCause))
+      case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
     }
   }
 

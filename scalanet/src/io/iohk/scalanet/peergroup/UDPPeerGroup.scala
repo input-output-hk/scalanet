@@ -166,7 +166,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
 
   override def initialize(): Task[Unit] =
     toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}")).onErrorRecoverWith {
-      case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage,e.getCause))
+      case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
     }
 
   override def processAddress: InetMultiAddress = config.processAddress
