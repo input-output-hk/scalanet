@@ -75,6 +75,8 @@ trait Channel[A, M] {
   *           type (or base trait). Multiple protocols, represented as multiple base traits
   *           are not yet supported, though expect this soonish.
   */
+
+
 trait PeerGroup[A, M] {
 
   /**

@@ -7,6 +7,7 @@ import java.security.{PrivateKey, PublicKey}
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.decco.{BufferInstantiator, Codec}
+import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{ChannelId, _}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
@@ -22,6 +23,7 @@ import org.eclipse.californium.scandium.dtls.cipher.CipherSuite._
 import org.eclipse.californium.scandium.dtls.{HandshakeException, Handshaker, SessionAdapter}
 
 import scala.collection.JavaConverters._
+import scala.util.control.NonFatal
 
 class DTLSPeerGroup[M](val config: Config)(
     implicit codec: Codec[M],
@@ -38,7 +40,9 @@ class DTLSPeerGroup[M](val config: Config)(
   override def processAddress: InetMultiAddress = config.processAddress
 
   override def initialize(): Task[Unit] = {
-    Task(serverConnector.start())
+    Task(serverConnector.start()).onErrorRecoverWith {
+      case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage,e.getCause))
+    }
   }
 
   override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = Task {
