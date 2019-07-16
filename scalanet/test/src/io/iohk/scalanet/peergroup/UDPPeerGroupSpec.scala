@@ -59,5 +59,7 @@ class UDPPeerGroupSpec extends FlatSpec {
     assertThrows[InitializationError] {
       Await.result(pg2.initialize().runAsync, 10 seconds)
     }
+    pg1.shutdown().runAsync.futureValue
   }
+
 }

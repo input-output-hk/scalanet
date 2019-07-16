@@ -94,6 +94,8 @@ class DTLSPeerGroupSpec extends FlatSpec {
     assertThrows[InitializationError] {
       Await.result(pg2.initialize().runAsync, Duration.Inf)
     }
+    pg1.shutdown().runAsync.futureValue
+
   }
 }
 

@@ -132,6 +132,8 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     assertThrows[InitializationError] {
       Await.result(pg2.initialize().runAsync, 10 seconds)
     }
+    pg1.shutdown().runAsync.futureValue
+
   }
 
 }
