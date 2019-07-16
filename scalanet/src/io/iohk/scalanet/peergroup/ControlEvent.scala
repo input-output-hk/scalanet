@@ -6,5 +6,5 @@ object ControlEvent {
 
   case object Initialized
 
-  case class InitializationError(message: String, cause: Throwable) extends RuntimeException(message,cause)
+  case class InitializationError(message: String, cause: Throwable) extends RuntimeException(message, cause)
 }
