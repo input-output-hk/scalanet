@@ -10,6 +10,7 @@ import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils.{aRandomAddress, isListeningUDP}
 import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config._
 import io.iohk.scalanet.peergroup.DTLSPeerGroupSpec._
@@ -82,6 +83,19 @@ class DTLSPeerGroupSpec extends FlatSpec {
     pg1.shutdown().runAsync.futureValue
 
     isListeningUDP(pg1.config.bindAddress) shouldBe false
+  }
+
+  it should "throw InitializationError when port already in use" in {
+    val config = rawKeyConfig("alice")
+    val pg1 = new DTLSPeerGroup[String](config)
+    val pg2 = new DTLSPeerGroup[String](config)
+
+    Await.result(pg1.initialize().runAsync, Duration.Inf)
+    assertThrows[InitializationError] {
+      Await.result(pg2.initialize().runAsync, Duration.Inf)
+    }
+    pg1.shutdown().runAsync.futureValue
+
   }
 }
 
