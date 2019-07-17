@@ -9,6 +9,7 @@ import java.security.cert.{Certificate, X509Certificate}
 
 import io.iohk.decco._
 import io.iohk.scalanet.codec.StreamCodec
+import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, HandshakeException, ServerEvent, TerminalPeerGroup}
@@ -28,6 +29,7 @@ import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
 import scala.concurrent.Promise
+import scala.util.control.NonFatal
 
 /**
   * PeerGroup implementation on top of TLS.
@@ -85,7 +87,9 @@ class TLSPeerGroup[M](val config: Config)(
   private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
 
   override def initialize(): Task[Unit] =
-    toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}"))
+    toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}")).onErrorRecoverWith {
+      case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
+    }
 
   override def processAddress: InetMultiAddress = config.processAddress
 

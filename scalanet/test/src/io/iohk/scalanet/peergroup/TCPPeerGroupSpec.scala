@@ -7,6 +7,7 @@ import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.TaskValues._
 import io.iohk.scalanet.codec.FramingCodec
+import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.ChannelBrokenException
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
 import io.iohk.scalanet.peergroup.StandardTestPack.messagingTest
@@ -18,6 +19,7 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.{BeforeAndAfterAll, FlatSpec}
 
+import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -81,4 +83,16 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
       StandardTestPack.serverMultiplexingTest(alice, bob)
     }
+
+  it should "throw InitializationError when port already in use" in {
+    val address = aRandomAddress()
+    val pg1 = new TCPPeerGroup(TCPPeerGroup.Config(address))
+    val pg2 = new TCPPeerGroup(TCPPeerGroup.Config(address))
+    Await.result(pg1.initialize().runAsync, 10 seconds)
+    assertThrows[InitializationError] {
+      Await.result(pg2.initialize().runAsync, 10 seconds)
+    }
+    pg1.shutdown().runAsync.futureValue
+  }
+
 }
