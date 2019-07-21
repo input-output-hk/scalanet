@@ -1,14 +1,15 @@
 package io.iohk.scalanet.peergroup
 
-import scala.concurrent.Future
-import scala.util.Random
-import org.scalatest.concurrent.ScalaFutures._
 import io.iohk.scalanet.TaskValues._
 import io.iohk.scalanet.peergroup.PeerGroup.ChannelSetupException
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
 import monix.execution.Scheduler
 import org.scalatest.Matchers._
 import org.scalatest.RecoverMethods.{recoverToExceptionIf, recoverToSucceededIf}
+import org.scalatest.concurrent.ScalaFutures._
+
+import scala.concurrent.Future
+import scala.util.Random
 
 object StandardTestPack {
 
@@ -16,13 +17,18 @@ object StandardTestPack {
     val alicesMessage = Random.alphanumeric.take(1024).mkString
     val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-    val bobReceived: Future[String] =
-      bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runAsync
-    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
 
+    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
     val aliceClient = alice.client(bob.processAddress).evaluated
     val aliceReceived = aliceClient.in.headL.runAsync
+
+
     aliceClient.sendMessage(alicesMessage).runAsync
+    val bobReceived: Future[String] =
+      bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runAsync
+
+    aliceClient.subscribe().runAsync
+    bob.subscribe().runAsync
 
     bobReceived.futureValue shouldBe alicesMessage
     aliceReceived.futureValue shouldBe bobsMessage

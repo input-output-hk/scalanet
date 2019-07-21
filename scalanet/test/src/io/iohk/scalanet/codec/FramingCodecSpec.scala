@@ -14,6 +14,7 @@ import monix.execution.Scheduler.Implicits.global
 
 import scala.util.Random
 
+import io.iohk.decco.auto
 class FramingCodecSpec extends FlatSpec {
 
   behavior of "FramingCodec"

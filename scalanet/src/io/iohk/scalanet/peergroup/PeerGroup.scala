@@ -4,7 +4,7 @@ import io.iohk.decco.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
 import monix.eval.Task
-import monix.execution.Scheduler
+import monix.execution.{Cancelable, Scheduler}
 import monix.reactive.Observable
 
 import scala.concurrent.Await
@@ -48,6 +48,7 @@ trait Channel[A, M] {
     */
   def in: Observable[M]
 
+  def subscribe():Task[Cancelable] = ???
   /**
     * Terminate the Channel and clean up any resources.
     *
@@ -112,6 +113,8 @@ trait PeerGroup[A, M] {
     */
   def server(): Observable[ServerEvent[A, M]]
 
+
+  def subscribe():Task[Cancelable] = ???
   /**
     * This methods clean resources of the current instance of a PeerGroup.
     *
@@ -152,6 +155,7 @@ object PeerGroup {
 
     implicit class ServerOps[A, M](observable: Observable[ServerEvent[A, M]]) {
       def collectChannelCreated: Observable[Channel[A, M]] = observable.collect(ChannelCreated.collector)
+      def subscribeChannels(): Observable[Cancelable] = observable.collect(ChannelCreated.collector).mapTask(_.subscribe())
       def collectHandshakeFailure: Observable[HandshakeException[A]] = observable.collect(HandshakeFailed.collector)
     }
   }

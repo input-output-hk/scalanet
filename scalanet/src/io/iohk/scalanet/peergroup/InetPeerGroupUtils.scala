@@ -1,9 +1,12 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
+
 import io.netty.util
 import monix.eval.Task
 import monix.execution.Cancelable
+
+import scala.reflect.ClassTag
 
 object InetPeerGroupUtils {
 
@@ -20,6 +23,12 @@ object InetPeerGroupUtils {
           cb.onError(t)
       }
       Cancelable.empty
+    }
+  }
+
+  def toTask[T](f: => Cancelable)(implicit tag: ClassTag[T]): Task[Cancelable] = {
+    Task.create[Cancelable] { (_, _) =>
+      f
     }
   }
 

@@ -106,7 +106,6 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
     isListening(tlsPeerGroup.config.bindAddress) shouldBe false
   }
-
   // TODO this is a copy/paste version of the test in TCPPeerGroupSpec
   it should "report the same address for two inbound channels" in
     withTwoRandomTLSPeerGroups[String](false) { (alice, bob) =>
