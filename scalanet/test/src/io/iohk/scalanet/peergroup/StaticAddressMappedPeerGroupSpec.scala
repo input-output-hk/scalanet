@@ -1,20 +1,13 @@
 package io.iohk.scalanet.peergroup
 
-import io.iohk.decco.auto._
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils._
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.FlatSpec
-import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures
-import org.scalatest.concurrent.ScalaFutures._
 
-import scala.concurrent.Future
 import scala.concurrent.duration._
-import io.iohk.scalanet.TaskValues._
-import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
-
-import scala.util.Random
 
 class StaticAddressMappedPeerGroupSpec extends FlatSpec {
 
@@ -27,20 +20,7 @@ class StaticAddressMappedPeerGroupSpec extends FlatSpec {
       "Alice",
       "Bob"
     ) { (alice, bob) =>
-      println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
-      val alicesMessage = Random.alphanumeric.take(1024).mkString
-      val bobsMessage = Random.alphanumeric.take(1024).mkString
-
-      bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runAsync
-      val bobReceived: Future[String] =
-        bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runAsync
-
-      val aliceClient = alice.client(bob.processAddress).evaluated
-      val aliceReceived = aliceClient.in.headL.runAsync
-      aliceClient.sendMessage(alicesMessage).evaluated
-
-      bobReceived.futureValue shouldBe alicesMessage
-      aliceReceived.futureValue shouldBe bobsMessage
+      StandardTestPack.messagingTest(alice, bob)
     }
 
   private def withTwoStaticPeerGroups(a: String, b: String)(

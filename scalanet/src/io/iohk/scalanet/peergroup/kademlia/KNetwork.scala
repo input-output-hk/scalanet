@@ -26,7 +26,7 @@ object KNetwork {
     private val log = LoggerFactory.getLogger(getClass)
 
     override def server: Observable[(Channel[A, KMessage[A]], KRequest[A])] = {
-      peerGroup.server().mergeMap { channel =>
+      peerGroup.server().collectChannelCreated.mergeMap { channel =>
         channel.in.collect {
           case f @ FindNodes(_, _, _, _) =>
             (channel, f)

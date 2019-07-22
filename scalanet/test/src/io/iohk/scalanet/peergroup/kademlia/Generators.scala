@@ -1,5 +1,10 @@
 package io.iohk.scalanet.peergroup.kademlia
 
+import java.net.InetAddress
+
+import io.iohk.scalanet.NetUtils
+import io.iohk.scalanet.NetUtils.aRandomAddress
+import io.iohk.scalanet.peergroup.kademlia.KPeerGroup.NodeRecord
 import org.scalacheck.Arbitrary.arbitrary
 import org.scalacheck.Gen
 import scodec.bits.BitVector
@@ -16,7 +21,9 @@ object Generators {
       bools <- Gen.listOfN(bitLength, arbitrary[Boolean])
     } yield BitVector.bits(bools)
 
-  def genBitVectorPairs(bitLength: Int = defaultBitLength): Gen[(BitVector, BitVector)] =
+  def genBitVectorPairs(
+      bitLength: Int = defaultBitLength
+  ): Gen[(BitVector, BitVector)] =
     for {
       v1 <- genBitVector(bitLength)
       v2 <- genBitVector(bitLength)
@@ -31,7 +38,9 @@ object Generators {
       v3 <- genBitVector(bitLength)
     } yield (v1, v2, v3)
 
-  def genBitVectorExhaustive(bitLength: Int = defaultBitLength): List[BitVector] = {
+  def genBitVectorExhaustive(
+      bitLength: Int = defaultBitLength
+  ): List[BitVector] = {
     def loop(acc: ListBuffer[BitVector], b: BitVector, i: Int, n: Int): Unit = {
       if (i == n) {
         acc.append(b)
@@ -48,4 +57,17 @@ object Generators {
 
   def aRandomBitVector(bitLength: Int = defaultBitLength): BitVector =
     BitVector.bits(Range(0, bitLength).map(_ => Random.nextBoolean()))
+
+  def aRandomNodeRecord(bitLength: Int = defaultBitLength): NodeRecord = {
+    NodeRecord(
+      id = aRandomBitVector(bitLength),
+      ip = randomNonlocalAddress,
+      tcp = aRandomAddress().getPort,
+      udp = aRandomAddress().getPort
+    )
+  }
+
+  private def randomNonlocalAddress: InetAddress = {
+    InetAddress.getByAddress(NetUtils.randomBytes(4))
+  }
 }
