@@ -126,6 +126,11 @@ object KPeerGroup {
 
   type UnderlyingChannel[M] = Channel[InetMultiAddress, Either[NodeRecord, M]]
 
+  // TODO node records require an additional
+  // signature (why)
+  // sequence number (why)
+  // compressed public key (why)
+  // TODO understand what these things do, which we need an implement.
   case class NodeRecord(id: BitVector, ip: InetAddress, tcp: Int, udp: Int) {
     override def toString: String =
       s"NodeRecord(id = ${id.toHex}, ip = $ip, tcp = $tcp, udp = $udp)"
