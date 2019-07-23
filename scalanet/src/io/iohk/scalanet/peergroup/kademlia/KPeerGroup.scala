@@ -76,17 +76,16 @@ class KPeerGroup[M](
   }
 
   override def client(to: BitVector): Task[Channel[BitVector, M]] = {
-    val maybeRecord = kRouter.get(to)
-    debug(s"Creating new client connection to peer ${to.toHex}")
-    val underlyingChannelTask: Task[UnderlyingChannel[M]] =
-      maybeRecord.fold[Task[UnderlyingChannel[M]]] {
-        debug(s"Routing table lookup failed for peer ${to.toHex}. Raising an error.")
-        Task.raiseError(new ChannelSetupException[BitVector](to, null))
-      } { record =>
+    val underlyingChannelTask = Task
+      .fromFuture(kRouter.get(to))
+      .flatMap { record =>
         debug(s"Routing table lookup returns peer $record. Creating new channel.")
-        underlyingPeerGroup.client(
-          InetMultiAddress(new InetSocketAddress(record.ip, record.tcp))
-        )
+        underlyingPeerGroup.client(InetMultiAddress(new InetSocketAddress(record.ip, record.tcp)))
+      }
+      .onErrorRecoverWith {
+        case t =>
+          debug(s"Routing table lookup failed for peer ${to.toHex}. Raising an error.")
+          Task.raiseError(new ChannelSetupException[BitVector](to, t))
       }
 
     for {

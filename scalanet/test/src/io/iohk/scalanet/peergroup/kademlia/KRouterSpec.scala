@@ -10,7 +10,7 @@ import monix.execution.Scheduler
 import org.scalatest.FreeSpec
 import org.scalatest.Matchers._
 import scodec.bits.BitVector
-
+import org.scalatest.concurrent.ScalaFutures._
 import scala.util.Random
 
 class KRouterSpec extends FreeSpec {
@@ -21,47 +21,51 @@ class KRouterSpec extends FreeSpec {
     "should locate this node's own id" in {
       val krouter = aKRouter()
 
-      krouter.get(krouter.config.nodeId) shouldBe Some(krouter.config.nodeRecord)
+      krouter.get(krouter.config.nodeId).futureValue shouldBe krouter.config.nodeRecord
     }
 
     "should locate any bootstrap nodes" in {
-      val knodes = a2NodeNetwork
-      val n0 = knodes(0) // the bootstrap node
-      val n1 = knodes(1) // the new joiner
+      val (n0, n1) = a2NodeNetwork()
 
-      n1.get(n0.config.nodeId) shouldBe Some(n0.config.nodeRecord)
+      n1.get(n0.config.nodeId).futureValue shouldBe n0.config.nodeRecord
     }
 
     "should not locate any other node" in {
       val krouter = aKRouter()
       val someNodeId = aRandomBitVector(krouter.config.nodeId.length.toInt)
 
-      krouter.get(someNodeId) shouldBe None
+      whenReady(krouter.get(someNodeId).failed) { e =>
+        e shouldBe an[Exception]
+        e.getMessage should startWith(s"Lookup failed for get(${someNodeId.toHex})")
+      }
+    }
+
+    "should perform a network lookup for nodes it does not know about" in {
+      val (_, n1, n2) = a3NodeNetwork(k = 1)
+
+      n1.get(n2.config.nodeId).futureValue shouldBe n2.config.nodeRecord
     }
   }
 
   "A bootstrap node" - {
     "should locate a new node that contacts it" in {
-      val knodes = a2NodeNetwork
-      val n0 = knodes(0) // the bootstrap node, which knows no nodes initially.
-      val n1 = knodes(1)
+      // n0, the bootstrap node, knows no nodes initially.
+      val (n0, n1) = a2NodeNetwork()
 
       // assert the bootstrap knows about n1 after n1 contacted it
-      n0.get(n1.config.nodeId) shouldBe Some(n1.config.nodeRecord)
+      n0.get(n1.config.nodeId).futureValue shouldBe n1.config.nodeRecord
     }
 
     "should inform the new node of its neighbourhood" in {
-      val knodes = a3NodeNetwork
-      val n0 = knodes(0)
-      val n1 = knodes(1) // n1 and n2 will not know each other
-      val n2 = knodes(2) // because they bootstrap from n0
+      val (_, n1, n2) = a3NodeNetwork()
+      // n1 and n2 will not know each other
+      // because they bootstrap from n0
 
       // assert that n1 and n2 now know about each other after
-      n2.get(n1.config.nodeId) shouldBe Some(n1.config.nodeRecord)
-      n1.get(n2.config.nodeId) shouldBe Some(n2.config.nodeRecord)
+      n1.get(n2.config.nodeId).futureValue shouldBe n2.config.nodeRecord
+      n2.get(n1.config.nodeId).futureValue shouldBe n1.config.nodeRecord
     }
   }
-
 }
 
 object KRouterSpec {
@@ -71,21 +75,25 @@ object KRouterSpec {
   val networkSim =
     new peergroup.InMemoryPeerGroup.Network[String, KMessage[String]]()
 
-  def a2NodeNetwork(implicit scheduler: Scheduler): Seq[KRouter[String]] = {
-    val k1 = aKRouter(Map.empty)
-    val k2 = aKRouter(Map(k1.config.nodeId -> k1.config.nodeRecord))
-    Seq(k1, k2)
+  def a2NodeNetwork(alpha: Int = 3, k: Int = 20)(implicit scheduler: Scheduler): (KRouter[String], KRouter[String]) = {
+    val k1 = aKRouter(Map.empty, alpha, k)
+    val k2 = aKRouter(Map(k1.config.nodeId -> k1.config.nodeRecord), alpha, k)
+    (k1, k2)
   }
 
-  def a3NodeNetwork(implicit scheduler: Scheduler): Seq[KRouter[String]] = {
-    val k1 = aKRouter(Map.empty)
-    val k2 = aKRouter(Map(k1.config.nodeId -> k1.config.nodeRecord))
-    val k3 = aKRouter(Map(k1.config.nodeId -> k1.config.nodeRecord))
-    Seq(k1, k2, k3)
+  def a3NodeNetwork(alpha: Int = 3, k: Int = 20)(
+      implicit scheduler: Scheduler
+  ): (KRouter[String], KRouter[String], KRouter[String]) = {
+    val k1 = aKRouter(Map.empty, alpha, k)
+    val k2 = aKRouter(Map(k1.config.nodeId -> k1.config.nodeRecord), alpha, k)
+    val k3 = aKRouter(Map(k1.config.nodeId -> k1.config.nodeRecord), alpha, k)
+    (k1, k2, k3)
   }
 
   def aKRouter(
-      knownPeers: Map[BitVector, String] = Map.empty
+      knownPeers: Map[BitVector, String] = Map.empty,
+      alpha: Int = 3,
+      k: Int = 20
   )(implicit scheduler: Scheduler): KRouter[String] = {
 
     val underlyingAddress = Random.alphanumeric.take(4).mkString
@@ -98,7 +106,7 @@ object KRouterSpec {
     val knetwork = new KNetworkScalanetImpl[String](underlyingPeerGroup)
 
     val nodeId = Generators.aRandomBitVector(keySizeBits)
-    val config = Config(nodeId, underlyingAddress, knownPeers)
+    val config = Config(nodeId, underlyingAddress, knownPeers, alpha, k)
 
     new KRouter[String](config, knetwork)
   }

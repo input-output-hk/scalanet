@@ -69,11 +69,33 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
     }
     .subscribe()
 
-  def get(key: BitVector): Option[V] = {
-    for {
-      nodeId <- kBuckets.closestNodes(key, 1).find(_ == key)
-      record <- nodeRecords.get(nodeId)
-    } yield record
+  def get(key: BitVector): Future[V] = {
+    debug(s"get(${key.toHex})")
+    getLocally(key).recoverWith { case _ => getRemotely(key) }.recoverWith { case t => giveUp(key, t) }
+  }
+
+  private def getRemotely(key: BitVector): Future[V] = {
+    lookup(key).flatMap(_ => getLocally(key))
+  }
+
+  private def getLocally(key: BitVector): Future[V] = {
+    toFuture(
+      for {
+        nodeId <- kBuckets.closestNodes(key, 1).find(_ == key)
+        record <- nodeRecords.get(nodeId)
+      } yield record,
+      new Exception(s"Target node id ${key.toHex} not loaded into kBuckets.")
+    )
+  }
+
+  private def toFuture[T](o: Option[T], failure: => Throwable): Future[T] = {
+    o.fold[Future[T]](Future.failed(failure))(t => Future(t))
+  }
+
+  private def giveUp(key: BitVector, t: Throwable): Future[V] = {
+    val message = s"Lookup failed for get(${key.toHex}). Got an exception: $t."
+    info(message)
+    Future.failed(new Exception(message, t))
   }
 
   // lookup process, from page 6 of the kademlia paper
@@ -96,10 +118,10 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
         .take(config.alpha)
         .map { knownNode =>
           val findNodesRequest = FindNodes[V](
-            UUID.randomUUID(),
-            config.nodeId,
-            config.nodeRecord,
-            knownNode
+            requestId = UUID.randomUUID(),
+            nodeId = config.nodeId,
+            nodeRecord = config.nodeRecord,
+            targetNodeId = targetNodeId // knownNode
           )
 
           val knownNodeRecord = nodeRecords(knownNode)
@@ -107,7 +129,7 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
             s"Issuing " +
               s"findNodes request to (${knownNode.toHex}, $knownNodeRecord). " +
               s"RequestId = ${findNodesRequest.requestId}, " +
-              s"Target = ${knownNode.toHex}."
+              s"Target = ${targetNodeId.toHex}."
           )
 
           network.findNodes(knownNodeRecord, findNodesRequest).flatMap { kNodes: Nodes[V] =>
@@ -161,7 +183,7 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
   }
 
   private def info(msg: String): Unit = {
-    log.debug(s"${config.nodeId.toHex} $msg")
+    log.info(s"${config.nodeId.toHex} $msg")
   }
 }
 

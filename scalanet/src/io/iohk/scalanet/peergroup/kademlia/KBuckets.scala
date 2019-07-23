@@ -96,7 +96,7 @@ class KBuckets(val baseId: BitVector) {
   }
 
   override def toString: String = {
-    s"KBuckets(baseId = ${baseId.toBin}): ${iterator.toList.sorted(new XorOrdering(baseId)).map(id => id.toBin).mkString(", ")}"
+    s"KBuckets(baseId = ${baseId.toHex}): ${iterator.toList.sorted(new XorOrdering(baseId)).map(id => id.toHex).mkString(", ")}"
   }
 
   private def newKBucket: KBucket =

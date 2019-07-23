@@ -19,7 +19,8 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.mockito.MockitoSugar._
 import org.scalatest.concurrent.ScalaFutures._
 
-import scala.concurrent.Await
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 
 class KPeerGroupSpec extends FlatSpec {
@@ -82,7 +83,7 @@ object KPeerGroupSpec {
     val kRouter = mock[KRouter[NodeRecord]]
     val kRouterConfig = KRouter.Config(nodeRecord.id, nodeRecord, Map.empty)
     peers.foreach(
-      peerRecord => when(kRouter.get(peerRecord.id)).thenReturn(Some(peerRecord))
+      peerRecord => when(kRouter.get(peerRecord.id)).thenReturn(Future(peerRecord))
     )
     when(kRouter.config).thenReturn(kRouterConfig)
     kRouter
