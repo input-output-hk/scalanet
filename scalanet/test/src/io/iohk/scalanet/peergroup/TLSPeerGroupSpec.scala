@@ -11,11 +11,13 @@ import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.TaskValues._
 import io.iohk.scalanet.codec.{FramingCodec, StreamCodec}
+import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, HandshakeException}
 import io.iohk.scalanet.peergroup.StandardTestPack.messagingTest
 import io.iohk.scalanet.peergroup.TLSPeerGroup._
 import io.iohk.scalanet.peergroup.TLSPeerGroupSpec._
+import io.netty.handler.ssl.util.SelfSignedCertificate
 import monix.execution.CancelableFuture
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.Matchers._
@@ -117,6 +119,22 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
       firstInbound.futureValue.to shouldBe alice.processAddress
       secondInbound.futureValue.to shouldBe alice.processAddress
     }
+
+  it should "throw InitializationError when port already in use" in {
+    val address = aRandomAddress()
+    val sc1 = new SelfSignedCertificate()
+    val sc2 = new SelfSignedCertificate()
+
+    val pg1 = new TLSPeerGroup(TLSPeerGroup.Config(address, sc1.key(), List(sc1.cert()), List(sc2.cert()), false))
+    val pg2 = new TLSPeerGroup(TLSPeerGroup.Config(address, sc2.key(), List(sc2.cert()), List(sc1.cert()), false))
+
+    Await.result(pg1.initialize().runAsync, 10 seconds)
+    assertThrows[InitializationError] {
+      Await.result(pg2.initialize().runAsync, 10 seconds)
+    }
+    pg1.shutdown().runAsync.futureValue
+
+  }
 
 }
 

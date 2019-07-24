@@ -9,11 +9,14 @@ import io.iohk.decco.auto._
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import io.iohk.decco.Codec
 import io.iohk.scalanet.NetUtils
+import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.concurrent.ScalaFutures._
 import io.iohk.scalanet.peergroup.PeerGroup.MessageMTUException
 import io.iohk.scalanet.peergroup.StandardTestPack.messagingTest
 import org.scalatest.RecoverMethods._
+
+import scala.concurrent.Await
 
 class UDPPeerGroupSpec extends FlatSpec {
 
@@ -46,4 +49,17 @@ class UDPPeerGroupSpec extends FlatSpec {
 
     isListeningUDP(pg1.config.bindAddress) shouldBe false
   }
+
+  it should "throw InitializationError when port already in use" in {
+    val address = aRandomAddress()
+    val pg1 = new UDPPeerGroup[String](UDPPeerGroup.Config(address))
+    val pg2 = new UDPPeerGroup[String](UDPPeerGroup.Config(address))
+
+    Await.result(pg1.initialize().runAsync, 10 seconds)
+    assertThrows[InitializationError] {
+      Await.result(pg2.initialize().runAsync, 10 seconds)
+    }
+    pg1.shutdown().runAsync.futureValue
+  }
+
 }

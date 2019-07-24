@@ -24,9 +24,11 @@ import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
 import io.iohk.decco._
 import io.iohk.scalanet.codec.StreamCodec
+import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 
 import scala.concurrent.Promise
+import scala.util.control.NonFatal
 
 /**
   * PeerGroup implementation on top of TCP.
@@ -72,7 +74,9 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
   private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
 
   override def initialize(): Task[Unit] =
-    toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}"))
+    toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}")).onErrorRecoverWith {
+      case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
+    }
 
   override def processAddress: InetMultiAddress = config.processAddress
 
