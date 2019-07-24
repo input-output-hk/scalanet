@@ -10,7 +10,7 @@ sealed trait KMessage[V] {
   def nodeRecord: V
 }
 
-object KademliaMessage {
+object KMessage {
 
   sealed trait KRequest[V] extends KMessage[V]
 
@@ -25,5 +25,4 @@ object KademliaMessage {
     case class Nodes[V](requestId: UUID, nodeId: BitVector, nodeRecord: V, nodes: Seq[(BitVector, V)])
         extends KResponse[V]
   }
-
 }

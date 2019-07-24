@@ -4,8 +4,8 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.scalanet.peergroup.kademlia.KRouter.Config
-import io.iohk.scalanet.peergroup.kademlia.KademliaMessage.KRequest.FindNodes
-import io.iohk.scalanet.peergroup.kademlia.KademliaMessage.KResponse.Nodes
+import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.FindNodes
+import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.Nodes
 import monix.execution.Scheduler
 import org.slf4j.LoggerFactory
 import scodec.bits.BitVector
