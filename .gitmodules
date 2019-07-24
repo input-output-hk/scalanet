@@ -1,4 +1,0 @@
-[submodule "decco"]
-	path = decco
-	url = git@github.com:input-output-hk/decco.git
-	branch = A-796/MillifyDecco
