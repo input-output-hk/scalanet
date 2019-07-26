@@ -13,7 +13,7 @@ import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.concurrent.ScalaFutures._
 import io.iohk.scalanet.peergroup.PeerGroup.MessageMTUException
-import io.iohk.scalanet.peergroup.StandardTestPack.messagingTest
+import io.iohk.scalanet.peergroup.StandardTestPack._
 import org.scalatest.RecoverMethods._
 
 import scala.concurrent.Await
@@ -38,8 +38,13 @@ class UDPPeerGroupSpec extends FlatSpec {
     }
 
   it should "send and receive a message" in withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
-    messagingTest(alice, bob)
+     messagingTest(alice, bob)
   }
+
+  it should "report the same address for two inbound channels" in
+    withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
+      StandardTestPack.serverMultiplexingTest(alice, bob)
+    }
 
   it should "shutdown cleanly" in {
     val pg1 = randomUDPPeerGroup[String]

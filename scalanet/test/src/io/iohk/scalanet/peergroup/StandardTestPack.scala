@@ -33,8 +33,8 @@ object StandardTestPack {
   ): Unit = {
     val alicesMessage = Random.alphanumeric.take(1024).mkString
     val bobsMessage = Random.alphanumeric.take(1024).mkString
-
     bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
+
 
     val aliceClient1 = alice.client(bob.processAddress).evaluated
     val aliceClient2 = alice.client(bob.processAddress).evaluated
@@ -43,8 +43,11 @@ object StandardTestPack {
     val aliceReceived2 = aliceClient2.in.headL.runAsync
 
     aliceClient1.sendMessage(alicesMessage).runAsync
+    aliceClient2.sendMessage(alicesMessage).runAsync
 
     aliceReceived1.futureValue shouldBe bobsMessage
+    aliceReceived2.futureValue shouldBe bobsMessage
+
     recoverToSucceededIf[IllegalStateException](aliceReceived2)
   }
 
