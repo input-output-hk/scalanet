@@ -35,7 +35,6 @@ object StandardTestPack {
     val bobsMessage = Random.alphanumeric.take(1024).mkString
     bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
 
-
     val aliceClient1 = alice.client(bob.processAddress).evaluated
     val aliceClient2 = alice.client(bob.processAddress).evaluated
 

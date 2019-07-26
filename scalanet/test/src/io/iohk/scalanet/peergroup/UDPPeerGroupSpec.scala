@@ -38,7 +38,7 @@ class UDPPeerGroupSpec extends FlatSpec {
     }
 
   it should "send and receive a message" in withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
-     messagingTest(alice, bob)
+    messagingTest(alice, bob)
   }
 
   it should "report the same address for two inbound channels" in
