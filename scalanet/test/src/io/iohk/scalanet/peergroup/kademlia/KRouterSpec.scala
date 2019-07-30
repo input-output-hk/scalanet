@@ -5,7 +5,7 @@ import io.iohk.scalanet.peergroup.kademlia.Generators.aRandomBitVector
 import io.iohk.scalanet.peergroup.kademlia.KNetwork.KNetworkScalanetImpl
 import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
 import io.iohk.scalanet.peergroup.kademlia.KRouterSpec._
-import io.iohk.scalanet.peergroup.{InMemoryPeerGroup, InetMultiAddress, PeerGroup}
+import io.iohk.scalanet.peergroup.{InMemoryPeerGroup, PeerGroup}
 import monix.execution.Scheduler
 import org.scalatest.FreeSpec
 import org.scalatest.Matchers._
@@ -72,14 +72,16 @@ class KRouterSpec extends FreeSpec {
 
 object KRouterSpec {
 
+  type SRouter = KRouter[String]
+
   val keySizeBits = 160
 
   val networkSim =
-    new peergroup.InMemoryPeerGroup.Network[InetMultiAddress, KMessage]()
+    new peergroup.InMemoryPeerGroup.Network[String, KMessage[String]]()
 
   def a2NodeNetwork(alpha: Int = 3, k: Int = 20)(
       implicit scheduler: Scheduler
-  ): (KRouter, KRouter) = {
+  ): (SRouter, SRouter) = {
     val k1 = aKRouter(Set.empty, alpha, k)
     val k2 = aKRouter(Set(k1.config.nodeRecord), alpha, k)
     (k1, k2)
@@ -87,23 +89,21 @@ object KRouterSpec {
 
   def a3NodeNetwork(alpha: Int = 3, k: Int = 20)(
       implicit scheduler: Scheduler
-  ): (KRouter, KRouter, KRouter) = {
+  ): (SRouter, SRouter, SRouter) = {
     val k1 = aKRouter(Set.empty, alpha, k)
     val k2 = aKRouter(Set(k1.config.nodeRecord), alpha, k)
     val k3 = aKRouter(Set(k1.config.nodeRecord), alpha, k)
     (k1, k2, k3)
   }
 
-  def aKRouter(knownPeers: Set[NodeRecord] = Set.empty, alpha: Int = 3, k: Int = 20)(
+  def aKRouter(knownPeers: Set[NodeRecord[String]] = Set.empty, alpha: Int = 3, k: Int = 20)(
       implicit scheduler: Scheduler
-  ): KRouter = {
+  ): SRouter = {
 
     val nodeRecord = Generators.aRandomNodeRecord()
 
-    val underlyingAddress = InetMultiAddress(nodeRecord.udpSocketAddress)
-
     val underlyingPeerGroup = PeerGroup.createOrThrow(
-      new InMemoryPeerGroup[InetMultiAddress, KMessage](underlyingAddress)(networkSim),
+      new InMemoryPeerGroup[String, KMessage[String]](nodeRecord.routingAddress)(networkSim),
       nodeRecord
     )
 

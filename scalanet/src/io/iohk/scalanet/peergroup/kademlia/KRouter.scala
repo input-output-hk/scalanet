@@ -1,6 +1,5 @@
 package io.iohk.scalanet.peergroup.kademlia
 
-import java.net.{InetAddress, InetSocketAddress}
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -16,12 +15,12 @@ import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.duration._
 
-class KRouter(val config: Config, network: KNetwork)(
+class KRouter[A](val config: Config[A], network: KNetwork[A])(
     implicit scheduler: Scheduler
 ) {
 
   private val kBuckets = new KBuckets(config.nodeRecord.id)
-  private val nodeRecords = new ConcurrentHashMap[BitVector, NodeRecord].asScala
+  private val nodeRecords = new ConcurrentHashMap[BitVector, NodeRecord[A]].asScala
   private val log = LoggerFactory.getLogger(getClass)
 
   add(config.nodeRecord)
@@ -66,16 +65,16 @@ class KRouter(val config: Config, network: KNetwork)(
     }
     .subscribe()
 
-  def get(key: BitVector): Future[NodeRecord] = {
+  def get(key: BitVector): Future[NodeRecord[A]] = {
     debug(s"get(${key.toHex})")
     getLocally(key).recoverWith { case _ => getRemotely(key) }.recoverWith { case t => giveUp(key, t) }
   }
 
-  private def getRemotely(key: BitVector): Future[NodeRecord] = {
+  private def getRemotely(key: BitVector): Future[NodeRecord[A]] = {
     lookup(key).flatMap(_ => getLocally(key))
   }
 
-  private def getLocally(key: BitVector): Future[NodeRecord] = {
+  private def getLocally(key: BitVector): Future[NodeRecord[A]] = {
     toFuture(
       for {
         nodeId <- kBuckets.closestNodes(key, 1).find(_ == key)
@@ -89,14 +88,14 @@ class KRouter(val config: Config, network: KNetwork)(
     o.fold[Future[T]](Future.failed(failure))(t => Future(t))
   }
 
-  private def giveUp(key: BitVector, t: Throwable): Future[NodeRecord] = {
+  private def giveUp(key: BitVector, t: Throwable): Future[NodeRecord[A]] = {
     val message = s"Lookup failed for get(${key.toHex}). Got an exception: $t."
     info(message)
     Future.failed(new Exception(message, t))
   }
 
   // lookup process, from page 6 of the kademlia paper
-  private def lookup(targetNodeId: BitVector): Future[Seq[NodeRecord]] = {
+  private def lookup(targetNodeId: BitVector): Future[Seq[NodeRecord[A]]] = {
     // start by taking the alpha closest nodes from its kbuckets
 
     val xorOrdering = new XorOrdering(targetNodeId)
@@ -128,7 +127,7 @@ class KRouter(val config: Config, network: KNetwork)(
               s"Target = ${targetNodeId.toHex}."
           )
 
-          network.findNodes(knownNodeRecord, findNodesRequest).flatMap { kNodes: Nodes =>
+          network.findNodes(knownNodeRecord, findNodesRequest).flatMap { kNodes: Nodes[A] =>
             // verify uuids of request/response match (TODO)
 
             debug(
@@ -164,11 +163,11 @@ class KRouter(val config: Config, network: KNetwork)(
     )
   }
 
-  private def embellish(ids: Seq[BitVector]): Seq[NodeRecord] = {
+  private def embellish(ids: Seq[BitVector]): Seq[NodeRecord[A]] = {
     ids.map(id => nodeRecords(id))
   }
 
-  private def add(nodeRecord: NodeRecord): Unit = {
+  private def add(nodeRecord: NodeRecord[A]): Unit = {
     kBuckets.add(nodeRecord.id)
     nodeRecords.put(nodeRecord.id, nodeRecord)
     debug(s"Added record (${nodeRecord.id.toHex}, $nodeRecord) to the routing table.")
@@ -184,7 +183,7 @@ class KRouter(val config: Config, network: KNetwork)(
 }
 
 object KRouter {
-  case class Config(nodeRecord: NodeRecord, knownPeers: Set[NodeRecord], alpha: Int = 3, k: Int = 20)
+  case class Config[A](nodeRecord: NodeRecord[A], knownPeers: Set[NodeRecord[A]], alpha: Int = 3, k: Int = 20)
 
   // These node records are derived from Ethereum node records (https://eips.ethereum.org/EIPS/eip-778)
   // TODO node records require an additional
@@ -192,10 +191,8 @@ object KRouter {
   // sequence number (why)
   // compressed public key (why)
   // TODO understand what these things do, which we need an implement.
-  case class NodeRecord(id: BitVector, ip: InetAddress, tcp: Int, udp: Int) {
+  case class NodeRecord[A](id: BitVector, routingAddress: A, messagingAddress: A) {
     override def toString: String =
-      s"NodeRecord(id = ${id.toHex}, ip = $ip, tcp = $tcp, udp = $udp)"
-    val tcpSocketAddress = new InetSocketAddress(ip, tcp)
-    val udpSocketAddress = new InetSocketAddress(ip, udp)
+      s"NodeRecord(id = ${id.toHex}, routingAddress = $routingAddress, messagingAddress = $messagingAddress)"
   }
 }

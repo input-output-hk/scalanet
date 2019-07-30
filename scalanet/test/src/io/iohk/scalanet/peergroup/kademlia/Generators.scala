@@ -1,9 +1,5 @@
 package io.iohk.scalanet.peergroup.kademlia
 
-import java.net.InetAddress
-
-import io.iohk.scalanet.NetUtils
-import io.iohk.scalanet.NetUtils.aRandomAddress
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import org.scalacheck.Arbitrary.arbitrary
 import org.scalacheck.Gen
@@ -58,16 +54,11 @@ object Generators {
   def aRandomBitVector(bitLength: Int = defaultBitLength): BitVector =
     BitVector.bits(Range(0, bitLength).map(_ => Random.nextBoolean()))
 
-  def aRandomNodeRecord(bitLength: Int = defaultBitLength): NodeRecord = {
+  def aRandomNodeRecord(bitLength: Int = defaultBitLength): NodeRecord[String] = {
     NodeRecord(
       id = aRandomBitVector(bitLength),
-      ip = randomNonlocalAddress,
-      tcp = aRandomAddress().getPort,
-      udp = aRandomAddress().getPort
+      routingAddress = Random.alphanumeric.take(4).mkString,
+      messagingAddress = Random.alphanumeric.take(4).mkString
     )
-  }
-
-  def randomNonlocalAddress: InetAddress = {
-    InetAddress.getByAddress(NetUtils.randomBytes(4))
   }
 }
