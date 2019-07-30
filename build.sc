@@ -83,4 +83,22 @@ object scalanet extends ScalaModule with PublishModule {
       super.runMain("org.scalatest.run", args: _*)
     }
   }
+
+  object examples extends ScalaModule {
+    override def scalaVersion = "2.12.7"
+
+    override def scalacOptions = scalanet.scalacOptions
+
+    override def moduleDeps: Seq[JavaModule] = super.moduleDeps ++ Seq(scalanet)
+
+    override def ivyDeps = Agg(
+      ivy"ch.qos.logback:logback-core:1.2.3",
+      ivy"ch.qos.logback:logback-classic:1.2.3",
+      ivy"org.mockito:mockito-core:2.21.0",
+      ivy"com.github.pureconfig::pureconfig:0.11.1",
+      ivy"com.github.scopt::scopt:3.7.1",
+      ivy"org.scodec::scodec-bits:1.1.6",
+      ivy"io.monix::monix:3.0.0-RC1"
+    )
+  }
 }
