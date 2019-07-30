@@ -4,7 +4,7 @@ import java.net.InetAddress
 
 import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils.aRandomAddress
-import io.iohk.scalanet.peergroup.kademlia.KPeerGroup.NodeRecord
+import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import org.scalacheck.Arbitrary.arbitrary
 import org.scalacheck.Gen
 import scodec.bits.BitVector
@@ -67,7 +67,7 @@ object Generators {
     )
   }
 
-  private def randomNonlocalAddress: InetAddress = {
+  def randomNonlocalAddress: InetAddress = {
     InetAddress.getByAddress(NetUtils.randomBytes(4))
   }
 }

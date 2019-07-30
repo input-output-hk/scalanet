@@ -1,10 +1,11 @@
 package io.iohk.scalanet.peergroup.kademlia
 
-import java.net.{InetAddress, InetSocketAddress}
+import java.net.InetSocketAddress
 
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelSetupException, HandshakeException, ServerEvent}
-import io.iohk.scalanet.peergroup.kademlia.KPeerGroup.{ChannelImpl, NodeRecord, UnderlyingChannel}
+import io.iohk.scalanet.peergroup.kademlia.KPeerGroup.{ChannelImpl, UnderlyingChannel}
+import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import io.iohk.scalanet.peergroup.{Channel, InetMultiAddress, PeerGroup}
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -13,10 +14,9 @@ import monix.reactive.subjects.Subject
 import org.slf4j.{Logger, LoggerFactory}
 import scodec.bits.BitVector
 
-// PeerGroup using node records for addressing.
-// These node records are derived from Ethereum node records (https://eips.ethereum.org/EIPS/eip-778)
+// PeerGroup using kademlia routing.
 class KPeerGroup[M](
-    val kRouter: KRouter[NodeRecord],
+    val kRouter: KRouter,
     val server: Subject[ServerEvent[BitVector, M], ServerEvent[BitVector, M]],
     underlyingPeerGroup: PeerGroup[InetMultiAddress, Either[NodeRecord, M]]
 )(implicit scheduler: Scheduler)
@@ -24,7 +24,7 @@ class KPeerGroup[M](
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  override def processAddress: BitVector = kRouter.config.nodeId
+  override def processAddress: BitVector = kRouter.config.nodeRecord.id
 
   override def initialize(): Task[Unit] = {
     // The protocol defined here requires that a peer
@@ -75,7 +75,7 @@ class KPeerGroup[M](
           // TODO what other checks make sense?
           new ChannelImpl[M](
             to,
-            kRouter.config.nodeId,
+            kRouter.config.nodeRecord.id,
             log,
             underlyingChannel
           )
@@ -96,7 +96,7 @@ class KPeerGroup[M](
   override def shutdown(): Task[Unit] = Task.unit
 
   private def debug(msg: String): Unit = {
-    log.debug(s"${kRouter.config.nodeId.toHex} $msg")
+    log.debug(s"${kRouter.config.nodeRecord.id.toHex} $msg")
   }
 
   private def acceptNodeRecord(channel: UnderlyingChannel[M], nodeRecord: NodeRecord): Unit = {
@@ -112,7 +112,7 @@ class KPeerGroup[M](
 
       val newChannel = new ChannelImpl[M](
         nodeId,
-        kRouter.config.nodeId,
+        kRouter.config.nodeRecord.id,
         log,
         channel
       )
@@ -125,16 +125,6 @@ class KPeerGroup[M](
 object KPeerGroup {
 
   type UnderlyingChannel[M] = Channel[InetMultiAddress, Either[NodeRecord, M]]
-
-  // TODO node records require an additional
-  // signature (why)
-  // sequence number (why)
-  // compressed public key (why)
-  // TODO understand what these things do, which we need an implement.
-  case class NodeRecord(id: BitVector, ip: InetAddress, tcp: Int, udp: Int) {
-    override def toString: String =
-      s"NodeRecord(id = ${id.toHex}, ip = $ip, tcp = $tcp, udp = $udp)"
-  }
 
   private class ChannelImpl[M](
       val to: BitVector,
@@ -157,5 +147,4 @@ object KPeerGroup {
 
     override def in: Observable[M] = underlyingChannel.in.collect { case Right(message) => message }
   }
-
 }

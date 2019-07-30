@@ -9,8 +9,8 @@ import io.iohk.scalanet.peergroup.PeerGroup.createOrThrow
 import io.iohk.scalanet.peergroup.StandardTestPack.messagingTest
 import io.iohk.scalanet.peergroup.{InMemoryPeerGroup, InetMultiAddress}
 import io.iohk.scalanet.peergroup.kademlia.Generators.aRandomNodeRecord
-import io.iohk.scalanet.peergroup.kademlia.KPeerGroup.NodeRecord
 import io.iohk.scalanet.peergroup.kademlia.KPeerGroupSpec.withTwoPeerGroups
+import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import monix.execution.Scheduler
 import monix.reactive.subjects.PublishSubject
 import org.mockito.Mockito.when
@@ -79,9 +79,9 @@ object KPeerGroupSpec {
     }
   }
 
-  private def mockKRouter(nodeRecord: NodeRecord, peers: Seq[NodeRecord]): KRouter[NodeRecord] = {
-    val kRouter = mock[KRouter[NodeRecord]]
-    val kRouterConfig = KRouter.Config(nodeRecord.id, nodeRecord, Map.empty)
+  private def mockKRouter(nodeRecord: NodeRecord, peers: Seq[NodeRecord]): KRouter = {
+    val kRouter = mock[KRouter]
+    val kRouterConfig = KRouter.Config(nodeRecord, Set.empty)
     peers.foreach(
       peerRecord => when(kRouter.get(peerRecord.id)).thenReturn(Future(peerRecord))
     )
