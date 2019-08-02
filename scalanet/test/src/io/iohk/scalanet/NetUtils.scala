@@ -143,6 +143,20 @@ object NetUtils {
     }
   }
 
+  def with3RandomTCPPeerGroups[M](
+                                     testCode: (TCPPeerGroup[M], TCPPeerGroup[M],TCPPeerGroup[M]) => Any
+                                   )(implicit scheduler: Scheduler, codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
+    val (pg1, pg2,pg3) = random3TCPPeerGroup(scheduler, codec, bufferInstantiator)
+    try {
+      testCode(pg1, pg2,pg3)
+    } finally {
+      pg1.shutdown()
+      pg2.shutdown()
+      pg3.shutdown()
+    }
+  }
+
+
   def withTwoRandomTLSPeerGroups[M](clientAuth: Boolean = false)(
       testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
   )(implicit scheduler: Scheduler, codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
@@ -191,6 +205,26 @@ object NetUtils {
     Await.result(pg2.initialize().runAsync, 10 seconds)
 
     (pg1, pg2)
+  }
+
+  def random3TCPPeerGroup[M](
+                              implicit scheduler: Scheduler,
+                              codec: StreamCodec[M],
+                              bufferInstantiator: BufferInstantiator[ByteBuffer]
+                            ): (TCPPeerGroup[M], TCPPeerGroup[M],TCPPeerGroup[M]) = {
+    val address = aRandomAddress()
+    val address2 = aRandomAddress()
+    val address3 = aRandomAddress()
+
+    val pg1 = new TCPPeerGroup(TCPPeerGroup.Config(address))
+    val pg2 = new TCPPeerGroup(TCPPeerGroup.Config(address2))
+    val pg3 = new TCPPeerGroup(TCPPeerGroup.Config(address3))
+
+    Await.result(pg1.initialize().runAsync, 10 seconds)
+    Await.result(pg2.initialize().runAsync, 10 seconds)
+    Await.result(pg3.initialize().runAsync, 10 seconds)
+
+    (pg1, pg2, pg3)
   }
 
   def withTwoRandomUDPPeerGroups[M](
