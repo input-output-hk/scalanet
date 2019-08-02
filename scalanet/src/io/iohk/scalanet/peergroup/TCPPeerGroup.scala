@@ -85,8 +85,7 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
 
   override def server(): Observable[ServerEvent[InetMultiAddress, M]] = observable
 
-  override def subscribe(): Task[Cancelable] = toTask{
-    observable.subscribeChannels().foreach(_ => Unit)
+  override def connect(): Task[Cancelable] = toTask{
     observable.connect()
   }
 
@@ -142,7 +141,7 @@ object TCPPeerGroup {
 
     override def in: Observable[M] = observable
 
-    override def subscribe(): Task[Cancelable] = toTask(observable.connect())
+    override def connect(): Task[Cancelable] = toTask(observable.connect())
 
 
     override def close(): Task[Unit] = {
@@ -219,7 +218,7 @@ object TCPPeerGroup {
     }
 
     override def in: Observable[M] = observable
-    override def subscribe(): Task[Cancelable] = toTask(observable.connect())
+    override def connect(): Task[Cancelable] = toTask(observable.connect())
 
 
     override def close(): Task[Unit] = {

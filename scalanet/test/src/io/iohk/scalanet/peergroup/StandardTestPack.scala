@@ -27,8 +27,8 @@ object StandardTestPack {
     val bobReceived: Future[String] =
       bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runAsync
 
-    aliceClient.subscribe().runAsync
-    bob.subscribe().runAsync
+    aliceClient.connect().runAsync
+    bob.connect().runAsync
 
     bobReceived.futureValue shouldBe alicesMessage
     aliceReceived.futureValue shouldBe bobsMessage
