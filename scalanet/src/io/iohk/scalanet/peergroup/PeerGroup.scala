@@ -48,7 +48,8 @@ trait Channel[A, M] {
     */
   def in: Observable[M]
 
-  def connect():Task[Cancelable] = ???
+  def connect(): Task[Cancelable] = ???
+
   /**
     * Terminate the Channel and clean up any resources.
     *
@@ -113,8 +114,8 @@ trait PeerGroup[A, M] {
     */
   def server(): Observable[ServerEvent[A, M]]
 
+  def connect(): Task[Cancelable] = ???
 
-  def connect():Task[Cancelable] = ???
   /**
     * This methods clean resources of the current instance of a PeerGroup.
     *

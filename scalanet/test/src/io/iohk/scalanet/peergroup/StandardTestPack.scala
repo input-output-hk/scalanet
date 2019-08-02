@@ -17,11 +17,9 @@ object StandardTestPack {
     val alicesMessage = Random.alphanumeric.take(1024).mkString
     val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-
     bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
     val aliceClient = alice.client(bob.processAddress).evaluated
     val aliceReceived = aliceClient.in.headL.runAsync
-
 
     aliceClient.sendMessage(alicesMessage).runAsync
     val bobReceived: Future[String] =

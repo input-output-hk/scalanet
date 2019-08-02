@@ -4,7 +4,12 @@ import java.io.IOException
 import java.net.{ConnectException, InetAddress, InetSocketAddress}
 import java.nio.ByteBuffer
 
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, ServerEvent, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.{
+  ChannelBrokenException,
+  ChannelSetupException,
+  ServerEvent,
+  TerminalPeerGroup
+}
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
@@ -46,7 +51,8 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
   import monix.execution.Scheduler.Implicits.global
 
   private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
-  private val observable = ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
+  private val observable =
+    ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -85,11 +91,9 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
 
   override def server(): Observable[ServerEvent[InetMultiAddress, M]] = observable
 
-  override def connect(): Task[Cancelable] = toTask{
+  override def connect(): Task[Cancelable] = toTask {
     observable.connect()
   }
-
-
 
   override def shutdown(): Task[Unit] = {
     serverSubject.onComplete()
@@ -142,7 +146,6 @@ object TCPPeerGroup {
     override def in: Observable[M] = observable
 
     override def connect(): Task[Cancelable] = toTask(observable.connect())
-
 
     override def close(): Task[Unit] = {
       messageSubject.onComplete()
@@ -219,7 +222,6 @@ object TCPPeerGroup {
 
     override def in: Observable[M] = observable
     override def connect(): Task[Cancelable] = toTask(observable.connect())
-
 
     override def close(): Task[Unit] = {
       messageSubject.onComplete()
