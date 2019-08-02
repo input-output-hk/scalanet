@@ -24,9 +24,8 @@ class TCPPeerGroup2Spec extends FlatSpec with BeforeAndAfterAll {
 
   behavior of "TCPPeerGroup"
 
-
   it should "send and receive a message" in
-    with3RandomTCPPeerGroups[String] { (alice, bob , charlie) =>
+    with3RandomTCPPeerGroups[String] { (alice, bob, charlie) =>
       val alicesMessage = "Alice"
       val bobsMessage = "Bob"
       val charliesMessage = "Charlie"
@@ -56,8 +55,7 @@ class TCPPeerGroup2Spec extends FlatSpec with BeforeAndAfterAll {
       bob.server().connectChannels().foreachL(_ => Unit).runAsync
       bob.connect().runAsync
 
-
-       bobReceived.futureValue shouldBe alicesMessage
+      bobReceived.futureValue shouldBe alicesMessage
       aliceReceived.futureValue shouldBe bobsMessage
     }
 

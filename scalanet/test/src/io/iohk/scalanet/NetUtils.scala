@@ -144,18 +144,17 @@ object NetUtils {
   }
 
   def with3RandomTCPPeerGroups[M](
-                                     testCode: (TCPPeerGroup[M], TCPPeerGroup[M],TCPPeerGroup[M]) => Any
-                                   )(implicit scheduler: Scheduler, codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
-    val (pg1, pg2,pg3) = random3TCPPeerGroup(scheduler, codec, bufferInstantiator)
+      testCode: (TCPPeerGroup[M], TCPPeerGroup[M], TCPPeerGroup[M]) => Any
+  )(implicit scheduler: Scheduler, codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = {
+    val (pg1, pg2, pg3) = random3TCPPeerGroup(scheduler, codec, bufferInstantiator)
     try {
-      testCode(pg1, pg2,pg3)
+      testCode(pg1, pg2, pg3)
     } finally {
       pg1.shutdown()
       pg2.shutdown()
       pg3.shutdown()
     }
   }
-
 
   def withTwoRandomTLSPeerGroups[M](clientAuth: Boolean = false)(
       testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
@@ -208,10 +207,10 @@ object NetUtils {
   }
 
   def random3TCPPeerGroup[M](
-                              implicit scheduler: Scheduler,
-                              codec: StreamCodec[M],
-                              bufferInstantiator: BufferInstantiator[ByteBuffer]
-                            ): (TCPPeerGroup[M], TCPPeerGroup[M],TCPPeerGroup[M]) = {
+      implicit scheduler: Scheduler,
+      codec: StreamCodec[M],
+      bufferInstantiator: BufferInstantiator[ByteBuffer]
+  ): (TCPPeerGroup[M], TCPPeerGroup[M], TCPPeerGroup[M]) = {
     val address = aRandomAddress()
     val address2 = aRandomAddress()
     val address3 = aRandomAddress()
