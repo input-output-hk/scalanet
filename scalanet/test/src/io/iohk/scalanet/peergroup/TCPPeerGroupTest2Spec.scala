@@ -24,19 +24,17 @@ class TCPPeerGroupTest2Spec extends FlatSpec with BeforeAndAfterAll {
 
   behavior of "TCPPeerGroup"
 
-
-
   it should "send and receive a message" in
     withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
       val alicesMessage = "Alice"
       val bobsMessage = "Bob"
       var a = 0
 
-     // val bobReceived: Future[String] =
+      // val bobReceived: Future[String] =
       //bob.server().collectChannelCreated.mergeMap(channel => {println{  a = a + 1 ; s"ddddddddddddd$a"}; channel.in}).headL.runAsync
-      bob.server().foreachL(x => {println{  a = a + 1 ; s"ddddddddddddd$a"}}).runAsync
+      bob.server().foreachL(x => { println { a = a + 1; s"ddddddddddddd$a" } }).runAsync
       bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
-     // bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
+      // bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
 
       val aliceClient = alice.client(bob.processAddress).evaluated
       val aliceClient1 = alice.client(bob.processAddress).evaluated
@@ -46,12 +44,11 @@ class TCPPeerGroupTest2Spec extends FlatSpec with BeforeAndAfterAll {
       aliceClient1.sendMessage(alicesMessage).runAsync
       aliceClient1.connect().runAsync
       aliceClient.connect().runAsync
-            bob.server().connectChannels().foreachL(_ => Unit).runAsync
-            bob.connect().runAsync
+      bob.server().connectChannels().foreachL(_ => Unit).runAsync
+      bob.connect().runAsync
 
-     // bobReceived.futureValue shouldBe alicesMessage
+      // bobReceived.futureValue shouldBe alicesMessage
       aliceReceived.futureValue shouldBe bobsMessage
     }
-
 
 }
