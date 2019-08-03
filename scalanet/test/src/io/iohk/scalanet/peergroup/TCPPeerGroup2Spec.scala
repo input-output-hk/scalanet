@@ -38,7 +38,6 @@ class TCPPeerGroup2Spec extends FlatSpec with BeforeAndAfterAll {
 
       val aliceClient = alice.client(bob.processAddress).evaluated
 
-
       val charlieClient = charlie.client(bob.processAddress).evaluated
 
       val aliceReceived = aliceClient.in.headL.runAsync
