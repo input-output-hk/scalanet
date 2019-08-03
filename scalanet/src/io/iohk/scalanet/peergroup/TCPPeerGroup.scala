@@ -4,12 +4,7 @@ import java.io.IOException
 import java.net.{ConnectException, InetAddress, InetSocketAddress}
 import java.nio.ByteBuffer
 
-import io.iohk.scalanet.peergroup.PeerGroup.{
-  ChannelBrokenException,
-  ChannelSetupException,
-  ServerEvent,
-  TerminalPeerGroup
-}
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, ServerEvent, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
@@ -20,7 +15,7 @@ import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import monix.eval.Task
 import monix.reactive.Observable
-import monix.reactive.subjects.{PublishSubject, Subject}
+import monix.reactive.subjects.{ConcurrentSubject, PublishSubject, Subject}
 import org.slf4j.LoggerFactory
 import io.iohk.decco._
 import io.iohk.scalanet.codec.StreamCodec
@@ -50,9 +45,9 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
   private val log = LoggerFactory.getLogger(getClass)
   import monix.execution.Scheduler.Implicits.global
 
-  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
+  private val serverSubject = ConcurrentSubject.publish[ServerEvent[InetMultiAddress, M]]
   private val observable =
-    ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
+    ConnectableObservable.cacheUntilConnect(serverSubject, ConcurrentSubject.publish[ServerEvent[InetMultiAddress, M]])
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -61,14 +56,15 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
     .channel(classOf[NioSocketChannel])
     .option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
     .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
-
   private val serverBootstrap = new ServerBootstrap()
     .group(workerGroup)
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
         val newChannel = new ServerChannelImpl[M](ch, codec.cleanSlate, bi)
-        serverSubject.onNext(ChannelCreated(newChannel))
+         println(s"**************${ch.id()}")
+        val x =  serverSubject.onNext(ChannelCreated(newChannel))
+        println(s"****$x**********${ch.id()}")
         log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })

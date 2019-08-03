@@ -33,13 +33,11 @@ class TCPPeerGroup2Spec extends FlatSpec with BeforeAndAfterAll {
 
       val bobReceived: Future[String] =
         bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runAsync
-      //bob.server().foreachL(x => { println { a = a + 1; s"ddddddddddddd$a" } }).runAsync
       bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
       // bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
 
       val aliceClient = alice.client(bob.processAddress).evaluated
 
-      bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runAsync
 
       val charlieClient = charlie.client(bob.processAddress).evaluated
 
