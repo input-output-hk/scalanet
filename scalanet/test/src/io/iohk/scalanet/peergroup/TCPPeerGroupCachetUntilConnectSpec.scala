@@ -37,10 +37,9 @@ class TCPPeerGroupCachetUntilConnectSpec extends FlatSpec with BeforeAndAfterAll
       val aliceReceived = aliceClient.in.headL.runAsync
       aliceClient.sendMessage(alicesMessage).runAsync
 
-
-       aliceClient.connect().runAsync
-       bob.server().collectChannelCreated.foreach(_.connect().runAsync)
-       bob.connect().runAsync
+      aliceClient.connect().runAsync
+      bob.server().collectChannelCreated.foreach(_.connect().runAsync)
+      bob.connect().runAsync
 
       val charlieClient = charlie.client(bob.processAddress).evaluated
       charlieClient.sendMessage(charliesMessage).runAsync
@@ -49,8 +48,7 @@ class TCPPeerGroupCachetUntilConnectSpec extends FlatSpec with BeforeAndAfterAll
 
       charlieClient.connect().runAsync
 
-
-      bobReceived.futureValue shouldBe Seq(alicesMessage,charliesMessage)
+      bobReceived.futureValue shouldBe Seq(alicesMessage, charliesMessage)
 
       charlieReceived.futureValue shouldBe bobsMessage
       aliceReceived.futureValue shouldBe bobsMessage
