@@ -20,7 +20,7 @@ import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import monix.eval.Task
 import monix.reactive.Observable
-import monix.reactive.subjects.{ConcurrentSubject, PublishSubject, Subject}
+import monix.reactive.subjects.{PublishSubject, Subject}
 import org.slf4j.LoggerFactory
 import io.iohk.decco._
 import io.iohk.scalanet.codec.StreamCodec
@@ -50,9 +50,9 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
   private val log = LoggerFactory.getLogger(getClass)
   import monix.execution.Scheduler.Implicits.global
 
-  private val serverSubject = ConcurrentSubject.publish[ServerEvent[InetMultiAddress, M]]
+  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
   private val observable =
-    ConnectableObservable.cacheUntilConnect(serverSubject, ConcurrentSubject.publish[ServerEvent[InetMultiAddress, M]])
+    ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -67,9 +67,7 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
         val newChannel = new ServerChannelImpl[M](ch, codec.cleanSlate, bi)
-        println(s"**************${ch.id()}")
-        val x = serverSubject.onNext(ChannelCreated(newChannel))
-        println(s"****$x**********${ch.id()}")
+        serverSubject.onNext(ChannelCreated(newChannel))
         log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })
