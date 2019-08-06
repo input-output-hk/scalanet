@@ -40,7 +40,6 @@ class TCPPeerGroupCachetUntilConnectSpec extends FlatSpec with BeforeAndAfterAll
       aliceClient.connect().runAsync
       val bobReceived1 = bob.server().collectChannelCreated.mergeMap(channel => channel.in).take(2).toListL.runAsync
 
-
       bob.server().collectChannelCreated.foreach(_.connect().runAsync)
       bob.connect().runAsync
 
