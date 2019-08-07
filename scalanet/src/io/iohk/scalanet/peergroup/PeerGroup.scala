@@ -170,7 +170,7 @@ object PeerGroup {
       implicit scheduler: Scheduler
   ): Either[InitializationError, PG] =
     try {
-      Await.result(pg.initialize().runAsync, Duration.Inf)
+      Await.result(pg.initialize().runToFuture, Duration.Inf)
       Right(pg)
     } catch {
       case t: Throwable =>
@@ -190,7 +190,7 @@ object PeerGroup {
     */
   def createOrThrow[PG <: PeerGroup[_, _]](pg: => PG, config: Any)(implicit scheduler: Scheduler): PG =
     try {
-      Await.result(pg.initialize().runAsync, Duration.Inf)
+      Await.result(pg.initialize().runToFuture, Duration.Inf)
       pg
     } catch {
       case t: Throwable =>

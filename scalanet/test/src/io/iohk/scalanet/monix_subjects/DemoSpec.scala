@@ -42,12 +42,12 @@ class DemoSpec extends FlatSpec {
 
   private def allProcessedMessages(pg: MyNewPeerGroup): CancelableFuture[List[String]] = {
     val messagesObservable: Observable[String] = pg.server.mergeMap(_.in)
-    messagesObservable.toListL.runAsync
+    messagesObservable.toListL.runToFuture
   }
 
   private def allProcessedMessages(pg: MyOldPeerGroup): CancelableFuture[List[String]] = {
     val messagesObservable = pg.server.mergeMap(_.in)
-    messagesObservable.toListL.runAsync
+    messagesObservable.toListL.runToFuture
   }
 
   class MyNewPeerGroup() {

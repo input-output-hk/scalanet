@@ -73,7 +73,7 @@ class DTLSPeerGroup[M](val config: Config)(
       val buffer = codec.encode(message)
 
       Task
-        .async[Unit] { (_, c) =>
+        .create[Unit] { (_, c) =>
           val messageCallback = new MessageCallback {
             override def onConnecting(): Unit = ()
             override def onDtlsRetransmission(i: Int): Unit = ()

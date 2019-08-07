@@ -17,12 +17,12 @@ object StandardTestPack {
     val bobsMessage = Random.alphanumeric.take(1024).mkString
 
     val bobReceived: Future[String] =
-      bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runAsync
-    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
+      bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runToFuture
+    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runToFuture)
 
     val aliceClient = alice.client(bob.processAddress).evaluated
-    val aliceReceived = aliceClient.in.headL.runAsync
-    aliceClient.sendMessage(alicesMessage).runAsync
+    val aliceReceived = aliceClient.in.headL.runToFuture
+    aliceClient.sendMessage(alicesMessage).runToFuture
 
     bobReceived.futureValue shouldBe alicesMessage
     aliceReceived.futureValue shouldBe bobsMessage
@@ -34,15 +34,15 @@ object StandardTestPack {
     val alicesMessage = Random.alphanumeric.take(1024).mkString
     val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
+    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runToFuture)
 
     val aliceClient1 = alice.client(bob.processAddress).evaluated
     val aliceClient2 = alice.client(bob.processAddress).evaluated
 
-    val aliceReceived1 = aliceClient1.in.headL.runAsync
-    val aliceReceived2 = aliceClient2.in.headL.runAsync
+    val aliceReceived1 = aliceClient1.in.headL.runToFuture
+    val aliceReceived2 = aliceClient2.in.headL.runToFuture
 
-    aliceClient1.sendMessage(alicesMessage).runAsync
+    aliceClient1.sendMessage(alicesMessage).runToFuture
 
     aliceReceived1.futureValue shouldBe bobsMessage
     recoverToSucceededIf[IllegalStateException](aliceReceived2)
@@ -53,7 +53,7 @@ object StandardTestPack {
   ): Unit = {
 
     val aliceError = recoverToExceptionIf[ChannelSetupException[InetMultiAddress]] {
-      alice.client(invalidAddress).runAsync
+      alice.client(invalidAddress).runToFuture
     }
 
     aliceError.futureValue.to shouldBe invalidAddress

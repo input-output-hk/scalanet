@@ -31,12 +31,12 @@ class StaticAddressMappedPeerGroupSpec extends FlatSpec {
       val alicesMessage = Random.alphanumeric.take(1024).mkString
       val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-      bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runAsync
+      bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runToFuture
       val bobReceived: Future[String] =
-        bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runAsync
+        bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
-      val aliceReceived = aliceClient.in.headL.runAsync
+      val aliceReceived = aliceClient.in.headL.runToFuture
       aliceClient.sendMessage(alicesMessage).evaluated
 
       bobReceived.futureValue shouldBe alicesMessage

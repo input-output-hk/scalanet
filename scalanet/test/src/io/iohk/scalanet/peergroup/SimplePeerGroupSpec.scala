@@ -25,9 +25,9 @@ class SimplePeerGroupSpec extends FlatSpec {
 
   it should "send a message to itself" in withASimplePeerGroup("Alice") { alice =>
     val message = Random.alphanumeric.take(1044).mkString
-    val aliceReceived = alice.server().collectChannelCreated.mergeMap(_.in).headL.runAsync
+    val aliceReceived = alice.server().collectChannelCreated.mergeMap(_.in).headL.runToFuture
     val aliceClient: Channel[String, String] = alice.client(alice.processAddress).evaluated
-    aliceClient.sendMessage(message).runAsync
+    aliceClient.sendMessage(message).runToFuture
     aliceReceived.futureValue shouldBe message
   }
 
@@ -39,12 +39,12 @@ class SimplePeerGroupSpec extends FlatSpec {
     val alicesMessage = "hi bob, from alice"
     val bobsMessage = "hi alice, from bob"
 
-    val bobReceived = bob.server().collectChannelCreated.mergeMap(_.in).headL.runAsync
+    val bobReceived = bob.server().collectChannelCreated.mergeMap(_.in).headL.runToFuture
     bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
     val aliceClient = alice.client(bob.processAddress).evaluated
 
-    val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runAsync
+    val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
     aliceClient.sendMessage(alicesMessage).evaluated
 
     bobReceived.futureValue shouldBe alicesMessage
@@ -59,12 +59,12 @@ class SimplePeerGroupSpec extends FlatSpec {
     val bobsMessage = "HI Alice"
     val alicesMessage = "HI Bob"
 
-    val bobReceived = bob.server().collectChannelCreated.mergeMap(_.in).headL.runAsync
+    val bobReceived = bob.server().collectChannelCreated.mergeMap(_.in).headL.runToFuture
     bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
     val aliceClient = alice.client(bob.processAddress).evaluated
 
-    val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runAsync
+    val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
     aliceClient.sendMessage(alicesMessage).evaluated
 
     bobReceived.futureValue shouldBe alicesMessage
@@ -79,7 +79,7 @@ class SimplePeerGroupSpec extends FlatSpec {
         channel.in.filter(msg => msg == messageNews)
       }
       .headL
-      .runAsync
+      .runToFuture
 
     val sportUpdates = "Sports Updates"
 
@@ -90,7 +90,7 @@ class SimplePeerGroupSpec extends FlatSpec {
         channel.in.filter(msg => msg == sportUpdates)
       }
       .headL
-      .runAsync
+      .runToFuture
 
     val aliceClientNews = alice.client("news").evaluated
     val aliceClientSports = alice.client("sports").evaluated
@@ -113,12 +113,12 @@ class SimplePeerGroupSpec extends FlatSpec {
       val bobsMessage = "HI Alice"
       val alicesMessage = "HI Bob"
 
-      val bobReceived = bob.server().collectChannelCreated.mergeMap(_.in).headL.runAsync
+      val bobReceived = bob.server().collectChannelCreated.mergeMap(_.in).headL.runToFuture
       bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
       val aliceClient = alice.client(bob.processAddress).evaluated
 
-      val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runAsync
+      val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
       aliceClient.sendMessage(alicesMessage).evaluated
 
       bobReceived.futureValue shouldBe alicesMessage
@@ -133,7 +133,7 @@ class SimplePeerGroupSpec extends FlatSpec {
           channel.in.filter(msg => msg == messageNews)
         }
         .headL
-        .runAsync
+        .runToFuture
 
       val charlieReceivedNews = charlie
         .server()
@@ -142,7 +142,7 @@ class SimplePeerGroupSpec extends FlatSpec {
           channel.in.filter(msg => msg == messageNews)
         }
         .headL
-        .runAsync
+        .runToFuture
 
       val aliceClientNews = alice.client("news").evaluated
 
@@ -159,7 +159,7 @@ class SimplePeerGroupSpec extends FlatSpec {
           channel.in.filter(msg => msg == sportUpdates)
         }
         .headL
-        .runAsync
+        .runToFuture
 
       val charlieSportsUpdate = charlie
         .server()
@@ -168,7 +168,7 @@ class SimplePeerGroupSpec extends FlatSpec {
           channel.in.filter(msg => msg == sportUpdates)
         }
         .headL
-        .runAsync
+        .runToFuture
 
       val aliceSportsClient = alice.client("sports").evaluated
 
@@ -232,7 +232,7 @@ class SimplePeerGroupSpec extends FlatSpec {
       SimplePeerGroup.Config(bootstrapAddress, List.empty[String], Map.empty[String, InetMultiAddress]),
       bootStrapTerminalGroup
     )
-    bootstrap.initialize().runAsync.futureValue
+    bootstrap.initialize().runToFuture.futureValue
 
     val otherPeerGroups = addresses
       .map(
@@ -248,7 +248,7 @@ class SimplePeerGroupSpec extends FlatSpec {
       )
       .toList
 
-    val futures: Seq[Future[Unit]] = otherPeerGroups.map(pg => pg.initialize().runAsync)
+    val futures: Seq[Future[Unit]] = otherPeerGroups.map(pg => pg.initialize().runToFuture)
     Future.sequence(futures).futureValue
 
     val peerGroups = bootstrap :: otherPeerGroups
