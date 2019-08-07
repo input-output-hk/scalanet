@@ -1,10 +1,11 @@
 package io.iohk.scalanet.kchat
 import java.io.File
-import java.net.{InetAddress}
+import java.net.InetSocketAddress
 import java.nio.file.Path
 
+import ch.qos.logback.classic.util.ContextInitializer
 import com.typesafe.config.ConfigValue
-import io.iohk.scalanet.peergroup.{PeerGroup, UDPPeerGroup}
+import io.iohk.scalanet.peergroup.{InetMultiAddress, PeerGroup, UDPPeerGroup}
 import io.iohk.scalanet.peergroup.kademlia.KNetwork.KNetworkScalanetImpl
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import io.iohk.scalanet.peergroup.kademlia.{KMessage, KPeerGroup, KRouter}
@@ -12,21 +13,47 @@ import monix.reactive.subjects.PublishSubject
 import pureconfig.ConfigWriter
 import pureconfig.generic.auto._
 import scodec.bits.BitVector
+import monix.execution.Scheduler.Implicits.global
 
 import scala.util.Random
 
 object KChatApp extends App {
   import PureConfigReadersAndWriters._
 
-  case class CommandLineOptions(configFile: Option[Path] = None, generateConfig: Boolean = false)
+  case class CommandLineOptions(configFile: Option[Path] = None,
+                                generateConfig: Boolean = false)
 
   val commandLineOptions = getCommandLineOptions
 
-  commandLineOptions.configFile.foreach { configFile =>
-    val nodeConfig: KRouter.Config =
-      pureconfig.loadConfigOrThrow[KRouter.Config](configFile)
+  commandLineOptions.configFile.foreach { configFile: Path =>
+    System.setProperty(
+      ContextInitializer.CONFIG_FILE_PROPERTY,
+      configFile.getFileName.toString.replace(".conf", "-logback.xml")
+    )
+//    StatusPrinter.print(LoggerFactory.getILoggerFactory.asInstanceOf[LoggerContext])
 
-    import monix.execution.Scheduler.Implicits.global
+    val kPeerGroup: PeerGroup[BitVector, String] = getKPeerGroup(configFile)
+
+    import Console.{GREEN, RED, RESET}
+    import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
+    kPeerGroup.server().collectChannelCreated.foreach { channel =>
+      channel.in.foreach{ message =>
+        Console.println(s"> ${RESET}${GREEN}${channel.to}${RESET}: ${RED}$message${RESET}")
+      }
+    }
+
+    kPeerGroup.client(kPeerGroup.processAddress).map { channel =>
+      channel.sendMessage("Hellllooo 1")
+      channel.sendMessage("Hellllooo 2")
+      channel.sendMessage("Hellllooo 3")
+    }.runAsync
+  }
+
+  private def getKPeerGroup(configFile: Path): PeerGroup[BitVector, String] = {
+    val nodeConfig: KRouter.Config[InetMultiAddress] =
+      pureconfig
+        .loadConfigOrThrow[KRouter.Config[InetMultiAddress]](configFile)
+
     import io.iohk.scalanet.peergroup.kademlia.BitVectorCodec._
     import io.iohk.decco.auto._
     import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
@@ -34,48 +61,66 @@ object KChatApp extends App {
     try {
       println(s"Initializing chat for ${nodeConfig.nodeRecord}")
 
+      val routingConfig =
+        UDPPeerGroup.Config(
+          nodeConfig.nodeRecord.routingAddress.inetSocketAddress
+        )
       val routingPeerGroup = PeerGroup.createOrThrow(
-        new UDPPeerGroup[KMessage](UDPPeerGroup.Config(nodeConfig.nodeRecord.udpSocketAddress)),
-        "Routing"
+        new UDPPeerGroup[KMessage[InetMultiAddress]](routingConfig),
+        routingConfig
       )
-      val kNetwork = new KNetworkScalanetImpl(routingPeerGroup)
-      val kRouter = new KRouter(nodeConfig, kNetwork)
+      val kNetwork =
+        new KNetworkScalanetImpl[InetMultiAddress](routingPeerGroup)
+      val kRouter = new KRouter[InetMultiAddress](nodeConfig, kNetwork)
 
-      // TODO abstract the address types in NodeRecord
+      val messagingConfig =
+        UDPPeerGroup.Config(
+          nodeConfig.nodeRecord.messagingAddress.inetSocketAddress
+        )
       val messagingPeerGroup = PeerGroup.createOrThrow(
-        new UDPPeerGroup[Either[NodeRecord, String]](UDPPeerGroup.Config(nodeConfig.nodeRecord.tcpSocketAddress)),
-        "Messaging"
+        new UDPPeerGroup[Either[NodeRecord[InetMultiAddress], String]](
+          messagingConfig
+        ),
+        messagingConfig
       )
 
-      val kPeerGroup =
-        PeerGroup.createOrThrow(new KPeerGroup[String](kRouter, PublishSubject(), messagingPeerGroup), "KPeerGroup")
+      PeerGroup.createOrThrow(
+        new KPeerGroup[InetMultiAddress, String](
+          kRouter,
+          PublishSubject(),
+          messagingPeerGroup
+        ),
+        "KPeerGroup"
+      )
 
-      println("Chat initialized.")
     } catch {
       case e: Exception =>
-        System.err.println(s"Exiting due to initialization error: $e, ${e.getCause}")
-        System.exit(1)
+        System.err.println(
+          s"Exiting due to initialization error: $e, ${e.getCause}"
+        )
+        throw e
     }
   }
 
   if (commandLineOptions.generateConfig) {
     val value: ConfigValue =
-      ConfigWriter[KRouter.Config].to(generateRandomConfig)
+      ConfigWriter[KRouter.Config[InetMultiAddress]].to(generateRandomConfig)
 
     println(value.render())
   }
 
-  def generateRandomConfig: KRouter.Config = {
+  def generateRandomConfig: KRouter.Config[InetMultiAddress] = {
 
     def randomNodeId: BitVector =
       BitVector.bits(Range(0, 160).map(_ => Random.nextBoolean()))
 
-    def aRandomNodeRecord: NodeRecord = {
+    def aRandomNodeRecord: NodeRecord[InetMultiAddress] = {
       NodeRecord(
         id = randomNodeId,
-        ip = InetAddress.getLocalHost,
-        tcp = 8080,
-        udp = 9090
+        routingAddress =
+          InetMultiAddress(new InetSocketAddress("127.0.0.1", 8080)),
+        messagingAddress =
+          InetMultiAddress(new InetSocketAddress("127.0.0.1", 9090))
       )
     }
 
@@ -104,4 +149,5 @@ object KChatApp extends App {
         null
     }
   }
+
 }

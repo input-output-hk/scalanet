@@ -13,7 +13,7 @@ import org.slf4j.{Logger, LoggerFactory}
 import scodec.bits.BitVector
 
 // PeerGroup using kademlia routing.
-class KPeerGroup[M, A](
+class KPeerGroup[A, M](
     val kRouter: KRouter[A],
     val server: Subject[ServerEvent[BitVector, M], ServerEvent[BitVector, M]],
     underlyingPeerGroup: PeerGroup[A, Either[NodeRecord[A], M]]
