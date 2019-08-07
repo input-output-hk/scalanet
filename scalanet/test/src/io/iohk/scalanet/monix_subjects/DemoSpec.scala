@@ -25,6 +25,36 @@ class DemoSpec extends FlatSpec {
     allProcessedMessages(pg).futureValue
   }
 
+  behavior of "MyConnectPeerGroup"
+
+  it should "not lose messages" in {
+    val pg = new MyConnectPeerGroup()
+
+    pg.server.foreach { channel =>
+      println(s"new channel ${channel.id}")
+      channel.in.foreach(println)
+      channel.in.connect()
+    }
+    pg.server.connect()
+  }
+
+  it should "lose messages for multiple subscribers" in {
+    val pg = new MyConnectPeerGroup()
+
+    pg.server.foreach { channel =>
+      println(s"new channel ${channel.id}")
+      channel.in.foreach(println)
+      channel.in.connect()
+    }
+
+    pg.server.foreach { channel =>
+      println(s"new channel ${channel.id}")
+      channel.in.foreach(println)
+      channel.in.connect()
+    }
+    pg.server.connect()
+  }
+
   behavior of "MyNewPeerGroup"
 
   it should "not lose messages" in {
@@ -45,11 +75,23 @@ class DemoSpec extends FlatSpec {
     messagesObservable.toListL.runToFuture
   }
 
-  private def allProcessedMessages(pg: MyOldPeerGroup): CancelableFuture[List[String]] = {
+  private def allProcessedMessages(
+      pg: MyOldPeerGroup
+  ): CancelableFuture[List[String]] = {
     val messagesObservable = pg.server.mergeMap(_.in)
     messagesObservable.toListL.runToFuture
   }
 
+  private def allProcessedMessages(
+      pg: MyConnectPeerGroup
+  ): CancelableFuture[List[String]] = {
+    val messagesObservable = pg.server.mergeMap(_.in)
+    messagesObservable.toListL.runToFuture
+  }
+
+  // New peer group impl using
+  // single subscriber only
+  // cache until subscriber registered
   class MyNewPeerGroup() {
 
     val server = CacheUntilConnectStrictlyOneSubject[MyNewChannel]()
@@ -68,6 +110,28 @@ class DemoSpec extends FlatSpec {
     in.onComplete()
   }
 
+  // Connect peer group impl using
+  // Allows many subscribers
+  // Cache until connect
+  class MyConnectPeerGroup() {
+
+    val server = CacheUntilConnectSubject[MyConnectChannel]()
+
+    server.onNext(new MyConnectChannel("a"))
+    server.onNext(new MyConnectChannel("b"))
+    server.onComplete()
+  }
+
+  class MyConnectChannel(val id: String) {
+    val in = CacheUntilConnectSubject[String]()
+
+    in.onNext(s"$id-1")
+    in.onNext(s"$id-2")
+    in.onNext(s"$id-3")
+    in.onComplete()
+  }
+
+  // Original peer group using PublishSubject
   class MyOldPeerGroup() {
 
     val server = PublishSubject[MyOldChannel]()
