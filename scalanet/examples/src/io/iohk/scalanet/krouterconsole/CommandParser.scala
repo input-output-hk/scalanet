@@ -1,4 +1,4 @@
-package io.iohk.scalanet.kchat
+package io.iohk.scalanet.krouterconsole
 
 import io.iohk.scalanet.peergroup.InetMultiAddress
 import io.iohk.scalanet.peergroup.kademlia.KRouter
@@ -36,6 +36,12 @@ trait CommandParser extends RegexParsers {
       }
     }
 
+    case class DumpCommand() extends Command {
+      override def applyTo(kRouter: KRouter[InetMultiAddress]): String = {
+        kRouter.kBuckets.toString
+      }
+    }
+
     case class ExitCommand() extends Command {
       override def applyTo(kRouter: KRouter[InetMultiAddress]): String = {
         System.exit(0)
@@ -43,19 +49,36 @@ trait CommandParser extends RegexParsers {
       }
     }
 
-    case class InvalidCommand(invalidToken: String) extends Command {
-      override def applyTo(kRouter: KRouter[InetMultiAddress]): String =
-        s"Unable to process invalid command '$invalidToken'"
+    case class HelpCommand() extends Command {
+      override def applyTo(kRouter: KRouter[InetMultiAddress]): String = help
     }
+
+    val help: String =
+      """
+        | Command summary:
+        | get    <nodeId hex>  perform a lookup for the given nodeId and prints the record returned (if any).
+        | remove <nodeId hex>  remove the given nodeId from this nodes kbuckets.
+        | dump                 dump the contents of this nodes kbuckets to the console.
+        | help                 print this message.
+        | exit                 shutdown the node and quit the application.
+        |""".stripMargin
   }
 
   import Command._
 
-  def command: Parser[Command] = getCommand | removeCommand | exitCommand
+  def command: Parser[Command] = getCommand | removeCommand | dumpCommand | helpCommand | exitCommand
 
   def getCommand: Parser[GetCommand] = "get" ~> nodeId ^^ { GetCommand }
 
   def removeCommand: Parser[RemoveCommand] = "remove" ~> nodeId ^^ { RemoveCommand }
+
+  def dumpCommand: Parser[DumpCommand] = "dump" ^^ { _ =>
+    DumpCommand()
+  }
+
+  def helpCommand: Parser[HelpCommand] = "help" ^^ { _ =>
+    HelpCommand()
+  }
 
   def exitCommand: Parser[ExitCommand] = "exit" ^^ { _ =>
     ExitCommand()

@@ -1,4 +1,4 @@
-package io.iohk.scalanet.kchat
+package io.iohk.scalanet.krouterconsole
 
 import java.net.{InetSocketAddress, URI}
 

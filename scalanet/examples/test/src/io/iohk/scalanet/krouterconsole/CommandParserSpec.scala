@@ -1,6 +1,6 @@
-package io.iohk.scalanet.kchat
+package io.iohk.scalanet.krouterconsole
 
-import io.iohk.scalanet.kchat.CommandParser.Command.{GetCommand, RemoveCommand, ExitCommand}
+import io.iohk.scalanet.krouterconsole.CommandParser.Command.{DumpCommand, ExitCommand, GetCommand, RemoveCommand}
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.prop.TableDrivenPropertyChecks._
@@ -18,6 +18,7 @@ class CommandParserSpec extends FlatSpec {
       "remove a0fd10a54e202b7d9a4948b4890d14447bf93a08",
       RemoveCommand(fromValidHex("a0fd10a54e202b7d9a4948b4890d14447bf93a08"))
     ),
+    ("dump", DumpCommand()),
     ("exit", ExitCommand())
   )
 

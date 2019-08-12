@@ -1,14 +1,13 @@
-package io.iohk.scalanet.kchat
+package io.iohk.scalanet.krouterconsole
 import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Path
 
 import ch.qos.logback.classic.util.ContextInitializer
 import com.typesafe.config.ConfigValue
-import io.iohk.scalanet.peergroup.{InetMultiAddress, PeerGroup, UDPPeerGroup}
-import io.iohk.scalanet.peergroup.kademlia.KNetwork.KNetworkScalanetImpl
+import io.iohk.scalanet.peergroup.InetMultiAddress
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
-import io.iohk.scalanet.peergroup.kademlia.{KMessage, KRouter}
+import io.iohk.scalanet.peergroup.kademlia.KRouter
 import pureconfig.ConfigWriter
 import pureconfig.generic.auto._
 import scodec.bits.BitVector
@@ -17,10 +16,24 @@ import monix.execution.Scheduler.Implicits.global
 import scala.io.StdIn
 import scala.util.Random
 
-object KChatApp extends App with CommandParser {
-  import PureConfigReadersAndWriters._
+object App extends App with CommandParser {
 
   case class CommandLineOptions(configFile: Option[Path] = None, generateConfig: Boolean = false)
+
+  val optionsParser = new scopt.OptionParser[CommandLineOptions]("kchat") {
+
+    head("krouterconsole", "0.1")
+
+    opt[File]('c', "config")
+      .action((p, c) => c.copy(configFile = Some(p.toPath)))
+      .text("read config for the node")
+
+    opt[Unit]('g', "generate")
+      .action((_, c) => c.copy(generateConfig = true))
+      .text("generate a config and exit")
+
+    help('h', "help").text("print usage and exit")
+  }
 
   val commandLineOptions = getCommandLineOptions
 
@@ -30,13 +43,15 @@ object KChatApp extends App with CommandParser {
       configFile.getFileName.toString.replace(".conf", "-logback.xml")
     )
 
-    val kRouter = getKRouter(configFile)
+    val kRouter = new AppContext(configFile).kRouter
 
-    import Console.{GREEN, RED, RESET, YELLOW}
+    import Console.{GREEN, RED, RESET, YELLOW, CYAN}
 
+    Console.println(s"${RESET}${CYAN}Router is initialized with node record ${kRouter.config.nodeRecord}")
+    Console.println(s"${CommandParser.Command.help}${RESET}")
     while (true) {
       val commandStr: String = StdIn.readLine("> ")
-      if (commandStr != null) {
+      if (commandStr != null && commandStr.replaceAll("\\s+", "").nonEmpty) {
         parse(command, commandStr) match {
           case Success(result, _) =>
             Console.println(s"${RESET}${GREEN}${result.applyTo(kRouter)}${RESET}")
@@ -49,41 +64,8 @@ object KChatApp extends App with CommandParser {
     }
   }
 
-  private def getKRouter(configFile: Path): KRouter[InetMultiAddress] = {
-    val nodeConfig: KRouter.Config[InetMultiAddress] =
-      pureconfig
-        .loadConfigOrThrow[KRouter.Config[InetMultiAddress]](configFile)
-
-    import io.iohk.scalanet.peergroup.kademlia.BitVectorCodec._
-    import io.iohk.decco.auto._
-    import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-
-    try {
-      println(s"Initializing for ${nodeConfig.nodeRecord}")
-
-      val routingConfig =
-        UDPPeerGroup.Config(
-          nodeConfig.nodeRecord.routingAddress.inetSocketAddress
-        )
-      val routingPeerGroup = PeerGroup.createOrThrow(
-        new UDPPeerGroup[KMessage[InetMultiAddress]](routingConfig),
-        routingConfig
-      )
-      val kNetwork =
-        new KNetworkScalanetImpl[InetMultiAddress](routingPeerGroup)
-
-      new KRouter[InetMultiAddress](nodeConfig, kNetwork)
-
-    } catch {
-      case e: Exception =>
-        System.err.println(
-          s"Exiting due to initialization error: $e, ${e.getCause}"
-        )
-        throw e
-    }
-  }
-
   if (commandLineOptions.generateConfig) {
+    import PureConfigReadersAndWriters._
     val value: ConfigValue =
       ConfigWriter[KRouter.Config[InetMultiAddress]].to(generateRandomConfig)
 
@@ -107,20 +89,7 @@ object KChatApp extends App with CommandParser {
   }
 
   def getCommandLineOptions: CommandLineOptions = {
-    val parser = new scopt.OptionParser[CommandLineOptions]("kchat") {
-
-      head("kchat", "0.1")
-
-      opt[File]('c', "config")
-        .action((p, c) => c.copy(configFile = Some(p.toPath)))
-        .text("read config for the node")
-
-      opt[Unit]('g', "generate")
-        .action((_, c) => c.copy(generateConfig = true))
-        .text("generate a config and exit")
-    }
-
-    parser.parse(args, CommandLineOptions()) match {
+    optionsParser.parse(args, CommandLineOptions()) match {
       case Some(config) =>
         config
       case _ =>
@@ -128,5 +97,4 @@ object KChatApp extends App with CommandParser {
         null
     }
   }
-
 }
