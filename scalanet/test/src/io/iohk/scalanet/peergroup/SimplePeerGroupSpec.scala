@@ -1,209 +1,76 @@
 package io.iohk.scalanet.peergroup
 
+import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.peergroup.SimplePeerGroup.ControlMessage
+import io.iohk.scalanet.peergroup.StandardTestPack.{
+  messageToSelfTest,
+  messagingTest,
+  simpleMulticastTest,
+  twoWayMulticastTest
+}
+import monix.execution.Scheduler.Implicits.global
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
-import org.scalatest.concurrent.ScalaFutures._
-import monix.execution.Scheduler.Implicits.global
 import org.scalatest.concurrent.ScalaFutures
-import io.iohk.decco.auto._
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+import org.scalatest.concurrent.ScalaFutures._
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
-import io.iohk.scalanet.TaskValues._
-import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
-
-import scala.util.Random
 
 class SimplePeerGroupSpec extends FlatSpec {
 
-  implicit val patienceConfig = ScalaFutures.PatienceConfig(timeout = 5 second, interval = 1000 millis)
+  implicit val patienceConfig = ScalaFutures.PatienceConfig(timeout = 2 seconds)
 
   behavior of "SimplePeerGroup"
 
-  it should "send a message to itself" in withASimplePeerGroup("Alice") { alice =>
-    val message = Random.alphanumeric.take(1044).mkString
-    val aliceReceived = alice.server().collectChannelCreated.mergeMap(_.in).headL.runToFuture
-    val aliceClient: Channel[String, String] = alice.client(alice.processAddress).evaluated
-    aliceClient.sendMessage(message).runToFuture
-    aliceReceived.futureValue shouldBe message
+  "SimplePeerGroup" should "send a message to itself" in withASimplePeerGroup(
+    "Alice"
+  ) { alice =>
+    messageToSelfTest(alice)
   }
 
   it should "send and receive a message to another peer of SimplePeerGroup" in withTwoSimplePeerGroups(
-    List.empty[String],
+    Set.empty,
     "Alice",
     "Bob"
   ) { (alice, bob) =>
-    val alicesMessage = "hi bob, from alice"
-    val bobsMessage = "hi alice, from bob"
-
-    val bobReceived = bob.server().collectChannelCreated.mergeMap(_.in).headL.runToFuture
-    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).evaluated)
-
-    val aliceClient = alice.client(bob.processAddress).evaluated
-
-    val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
-    aliceClient.sendMessage(alicesMessage).evaluated
-
-    bobReceived.futureValue shouldBe alicesMessage
-    aliceReceived.futureValue shouldBe bobsMessage
+    messagingTest(alice, bob)
   }
 
   it should "send a message to another peer's multicast address" in withTwoSimplePeerGroups(
-    List("news", "sports"),
-    "Alice",
-    "Bob"
+    multiCastAddresses = Set("news", "sports"),
+    a = "Alice",
+    b = "Bob"
   ) { (alice, bob) =>
-    val bobsMessage = "HI Alice"
-    val alicesMessage = "HI Bob"
-
-    val bobReceived = bob.server().collectChannelCreated.mergeMap(_.in).headL.runToFuture
-    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).evaluated)
-
-    val aliceClient = alice.client(bob.processAddress).evaluated
-
-    val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
-    aliceClient.sendMessage(alicesMessage).evaluated
-
-    bobReceived.futureValue shouldBe alicesMessage
-    aliceReceived.futureValue shouldBe bobsMessage
-
-    val messageNews = "Latest News"
-
-    val bobReceivedNews = bob
-      .server()
-      .collectChannelCreated
-      .mergeMap { channel =>
-        channel.in.filter(msg => msg == messageNews)
-      }
-      .headL
-      .runToFuture
-
-    val sportUpdates = "Sports Updates"
-
-    val bobSportsUpdate = bob
-      .server()
-      .collectChannelCreated
-      .mergeMap { channel =>
-        channel.in.filter(msg => msg == sportUpdates)
-      }
-      .headL
-      .runToFuture
-
-    val aliceClientNews = alice.client("news").evaluated
-    val aliceClientSports = alice.client("sports").evaluated
-
-    aliceClientNews.sendMessage(messageNews).evaluated
-    bobReceivedNews.futureValue shouldBe messageNews
-
-    aliceClientSports.sendMessage(sportUpdates).evaluated
-    bobSportsUpdate.futureValue shouldBe sportUpdates
-
+    simpleMulticastTest(alice, bob, "news")
   }
 
   it should "send a message to 2 peers sharing a multicast address" in
-    withThreeSimplePeerGroups(
-      List("news", "sports"),
-      "Alice",
-      "Bob",
-      "Charlie"
-    ) { (alice, bob, charlie) =>
-      val bobsMessage = "HI Alice"
-      val alicesMessage = "HI Bob"
-
-      val bobReceived = bob.server().collectChannelCreated.mergeMap(_.in).headL.runToFuture
-      bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).evaluated)
-
-      val aliceClient = alice.client(bob.processAddress).evaluated
-
-      val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
-      aliceClient.sendMessage(alicesMessage).evaluated
-
-      bobReceived.futureValue shouldBe alicesMessage
-      aliceReceived.futureValue shouldBe bobsMessage
-
-      val messageNews = "Latest News"
-
-      val bobReceivedNews = bob
-        .server()
-        .collectChannelCreated
-        .mergeMap { channel =>
-          channel.in.filter(msg => msg == messageNews)
-        }
-        .headL
-        .runToFuture
-
-      val charlieReceivedNews = charlie
-        .server()
-        .collectChannelCreated
-        .mergeMap { channel =>
-          channel.in.filter(msg => msg == messageNews)
-        }
-        .headL
-        .runToFuture
-
-      val aliceClientNews = alice.client("news").evaluated
-
-      aliceClientNews.sendMessage(messageNews).evaluated
-      bobReceivedNews.futureValue shouldBe messageNews
-      charlieReceivedNews.futureValue shouldBe messageNews
-
-      val sportUpdates = "Sports Updates"
-
-      val bobSportsUpdate = bob
-        .server()
-        .collectChannelCreated
-        .mergeMap { channel =>
-          channel.in.filter(msg => msg == sportUpdates)
-        }
-        .headL
-        .runToFuture
-
-      val charlieSportsUpdate = charlie
-        .server()
-        .collectChannelCreated
-        .mergeMap { channel =>
-          channel.in.filter(msg => msg == sportUpdates)
-        }
-        .headL
-        .runToFuture
-
-      val aliceSportsClient = alice.client("sports").evaluated
-
-      aliceSportsClient.sendMessage(sportUpdates).evaluated
-      bobSportsUpdate.futureValue shouldBe sportUpdates
-      charlieSportsUpdate.futureValue shouldBe sportUpdates
-
+    withThreeSimplePeerGroups(Set("news", "sports"), "Alice", "Bob", "Charlie") { (alice, bob, charlie) =>
+      twoWayMulticastTest(alice, bob, charlie, "news")
     }
 
-  private def withASimplePeerGroup(
-      a: String
-  )(testCode: SimplePeerGroup[String, InetMultiAddress, String] => Any): Unit = {
-    withSimplePeerGroups(a, List.empty[String])(groups => testCode(groups(0)))
+  private def withASimplePeerGroup(a: String)(
+      testCode: SimplePeerGroup[String, InetMultiAddress, String] => Any
+  ): Unit = {
+    withSimplePeerGroups(a, Set.empty)(groups => testCode(groups(0)))
   }
 
-  private def withTwoSimplePeerGroups(
-      multiCastAddresses: List[String],
-      a: String,
-      b: String
-  )(
+  private def withTwoSimplePeerGroups(multiCastAddresses: Set[String], a: String, b: String)(
       testCode: (
           SimplePeerGroup[String, InetMultiAddress, String],
           SimplePeerGroup[String, InetMultiAddress, String]
       ) => Any
   ): Unit = {
 
-    withSimplePeerGroups(a, multiCastAddresses, b)(groups => testCode(groups(0), groups(1)))
+    withSimplePeerGroups(a, multiCastAddresses, b)(
+      groups => testCode(groups(0), groups(1))
+    )
   }
 
-  private def withThreeSimplePeerGroups(
-      multiCastAddresses: List[String],
-      a: String,
-      b: String,
-      c: String
-  )(
+  private def withThreeSimplePeerGroups(multiCastAddresses: Set[String], a: String, b: String, c: String)(
       testCode: (
           SimplePeerGroup[String, InetMultiAddress, String],
           SimplePeerGroup[String, InetMultiAddress, String],
@@ -216,20 +83,21 @@ class SimplePeerGroupSpec extends FlatSpec {
     )
   }
 
-  type UnderlyingMessage = Either[ControlMessage[String, InetMultiAddress], String]
+  type UnderlyingMessage =
+    Either[ControlMessage[String, InetMultiAddress], String]
 
-  private def withSimplePeerGroups(
-      bootstrapAddress: String,
-      multiCastAddresses: List[String],
-      addresses: String*
-  )(
+  private def withSimplePeerGroups(bootstrapAddress: String, multiCastAddresses: Set[String], addresses: String*)(
       testCode: Seq[SimplePeerGroup[String, InetMultiAddress, String]] => Any
   ): Unit = {
 
     val bootStrapTerminalGroup = randomUDPPeerGroup[UnderlyingMessage]
 
     val bootstrap = new SimplePeerGroup(
-      SimplePeerGroup.Config(bootstrapAddress, List.empty[String], Map.empty[String, InetMultiAddress]),
+      SimplePeerGroup.Config(
+        bootstrapAddress,
+        multiCastAddresses,
+        Map.empty[String, InetMultiAddress]
+      ),
       bootStrapTerminalGroup
     )
     bootstrap.initialize().runToFuture.futureValue
@@ -248,7 +116,8 @@ class SimplePeerGroupSpec extends FlatSpec {
       )
       .toList
 
-    val futures: Seq[Future[Unit]] = otherPeerGroups.map(pg => pg.initialize().runToFuture)
+    val futures: Seq[Future[Unit]] =
+      otherPeerGroups.map(pg => pg.initialize().runToFuture)
     Future.sequence(futures).futureValue
 
     val peerGroups = bootstrap :: otherPeerGroups

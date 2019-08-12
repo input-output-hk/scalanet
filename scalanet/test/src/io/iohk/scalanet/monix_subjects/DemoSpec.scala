@@ -149,4 +149,13 @@ class DemoSpec extends FlatSpec {
     in.onNext(s"$id-3")
     in.onComplete()
   }
+
+  // Observers in PeerGroup:
+  // Use Stop to shutdown the peer group
+  // Observers on message stream:
+  // Need to find a way to register the message observer
+  // Use Stop to terminate a channel
+
+//  class ObserverChannel
+//  class ObserverPeerGroup()
 }

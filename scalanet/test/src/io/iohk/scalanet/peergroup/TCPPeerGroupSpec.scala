@@ -11,7 +11,6 @@ import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.ChannelBrokenException
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
 import io.iohk.scalanet.peergroup.StandardTestPack.messagingTest
-import monix.execution.CancelableFuture
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.Matchers._
 import org.scalatest.RecoverMethods._
@@ -19,7 +18,7 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.{BeforeAndAfterAll, FlatSpec}
 
-import scala.concurrent.Await
+import scala.concurrent.{Await, Promise}
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -52,14 +51,21 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   it should "report an error for messaging on a closed channel -- client closes" in
     withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
       val bobsMessage = Random.alphanumeric.take(1024).mkString
-      bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).runToFuture).runToFuture
-      val bobChannel: CancelableFuture[Channel[InetMultiAddress, String]] =
-        bob.server().collectChannelCreated.headL.runToFuture
+
+      val bobChannel = Promise[Channel[InetMultiAddress, String]]()
+      bob
+        .server()
+        .collectChannelCreated
+        .foreachL { channel =>
+          channel.sendMessage(bobsMessage).runToFuture
+          bobChannel.success(channel)
+        }
+        .runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
       aliceClient.close().evaluated
       val bobError = recoverToExceptionIf[ChannelBrokenException[InetMultiAddress]] {
-        bobChannel.futureValue.sendMessage(bobsMessage).runToFuture
+        bobChannel.future.futureValue.sendMessage(bobsMessage).runToFuture
       }
 
       bobError.futureValue.to shouldBe alice.processAddress

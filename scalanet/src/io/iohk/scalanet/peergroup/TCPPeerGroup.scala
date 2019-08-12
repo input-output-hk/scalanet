@@ -20,12 +20,14 @@ import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import monix.eval.Task
 import monix.reactive.Observable
-import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
+import monix.reactive.subjects.Subject
 import org.slf4j.LoggerFactory
 import io.iohk.decco._
 import io.iohk.scalanet.codec.StreamCodec
+import io.iohk.scalanet.monix_subjects.CacheUntilConnectStrictlyOneSubject
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
+import monix.execution.Scheduler
 
 import scala.concurrent.Promise
 import scala.util.control.NonFatal
@@ -42,12 +44,15 @@ import scala.util.control.NonFatal
   *              to provide stream delimiting.
   * @tparam M the message type.
   */
-class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: BufferInstantiator[ByteBuffer])
-    extends TerminalPeerGroup[InetMultiAddress, M]() {
+class TCPPeerGroup[M](val config: Config)(
+    implicit codec: StreamCodec[M],
+    bi: BufferInstantiator[ByteBuffer],
+    s: Scheduler
+) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
+  private val serverSubject = CacheUntilConnectStrictlyOneSubject[ServerEvent[InetMultiAddress, M]]()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -62,7 +67,7 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
-        val newChannel = new ServerChannelImpl[M](ch, codec.cleanSlate, bi)
+        val newChannel = new ServerChannelImpl[M](ch)
         serverSubject.onNext(ChannelCreated(newChannel))
         log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
@@ -81,7 +86,7 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
   override def processAddress: InetMultiAddress = config.processAddress
 
   override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
-    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, codec.cleanSlate, bi).initialize
+    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap).initialize
   }
 
   override def server(): Observable[ServerEvent[InetMultiAddress, M]] = serverSubject
@@ -106,14 +111,15 @@ object TCPPeerGroup {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, InetMultiAddress(bindAddress))
   }
 
-  private[scalanet] class ServerChannelImpl[M](
-      val nettyChannel: SocketChannel,
+  private[scalanet] class ServerChannelImpl[M](val nettyChannel: SocketChannel)(
+      implicit
       codec: StreamCodec[M],
-      bi: BufferInstantiator[ByteBuffer]
+      bi: BufferInstantiator[ByteBuffer],
+      s: Scheduler
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
-    private val messageSubject = ReplaySubject[M]()
+    private val messageSubject = CacheUntilConnectStrictlyOneSubject[M]()
 
     log.debug(
       s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
@@ -141,11 +147,11 @@ object TCPPeerGroup {
     }
   }
 
-  private class ClientChannelImpl[M](
-      inetSocketAddress: InetSocketAddress,
-      clientBootstrap: Bootstrap,
+  private class ClientChannelImpl[M](inetSocketAddress: InetSocketAddress, clientBootstrap: Bootstrap)(
+      implicit
       codec: StreamCodec[M],
-      bi: BufferInstantiator[ByteBuffer]
+      bi: BufferInstantiator[ByteBuffer],
+      s: Scheduler
   ) extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
@@ -157,7 +163,7 @@ object TCPPeerGroup {
     private val deactivation = Promise[Unit]()
     private val deactivationF = deactivation.future
 
-    private val messageSubject = ReplaySubject[M]()
+    private val messageSubject = CacheUntilConnectStrictlyOneSubject[M]()
 
     private val bootstrap: Bootstrap = clientBootstrap
       .clone()

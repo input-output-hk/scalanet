@@ -54,7 +54,9 @@ final class PublishToStrictlyOneSubject[A] private () extends Subject[A, A] with
 
       case s =>
         throw new IllegalArgumentException(
-          s"PublishToStrictlyOneSubject does not allow multiple subscriptions. Already registered subscriber $s"
+          s"PublishToStrictlyOneSubject does not allow multiple subscriptions. " +
+            s"Unable to register new subscriber $subscriber. " +
+            s"Subscriber $s is already registered."
         )
     }
 
