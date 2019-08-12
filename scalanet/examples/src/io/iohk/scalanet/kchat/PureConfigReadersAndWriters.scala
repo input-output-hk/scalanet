@@ -31,7 +31,9 @@ object PureConfigReadersAndWriters {
 //  implicit val inetSocketAddressWriter: ConfigWriter[InetSocketAddress] =
 //    ConfigWriter[String].contramap(address => s"${address.getHostString}:${address.getPort}")
   implicit val inetMultiAddressWriter: ConfigWriter[InetMultiAddress] =
-    ConfigWriter[String].contramap(address => s"${address.inetSocketAddress.getHostString}:${address.inetSocketAddress.getPort}")
+    ConfigWriter[String].contramap(
+      address => s"${address.inetSocketAddress.getHostString}:${address.inetSocketAddress.getPort}"
+    )
   implicit def knownPeerWriter: ConfigWriter[Map[BitVector, NodeRecord[InetMultiAddress]]] =
     genericMapWriter[BitVector, NodeRecord[InetMultiAddress]](_.toHex)
 

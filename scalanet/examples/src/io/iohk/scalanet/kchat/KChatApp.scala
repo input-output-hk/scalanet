@@ -8,20 +8,19 @@ import com.typesafe.config.ConfigValue
 import io.iohk.scalanet.peergroup.{InetMultiAddress, PeerGroup, UDPPeerGroup}
 import io.iohk.scalanet.peergroup.kademlia.KNetwork.KNetworkScalanetImpl
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
-import io.iohk.scalanet.peergroup.kademlia.{KMessage, KPeerGroup, KRouter}
-import monix.reactive.subjects.PublishSubject
+import io.iohk.scalanet.peergroup.kademlia.{KMessage, KRouter}
 import pureconfig.ConfigWriter
 import pureconfig.generic.auto._
 import scodec.bits.BitVector
 import monix.execution.Scheduler.Implicits.global
 
+import scala.io.StdIn
 import scala.util.Random
 
-object KChatApp extends App {
+object KChatApp extends App with CommandParser {
   import PureConfigReadersAndWriters._
 
-  case class CommandLineOptions(configFile: Option[Path] = None,
-                                generateConfig: Boolean = false)
+  case class CommandLineOptions(configFile: Option[Path] = None, generateConfig: Boolean = false)
 
   val commandLineOptions = getCommandLineOptions
 
@@ -30,26 +29,27 @@ object KChatApp extends App {
       ContextInitializer.CONFIG_FILE_PROPERTY,
       configFile.getFileName.toString.replace(".conf", "-logback.xml")
     )
-//    StatusPrinter.print(LoggerFactory.getILoggerFactory.asInstanceOf[LoggerContext])
 
-    val kPeerGroup: PeerGroup[BitVector, String] = getKPeerGroup(configFile)
+    val kRouter = getKRouter(configFile)
 
-    import Console.{GREEN, RED, RESET}
-    import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
-    kPeerGroup.server().collectChannelCreated.foreach { channel =>
-      channel.in.foreach{ message =>
-        Console.println(s"> ${RESET}${GREEN}${channel.to}${RESET}: ${RED}$message${RESET}")
+    import Console.{GREEN, RED, RESET, YELLOW}
+
+    while (true) {
+      val commandStr: String = StdIn.readLine("> ")
+      if (commandStr != null) {
+        parse(command, commandStr) match {
+          case Success(result, _) =>
+            Console.println(s"${RESET}${GREEN}${result.applyTo(kRouter)}${RESET}")
+          case Failure(msg, _) =>
+            Console.println(s"${RESET}${YELLOW}$msg${RESET}")
+          case Error(msg, _) =>
+            Console.println(s"${RESET}${RED}$msg${RESET}")
+        }
       }
     }
-
-    kPeerGroup.client(kPeerGroup.processAddress).map { channel =>
-      channel.sendMessage("Hellllooo 1")
-      channel.sendMessage("Hellllooo 2")
-      channel.sendMessage("Hellllooo 3")
-    }.runAsync
   }
 
-  private def getKPeerGroup(configFile: Path): PeerGroup[BitVector, String] = {
+  private def getKRouter(configFile: Path): KRouter[InetMultiAddress] = {
     val nodeConfig: KRouter.Config[InetMultiAddress] =
       pureconfig
         .loadConfigOrThrow[KRouter.Config[InetMultiAddress]](configFile)
@@ -59,7 +59,7 @@ object KChatApp extends App {
     import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 
     try {
-      println(s"Initializing chat for ${nodeConfig.nodeRecord}")
+      println(s"Initializing for ${nodeConfig.nodeRecord}")
 
       val routingConfig =
         UDPPeerGroup.Config(
@@ -71,27 +71,8 @@ object KChatApp extends App {
       )
       val kNetwork =
         new KNetworkScalanetImpl[InetMultiAddress](routingPeerGroup)
-      val kRouter = new KRouter[InetMultiAddress](nodeConfig, kNetwork)
 
-      val messagingConfig =
-        UDPPeerGroup.Config(
-          nodeConfig.nodeRecord.messagingAddress.inetSocketAddress
-        )
-      val messagingPeerGroup = PeerGroup.createOrThrow(
-        new UDPPeerGroup[Either[NodeRecord[InetMultiAddress], String]](
-          messagingConfig
-        ),
-        messagingConfig
-      )
-
-      PeerGroup.createOrThrow(
-        new KPeerGroup[InetMultiAddress, String](
-          kRouter,
-          PublishSubject(),
-          messagingPeerGroup
-        ),
-        "KPeerGroup"
-      )
+      new KRouter[InetMultiAddress](nodeConfig, kNetwork)
 
     } catch {
       case e: Exception =>
@@ -117,10 +98,8 @@ object KChatApp extends App {
     def aRandomNodeRecord: NodeRecord[InetMultiAddress] = {
       NodeRecord(
         id = randomNodeId,
-        routingAddress =
-          InetMultiAddress(new InetSocketAddress("127.0.0.1", 8080)),
-        messagingAddress =
-          InetMultiAddress(new InetSocketAddress("127.0.0.1", 9090))
+        routingAddress = InetMultiAddress(new InetSocketAddress("127.0.0.1", 8080)),
+        messagingAddress = InetMultiAddress(new InetSocketAddress("127.0.0.1", 9090))
       )
     }
 

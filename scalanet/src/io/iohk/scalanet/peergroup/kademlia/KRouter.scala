@@ -19,9 +19,9 @@ class KRouter[A](val config: Config[A], network: KNetwork[A])(
     implicit scheduler: Scheduler
 ) {
 
-  private val kBuckets = new KBuckets(config.nodeRecord.id)
-  private val nodeRecords = new ConcurrentHashMap[BitVector, NodeRecord[A]].asScala
   private val log = LoggerFactory.getLogger(getClass)
+  val kBuckets = new KBuckets(config.nodeRecord.id)
+  val nodeRecords = new ConcurrentHashMap[BitVector, NodeRecord[A]].asScala
 
   add(config.nodeRecord)
 
