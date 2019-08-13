@@ -34,8 +34,6 @@ class FramingCodec[T](val messageCodec: Codec[T], val maxFrameLength: Int = Int.
     s
   }
 
-  override def size(t: T): Int = 4 + messageCodec.size(t)
-
   override def encodeImpl(t: T, start: Int, destination: ByteBuffer): Unit = {
     destination.putInt(start, destination.capacity() - 4)
     messageCodec.encodeImpl(t, 4, destination)
