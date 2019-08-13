@@ -1,16 +1,15 @@
 package io.iohk.scalanet.peergroup.kademlia
 
-import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 
 import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.peergroup.InMemoryPeerGroup.Network
 import io.iohk.scalanet.peergroup.PeerGroup.createOrThrow
 import io.iohk.scalanet.peergroup.StandardTestPack.messagingTest
-import io.iohk.scalanet.peergroup.{InMemoryPeerGroup, InetMultiAddress}
+import io.iohk.scalanet.peergroup.{InMemoryPeerGroup, PeerGroup}
 import io.iohk.scalanet.peergroup.kademlia.Generators.aRandomNodeRecord
-import io.iohk.scalanet.peergroup.kademlia.KPeerGroup.NodeRecord
 import io.iohk.scalanet.peergroup.kademlia.KPeerGroupSpec.withTwoPeerGroups
+import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import monix.execution.Scheduler
 import monix.reactive.subjects.PublishSubject
 import org.mockito.Mockito.when
@@ -25,7 +24,9 @@ import scala.concurrent.duration._
 
 class KPeerGroupSpec extends FlatSpec {
 
-  implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(1 second)
+  implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(
+    1 second
+  )
 
   behavior of "KPeerGroup"
 
@@ -44,32 +45,41 @@ class KPeerGroupSpec extends FlatSpec {
 
 object KPeerGroupSpec {
 
-  def withTwoPeerGroups(a: NodeRecord, b: NodeRecord)(
-      testCode: (KPeerGroup[String], KPeerGroup[String]) => Any
+  def withTwoPeerGroups(a: NodeRecord[String], b: NodeRecord[String])(
+      testCode: (KPeerGroup[String, String], KPeerGroup[String, String]) => Any
   )(
       implicit scheduler: Scheduler,
-      codec: Codec[Either[NodeRecord, String]],
+      codec: Codec[Either[NodeRecord[String], String]],
       bufferInstantiator: BufferInstantiator[ByteBuffer]
   ): Unit = {
 
-    val n: Network[InetMultiAddress, Either[NodeRecord, String]] = new Network()
+    val n: Network[String, Either[NodeRecord[String], String]] = new Network()
 
-    val underlying1 = new InMemoryPeerGroup[InetMultiAddress, Either[NodeRecord, String]](
-      InetMultiAddress(new InetSocketAddress(a.ip, a.udp))
-    )(n)
+    val underlying1 = PeerGroup.createOrThrow(
+      new InMemoryPeerGroup[String, Either[NodeRecord[String], String]](
+        a.messagingAddress
+      )(n),
+      "underlying1"
+    )
 
-    val underlying2 = new InMemoryPeerGroup[InetMultiAddress, Either[NodeRecord, String]](
-      InetMultiAddress(new InetSocketAddress(b.ip, b.udp))
-    )(n)
-
-    Await.result(underlying1.initialize().runAsync, Duration.Inf)
-    Await.result(underlying2.initialize().runAsync, Duration.Inf)
+    val underlying2 = PeerGroup.createOrThrow(
+      new InMemoryPeerGroup[String, Either[NodeRecord[String], String]](
+        b.messagingAddress
+      )(n),
+      "underlying2"
+    )
 
     val kRouter1 = mockKRouter(a, Seq(b))
     val kRouter2 = mockKRouter(b, Seq(a))
 
-    val kPeerGroup1 = createOrThrow(new KPeerGroup[String](kRouter1, PublishSubject(), underlying1), a)
-    val kPeerGroup2 = createOrThrow(new KPeerGroup[String](kRouter2, PublishSubject(), underlying2), b)
+    val kPeerGroup1 = createOrThrow(
+      new KPeerGroup[String, String](kRouter1, PublishSubject(), underlying1),
+      a
+    )
+    val kPeerGroup2 = createOrThrow(
+      new KPeerGroup[String, String](kRouter2, PublishSubject(), underlying2),
+      b
+    )
 
     try {
       testCode(kPeerGroup1, kPeerGroup2)
@@ -79,9 +89,9 @@ object KPeerGroupSpec {
     }
   }
 
-  private def mockKRouter(nodeRecord: NodeRecord, peers: Seq[NodeRecord]): KRouter[NodeRecord] = {
-    val kRouter = mock[KRouter[NodeRecord]]
-    val kRouterConfig = KRouter.Config(nodeRecord.id, nodeRecord, Map.empty)
+  private def mockKRouter(nodeRecord: NodeRecord[String], peers: Seq[NodeRecord[String]]): KRouter[String] = {
+    val kRouter = mock[KRouter[String]]
+    val kRouterConfig = KRouter.Config[String](nodeRecord, Set.empty)
     peers.foreach(
       peerRecord => when(kRouter.get(peerRecord.id)).thenReturn(Future(peerRecord))
     )

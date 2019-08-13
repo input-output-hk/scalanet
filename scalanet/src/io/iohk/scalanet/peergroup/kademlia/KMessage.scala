@@ -2,27 +2,25 @@ package io.iohk.scalanet.peergroup.kademlia
 
 import java.util.UUID
 
+import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import scodec.bits.BitVector
 
-sealed trait KMessage[V] {
+sealed trait KMessage[A] {
   def requestId: UUID
-  def nodeId: BitVector
-  def nodeRecord: V
+  def nodeRecord: NodeRecord[A]
 }
 
 object KMessage {
 
-  sealed trait KRequest[V] extends KMessage[V]
+  sealed trait KRequest[A] extends KMessage[A]
 
   object KRequest {
-    case class FindNodes[V](requestId: UUID, nodeId: BitVector, nodeRecord: V, targetNodeId: BitVector)
-        extends KRequest[V]
+    case class FindNodes[A](requestId: UUID, nodeRecord: NodeRecord[A], targetNodeId: BitVector) extends KRequest[A]
   }
 
-  sealed trait KResponse[V] extends KMessage[V]
+  sealed trait KResponse[A] extends KMessage[A]
 
   object KResponse {
-    case class Nodes[V](requestId: UUID, nodeId: BitVector, nodeRecord: V, nodes: Seq[(BitVector, V)])
-        extends KResponse[V]
+    case class Nodes[A](requestId: UUID, nodeRecord: NodeRecord[A], nodes: Seq[NodeRecord[A]]) extends KResponse[A]
   }
 }

@@ -3,7 +3,7 @@ package io.iohk.scalanet.peergroup.kademlia
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.scalanet.peergroup.kademlia.KRouter.Config
+import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.FindNodes
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.Nodes
 import monix.execution.Scheduler
@@ -15,26 +15,24 @@ import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.duration._
 
-class KRouter[V](val config: Config[V], network: KNetwork[V])(
+class KRouter[A](val config: Config[A], network: KNetwork[A])(
     implicit scheduler: Scheduler
 ) {
 
-  private val kBuckets = new KBuckets(config.nodeId)
-  private val nodeRecords = new ConcurrentHashMap[BitVector, V].asScala
   private val log = LoggerFactory.getLogger(getClass)
+  val kBuckets = new KBuckets(config.nodeRecord.id)
+  val nodeRecords = new ConcurrentHashMap[BitVector, NodeRecord[A]].asScala
 
-  add(config.nodeId, config.nodeRecord)
+  add(config.nodeRecord)
 
-  config.knownPeers.foreach {
-    case (peerId, peerRecord) => add(peerId, peerRecord)
-  }
+  config.knownPeers.foreach(add)
 
   info("Executing initial enrolment process to join the network...")
-  Try(Await.result(lookup(config.nodeId), 2 seconds)).toEither match {
+  Try(Await.result(lookup(config.nodeRecord.id), 2 seconds)).toEither match {
     case Left(t) =>
       info(s"Enrolment lookup failed with exception: $t")
     case Right(nodes) =>
-      debug(s"Enrolment looked completed with network nodes ${nodes.map(t => (t._1.toHex, t._2)).mkString(",")}")
+      debug(s"Enrolment looked completed with network nodes ${nodes.mkString(",")}")
       info(
         s"Initialization complete. ${nodeRecords.size} peers identified " +
           s"(of which 1 is myself and ${config.knownPeers.size} are preconfigured bootstrap peers)."
@@ -46,17 +44,15 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
     .collect {
       case (channel, message) =>
         message match {
-          case FindNodes(uuid, nodeId, nodeRecord, targetNodeId) =>
+          case FindNodes(uuid, nodeRecord, targetNodeId) =>
             debug(
-              s"Received request FindNodes(${nodeId.toHex}, $nodeRecord, ${targetNodeId.toHex})"
+              s"Received request FindNodes(${nodeRecord.id.toHex}, $nodeRecord, ${targetNodeId.toHex})"
             )
-            add(nodeId, nodeRecord)
+            add(nodeRecord)
             val result =
               embellish(kBuckets.closestNodes(targetNodeId, config.k))
             channel
-              .sendMessage(
-                Nodes(uuid, config.nodeId, config.nodeRecord, result)
-              )
+              .sendMessage(Nodes(uuid, config.nodeRecord, result))
               .runAsync
               .onComplete {
                 case Failure(t) =>
@@ -69,16 +65,16 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
     }
     .subscribe()
 
-  def get(key: BitVector): Future[V] = {
+  def get(key: BitVector): Future[NodeRecord[A]] = {
     debug(s"get(${key.toHex})")
     getLocally(key).recoverWith { case _ => getRemotely(key) }.recoverWith { case t => giveUp(key, t) }
   }
 
-  private def getRemotely(key: BitVector): Future[V] = {
+  private def getRemotely(key: BitVector): Future[NodeRecord[A]] = {
     lookup(key).flatMap(_ => getLocally(key))
   }
 
-  private def getLocally(key: BitVector): Future[V] = {
+  private def getLocally(key: BitVector): Future[NodeRecord[A]] = {
     toFuture(
       for {
         nodeId <- kBuckets.closestNodes(key, 1).find(_ == key)
@@ -92,14 +88,14 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
     o.fold[Future[T]](Future.failed(failure))(t => Future(t))
   }
 
-  private def giveUp(key: BitVector, t: Throwable): Future[V] = {
+  private def giveUp(key: BitVector, t: Throwable): Future[NodeRecord[A]] = {
     val message = s"Lookup failed for get(${key.toHex}). Got an exception: $t."
     info(message)
     Future.failed(new Exception(message, t))
   }
 
   // lookup process, from page 6 of the kademlia paper
-  private def lookup(targetNodeId: BitVector): Future[Seq[(BitVector, V)]] = {
+  private def lookup(targetNodeId: BitVector): Future[Seq[NodeRecord[A]]] = {
     // start by taking the alpha closest nodes from its kbuckets
 
     val xorOrdering = new XorOrdering(targetNodeId)
@@ -114,14 +110,13 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
       // the initiator then sends find node rpcs to these nodes
       val fs = closestNodes
         .filterNot(querySet.contains)
-        .filterNot(_ == config.nodeId)
+        .filterNot(_ == config.nodeRecord.id)
         .take(config.alpha)
         .map { knownNode =>
-          val findNodesRequest = FindNodes[V](
+          val findNodesRequest = FindNodes(
             requestId = UUID.randomUUID(),
-            nodeId = config.nodeId,
             nodeRecord = config.nodeRecord,
-            targetNodeId = targetNodeId // knownNode
+            targetNodeId = targetNodeId
           )
 
           val knownNodeRecord = nodeRecords(knownNode)
@@ -132,19 +127,19 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
               s"Target = ${targetNodeId.toHex}."
           )
 
-          network.findNodes(knownNodeRecord, findNodesRequest).flatMap { kNodes: Nodes[V] =>
+          network.findNodes(knownNodeRecord, findNodesRequest).flatMap { kNodes: Nodes[A] =>
             // verify uuids of request/response match (TODO)
 
             debug(
               s"Received Nodes response " +
                 s"RequestId = ${kNodes.requestId}, " +
-                s"From = (${kNodes.nodeId.toHex}, ${kNodes.nodeRecord})," +
-                s"Results = ${kNodes.nodes.map(_._1.toHex).mkString(",")}."
+                s"From = (${kNodes.nodeRecord.id.toHex}, ${kNodes.nodeRecord})," +
+                s"Results = ${kNodes.nodes.map(_.id.toHex).mkString(",")}."
             )
 
-            kNodes.nodes.foreach { case (id, record) => add(id, record) }
+            kNodes.nodes.foreach(add)
 
-            val kIds = kNodes.nodes.map(_._1)
+            val kIds = kNodes.nodes.map(_.id)
 
             val closestNext: Seq[BitVector] =
               (closestNodes ++ kIds).sorted(xorOrdering)
@@ -161,32 +156,43 @@ class KRouter[V](val config: Config[V], network: KNetwork[V])(
     }
 
     val closestKnownNodes: Seq[BitVector] =
-      kBuckets.closestNodes(targetNodeId, config.alpha).filterNot(_ == config.nodeId)
+      kBuckets.closestNodes(targetNodeId, config.alpha).filterNot(_ == config.nodeRecord.id)
 
     loop(Set.empty, closestKnownNodes).transform(
       _ => Success(embellish(kBuckets.closestNodes(targetNodeId, config.k)))
     )
   }
 
-  private def embellish(ids: Seq[BitVector]): Seq[(BitVector, V)] = {
-    ids.map(id => (id, nodeRecords(id)))
+  private def embellish(ids: Seq[BitVector]): Seq[NodeRecord[A]] = {
+    ids.map(id => nodeRecords(id))
   }
 
-  private def add(nodeId: BitVector, nodeRecord: V): Unit = {
-    kBuckets.add(nodeId)
-    nodeRecords.put(nodeId, nodeRecord)
-    debug(s"Added record (${nodeId.toHex}, $nodeRecord) to the routing table.")
+  private def add(nodeRecord: NodeRecord[A]): Unit = {
+    kBuckets.add(nodeRecord.id)
+    nodeRecords.put(nodeRecord.id, nodeRecord)
+    debug(s"Added record (${nodeRecord.id.toHex}, $nodeRecord) to the routing table.")
   }
 
   private def debug(msg: String): Unit = {
-    log.debug(s"${config.nodeId.toHex} $msg")
+    log.debug(s"${config.nodeRecord.id.toHex} $msg")
   }
 
   private def info(msg: String): Unit = {
-    log.info(s"${config.nodeId.toHex} $msg")
+    log.info(s"${config.nodeRecord.id.toHex} $msg")
   }
 }
 
 object KRouter {
-  case class Config[V](nodeId: BitVector, nodeRecord: V, knownPeers: Map[BitVector, V], alpha: Int = 3, k: Int = 20)
+  case class Config[A](nodeRecord: NodeRecord[A], knownPeers: Set[NodeRecord[A]], alpha: Int = 3, k: Int = 20)
+
+  // These node records are derived from Ethereum node records (https://eips.ethereum.org/EIPS/eip-778)
+  // TODO node records require an additional
+  // signature (why)
+  // sequence number (why)
+  // compressed public key (why)
+  // TODO understand what these things do, which we need an implement.
+  case class NodeRecord[A](id: BitVector, routingAddress: A, messagingAddress: A) {
+    override def toString: String =
+      s"NodeRecord(id = ${id.toHex}, routingAddress = $routingAddress, messagingAddress = $messagingAddress)"
+  }
 }

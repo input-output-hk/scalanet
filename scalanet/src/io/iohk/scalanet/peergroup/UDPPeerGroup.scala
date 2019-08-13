@@ -162,7 +162,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
     }
   }
 
-  private val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
+  private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
 
   override def initialize(): Task[Unit] =
     toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}")).onErrorRecoverWith {
