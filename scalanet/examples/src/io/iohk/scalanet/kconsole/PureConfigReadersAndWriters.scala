@@ -1,4 +1,4 @@
-package io.iohk.scalanet.krouterconsole
+package io.iohk.scalanet.kconsole
 
 import java.net.{InetSocketAddress, URI}
 

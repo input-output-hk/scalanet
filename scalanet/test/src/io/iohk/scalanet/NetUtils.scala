@@ -29,14 +29,7 @@ object NetUtils {
     keystore
   }
 
-  def aRandomAddress(): InetSocketAddress = {
-    val s = new ServerSocket(0)
-    try {
-      new InetSocketAddress("localhost", s.getLocalPort)
-    } finally {
-      s.close()
-    }
-  }
+  def aRandomAddress(): InetSocketAddress = InetPeerGroupUtils.aRandomAddress()
 
   def isListening(address: InetSocketAddress): Boolean = {
     try {

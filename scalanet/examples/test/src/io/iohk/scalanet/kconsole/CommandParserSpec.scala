@@ -1,6 +1,6 @@
-package io.iohk.scalanet.krouterconsole
+package io.iohk.scalanet.kconsole
 
-import io.iohk.scalanet.krouterconsole.CommandParser.Command.{DumpCommand, ExitCommand, GetCommand, RemoveCommand}
+import io.iohk.scalanet.kconsole.CommandParser.Command.{DumpCommand, ExitCommand, GetCommand, RemoveCommand}
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.prop.TableDrivenPropertyChecks._
