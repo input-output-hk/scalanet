@@ -1,8 +1,9 @@
 package io.iohk.scalanet.experimental
 
+import java.net.InetSocketAddress
+
 import monix.eval.Task
 import monix.execution.Scheduler
-
 import ExpAddressing._
 
 abstract class ExpAddressing[A, U, M](
@@ -23,8 +24,14 @@ abstract class ExpAddressing[A, U, M](
     }
   }
 
-  override def onReception(handler: Handler[A, M]): Unit = {
-    underlyingPeerGroup.onReception { envelope: Envelope[U, AddressHeader[A, M]] =>
+  override def onConnectionArrival(connectionHandler: EConnection[M] => Unit): Unit = {
+    underlyingPeerGroup.onConnectionArrival { undCon: EConnection[AddressHeader[A, M]] =>
+      connectionHandler(AddressingConnection(processAddress, undCon))
+    }
+  }
+
+  override def onMessageReception(handler: Envelope[A, M] => Unit): Unit = {
+    underlyingPeerGroup.onMessageReception { envelope: Envelope[U, AddressHeader[A, M]] =>
       val addressedMessage = envelope.msg
       val newCh = envelope.coneectionOpt map {
         AddressingConnection(processAddress, _)
@@ -43,6 +50,8 @@ object ExpAddressing {
 
   case class HeaderAddressingConnection[A, M](add: A, underlyingConn: EConnection[AddressHeader[A, M]])
       extends EConnection[M] {
+    override def underlyingAddress: InetSocketAddress = underlyingConn.underlyingAddress
+
     override def replyWith(m: M): Task[Unit] = underlyingConn.replyWith(AddressHeader(add, m))
 
     override def close(): Task[Unit] = underlyingConn.close()
@@ -64,6 +73,8 @@ object ExpAddressing {
 }
 
 case class AddressingConnection[A, M](localAddress: A, undAC: EConnection[AddressHeader[A, M]]) extends EConnection[M] {
+  override def underlyingAddress: InetSocketAddress = undAC.underlyingAddress
+
   override def replyWith(m: M): Task[Unit] = undAC.replyWith(AddressHeader(localAddress, m))
 
   override def close(): Task[Unit] = undAC.close()

@@ -37,12 +37,12 @@ class UDPExpPeerGroupSpec extends FlatSpec {
     val alice = new UDPExpPeerGroup[String](aliceAddress)
     val bob = new UDPExpPeerGroup[String](bobAddress)
 
-    alice onReception { envelope =>
+    alice onMessageReception { envelope =>
       println("Alice received a message")
       envelope.msg shouldBe bobsMessage
     }
 
-    bob onReception { envelope =>
+    bob onMessageReception { envelope =>
       println(s"Bob received a message")
       envelope.msg shouldBe alicesMessage
       // note that UDP does not provide reliable addressing, that is why we can not

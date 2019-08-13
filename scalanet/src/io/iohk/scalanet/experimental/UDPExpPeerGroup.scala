@@ -29,7 +29,7 @@ class UDPExpPeerGroup[M](address: InetSocketAddress)(
   private val log = LoggerFactory.getLogger(getClass)
   private val workerGroup = new NioEventLoopGroup()
 
-  private val handlers = createSet[Handler[InetSocketAddress, M]]
+  private val messageHandlers = createSet[Envelope[InetSocketAddress, M] => Unit]
 
   private val clientBootstrap = new Bootstrap()
     .group(workerGroup)
@@ -48,7 +48,7 @@ class UDPExpPeerGroup[M](address: InetSocketAddress)(
                 println(s"Client read $messageE from $remoteAddress")
                 for {
                   message <- messageE
-                  h <- handlers
+                  h <- messageHandlers
                   ch = ctx.channel().asInstanceOf[NioDatagramChannel]
                 } h(Envelope(None, ch.remoteAddress(), message))
               } finally {
@@ -76,7 +76,7 @@ class UDPExpPeerGroup[M](address: InetSocketAddress)(
                 log.debug(s"Server read $messageE from $remoteAddress")
                 for {
                   message <- messageE
-                  h <- handlers
+                  h <- messageHandlers
                   ch = ctx.channel().asInstanceOf[NioDatagramChannel]
                 } h(Envelope(None, ch.remoteAddress(), message))
               } finally {
@@ -113,9 +113,11 @@ class UDPExpPeerGroup[M](address: InetSocketAddress)(
       }
   }
 
-  override def onReception(handler: Handler[InetSocketAddress, M]): Unit = {
-    handlers += handler
-    log.info(s"Handler registered by $processAddress.\nThere are ${handlers.size} handlers for the next message")
+  override def onConnectionArrival(connection: EConnection[M] => Unit): Unit = ()
+
+  override def onMessageReception(handler: Envelope[InetSocketAddress, M] => Unit): Unit = {
+    messageHandlers += handler
+    log.info(s"Handler registered by $processAddress.\nThere are ${messageHandlers.size} handlers for the next message")
   }
 
   override def shutdown(): Task[Unit] = {
@@ -149,12 +151,15 @@ class UDPExpClientChannel[M](nettyChannel: NioDatagramChannel, remoteAddress: In
   override def close(): Task[Unit] = Task.unit
 }
 
+// Possible implementation if connections would be added
 class UDPExpConnection[M](nettyChannel: NioDatagramChannel, remoteAddress: InetSocketAddress)(
     implicit codec: Codec[M],
     bufferInstantiator: BufferInstantiator[ByteBuffer]
 ) extends EConnection[M] {
 
   private val log = LoggerFactory.getLogger(getClass)
+
+  override def underlyingAddress: InetSocketAddress = nettyChannel.remoteAddress()
 
   override def replyWith(m: M): Task[Unit] = {
     val encodedMessage = codec.encode(m)

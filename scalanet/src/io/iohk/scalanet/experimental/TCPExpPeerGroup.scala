@@ -32,7 +32,9 @@ class TCPExpPeerGroup[M](address: InetSocketAddress)(
 
   private val workerGroup = new NioEventLoopGroup()
 
-  private val handlers = createSet[Handler[InetSocketAddress, M]]
+  private val messageHandlers = createSet[Envelope[InetSocketAddress, M] => Unit]
+
+  private val connectionHandlers = createSet[EConnection[M] => Unit]
 
   val clientBootstrap = new Bootstrap()
     .group(workerGroup)
@@ -45,6 +47,7 @@ class TCPExpPeerGroup[M](address: InetSocketAddress)(
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(nettyChannel: SocketChannel): Unit = {
+        for (h <- connectionHandlers) h(new TCPEConnection[M](nettyChannel, codec, bi))
         nettyChannel
           .pipeline()
           .addLast(new ChannelInboundHandlerAdapter {
@@ -57,10 +60,10 @@ class TCPExpPeerGroup[M](address: InetSocketAddress)(
                 )
                 for {
                   message <- codec.streamDecode(byteBuf.nioBuffer())(bi)
-                  h <- handlers
+                  h <- messageHandlers
                   ch = ctx.channel().asInstanceOf[SocketChannel]
                 } h(
-                  Envelope(Some(new TCPEConnection[M](ch, codec, bi, ch.remoteAddress())), ch.remoteAddress(), message)
+                  Envelope(Some(new TCPEConnection[M](ch, codec, bi)), ch.remoteAddress(), message)
                 )
               } finally {
                 byteBuf.release()
@@ -83,12 +86,21 @@ class TCPExpPeerGroup[M](address: InetSocketAddress)(
     }
 
   override def client(to: InetSocketAddress): Task[EClientChannel[InetSocketAddress, M]] = {
-    new TCPExpClientChannel[M](handlers, clientBootstrap.clone(), codec, bi, to).initialize
+    new TCPExpClientChannel[M](messageHandlers, clientBootstrap.clone(), codec, bi, to).initialize
   }
 
-  override def onReception(handler: Handler[InetSocketAddress, M]): Unit = {
-    handlers += handler
-    log.info(s"Handler registered by $processAddress.\nThere are ${handlers.size} handlers for the next message")
+  override def onConnectionArrival(connectionHandler: EConnection[M] => Unit): Unit = {
+    connectionHandlers += connectionHandler
+    log.info(
+      s"Connection's handled registered by $processAddress.\nThere are ${connectionHandlers.size} handlers for the next connection"
+    )
+  }
+
+  override def onMessageReception(handler: Envelope[InetSocketAddress, M] => Unit): Unit = {
+    messageHandlers += handler
+    log.info(
+      s"Meesage's handler registered by $processAddress.\nThere are ${messageHandlers.size} handlers for the next message"
+    )
   }
 
   override def shutdown(): Task[Unit] = {
@@ -100,7 +112,7 @@ class TCPExpPeerGroup[M](address: InetSocketAddress)(
 }
 
 class TCPExpClientChannel[M](
-    handlers: mutable.Set[Handler[InetSocketAddress, M]],
+    handlers: mutable.Set[Envelope[InetSocketAddress, M] => Unit],
     clientBootstrap: Bootstrap,
     codec: StreamCodec[M],
     bi: BufferInstantiator[ByteBuffer],
@@ -142,7 +154,7 @@ class TCPExpClientChannel[M](
                   h <- handlers
                   ch = ctx.channel().asInstanceOf[SocketChannel]
                 } h(
-                  Envelope(Some(new TCPEConnection[M](ch, codec, bi, ch.remoteAddress())), ch.remoteAddress(), message)
+                  Envelope(Some(new TCPEConnection[M](ch, codec, bi)), ch.remoteAddress(), message)
                 )
               } finally {
                 byteBuf.release()
@@ -187,15 +199,16 @@ class TCPExpClientChannel[M](
 class TCPEConnection[M](
     nettyChannel: SocketChannel,
     codec: StreamCodec[M],
-    bi: BufferInstantiator[ByteBuffer],
-    remoteAddress: InetSocketAddress
+    bi: BufferInstantiator[ByteBuffer]
 ) extends EConnection[M] {
+
+  override def underlyingAddress: InetSocketAddress = nettyChannel.remoteAddress()
 
   override def replyWith(m: M): Task[Unit] =
     toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(m)(bi))))
       .onErrorRecoverWith {
         case e: IOException =>
-          Task.raiseError(new ChannelBrokenException[InetSocketAddress](remoteAddress, e))
+          Task.raiseError(new ChannelBrokenException[InetSocketAddress](nettyChannel.remoteAddress(), e))
       }
 
   override def close(): Task[Unit] = toTask(nettyChannel.close())

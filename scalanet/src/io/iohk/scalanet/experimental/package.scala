@@ -5,7 +5,6 @@ import scala.collection.mutable
 package object experimental {
 
   case class Envelope[A, M](coneectionOpt: Option[EConnection[M]], remoteAddress: A, msg: M)
-  type Handler[A, M] = Envelope[A, M] => Unit
 
   def createSet[T]: mutable.Set[T] = {
     import scala.collection.JavaConverters._

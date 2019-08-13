@@ -38,12 +38,21 @@ class TCPExpPeerGroupSpec extends FlatSpec {
     val alice = new TCPExpPeerGroup[String](aliceAddress)
     val bob = new TCPExpPeerGroup[String](bobAddress)
 
-    alice onReception { envelope =>
+    alice onConnectionArrival { _ =>
+      throw new Exception("Alice should receive no connection")
+    }
+
+    bob onConnectionArrival { connection =>
+      println(s"Bob received a connection from ${connection.underlyingAddress}")
+      connection.underlyingAddress.getAddress shouldBe aliceAddress.getAddress
+    }
+
+    alice onMessageReception { envelope =>
       println("Alice received a message")
       envelope.msg shouldBe bobsMessage
     }
 
-    bob onReception { envelope =>
+    bob onMessageReception { envelope =>
       println(s"Bob received a message")
       envelope.msg shouldBe alicesMessage
       // note that in TCP the sender will listen to the source channel
