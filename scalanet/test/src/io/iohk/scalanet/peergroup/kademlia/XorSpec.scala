@@ -38,10 +38,16 @@ class XorSpec extends FlatSpec {
     }
   }
 
-  it should "provide the correct maximal distance" in forAll(posNum[Byte]) { bitCount =>
+  it should "provide the correct maximal distance" in forAll(posNum[Int]) { bitCount =>
     val zero = BitVector.low(bitCount)
     val max = BitVector.high(bitCount)
-
-    d(zero, max) shouldBe bitCount
+    d(zero, max) shouldBe BigInt(2).pow(bitCount) - 1
   }
+
+  it should "satisfy the unidirectional property (from the last para of section 2.1)" in
+    genBitVectorTripsExhaustive(4).foreach {
+      case (x, y, z) =>
+        if (y != z)
+          d(x, y) should not be d(x, z)
+    }
 }

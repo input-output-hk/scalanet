@@ -4,20 +4,8 @@ import scodec.bits.BitVector
 
 object Xor {
 
-  def d(a: BitVector, b: BitVector): Int = {
+  def d(a: BitVector, b: BitVector): BigInt = {
     assert(a.length == b.length)
-    a.length.toInt - leadingZeros(a.xor(b))
-  }
-
-  private def leadingZeros(b: BitVector): Int = {
-    @annotation.tailrec
-    def loop(count: Int): Int = {
-      if (count != b.length && !b.get(count)) {
-        loop(count + 1)
-      } else {
-        count
-      }
-    }
-    loop(0)
+    BigInt((a xor b).toBin, 2)
   }
 }

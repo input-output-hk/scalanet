@@ -51,10 +51,22 @@ object Generators {
     l.toList
   }
 
+  def genBitVectorTripsExhaustive(
+      bitLength: Int
+  ): List[(BitVector, BitVector, BitVector)] = {
+    for {
+      x <- genBitVectorExhaustive(bitLength)
+      y <- genBitVectorExhaustive(bitLength)
+      z <- genBitVectorExhaustive(bitLength)
+    } yield (x, y, z)
+  }
+
   def aRandomBitVector(bitLength: Int = defaultBitLength): BitVector =
     BitVector.bits(Range(0, bitLength).map(_ => Random.nextBoolean()))
 
-  def aRandomNodeRecord(bitLength: Int = defaultBitLength): NodeRecord[String] = {
+  def aRandomNodeRecord(
+      bitLength: Int = defaultBitLength
+  ): NodeRecord[String] = {
     NodeRecord(
       id = aRandomBitVector(bitLength),
       routingAddress = Random.alphanumeric.take(4).mkString,
