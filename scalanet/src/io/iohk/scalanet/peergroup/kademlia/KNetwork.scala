@@ -5,12 +5,11 @@ import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.FindNodes
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.Nodes
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import io.iohk.scalanet.peergroup.{Channel, PeerGroup}
+import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
-import org.slf4j.LoggerFactory
 
 import scala.concurrent.Future
-import scala.util.Failure
 
 trait KNetwork[A] {
   def server: Observable[(Channel[A, KMessage[A]], KRequest[A])]
@@ -20,12 +19,16 @@ trait KNetwork[A] {
 
 object KNetwork {
 
-  class KNetworkScalanetImpl[A](peerGroup: PeerGroup[A, KMessage[A]])(
+  import scala.concurrent.duration._
+
+  class KNetworkScalanetImpl[A](
+      val peerGroup: PeerGroup[A, KMessage[A]],
+      val requestTimeout: FiniteDuration = 3 seconds
+  )(
       implicit scheduler: Scheduler
   ) extends KNetwork[A] {
 
-    private val log = LoggerFactory.getLogger(getClass)
-
+    // TODO from where will server channels be closed (here or the krouter)?
     override def server: Observable[(Channel[A, KMessage[A]], KRequest[A])] = {
       peerGroup.server().collectChannelCreated.mergeMap { channel =>
         channel.in.collect {
@@ -36,17 +39,28 @@ object KNetwork {
     }
 
     override def findNodes(to: NodeRecord[A], message: FindNodes[A]): Future[Nodes[A]] = {
-      peerGroup
-        .client(to.routingAddress)
-        .flatMap { channel =>
-          channel.sendMessage(message).runAsync.onComplete {
-            case Failure(exception) =>
-              log.info(s"findNodes request to $to failed to send. Got error: $exception")
-            case _ =>
-          }
-          channel.in.collect { case n @ Nodes(_, _, _) => n }.headL
-        }
-        .runAsync
+
+      val findTask: Task[Nodes[A]] = for {
+        clientChannel <- peerGroup.client(to.routingAddress)
+        _ <- clientChannel
+          .sendMessage(message)
+          .timeout(requestTimeout)
+          .doOnFinish(closeIfAnError(clientChannel))
+        nodes <- clientChannel.in
+          .collect { case n @ Nodes(_, _, _) => n }
+          .headL
+          .timeout(requestTimeout)
+          .doOnFinish(closeIfAnError(clientChannel))
+        _ <- clientChannel.close()
+      } yield nodes
+
+      findTask.runAsync
+    }
+
+    private def closeIfAnError(
+        channel: Channel[A, KMessage[A]]
+    )(maybeError: Option[Throwable]): Task[Unit] = {
+      maybeError.fold(Task.unit)(_ => channel.close())
     }
   }
 }
