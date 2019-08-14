@@ -22,6 +22,8 @@ import KNetworkSpec._
 
 class KNetworkSpec extends FlatSpec {
 
+  implicit val patienceConfig = PatienceConfig(1 second)
+
   "KNetwork" should "close client channels when requests are successful" in {
     val (network, peerGroup) = createKNetwork
     val client = mock[Channel[String, KMessage[String]]]
