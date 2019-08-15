@@ -80,7 +80,10 @@ object KRouterSpec {
   val networkSim =
     new peergroup.InMemoryPeerGroup.Network[String, KMessage[String]]()
 
-  def a2NodeNetwork(alpha: Int = 3, k: Int = 20)(
+  val alpha = 1
+  val k = 1
+
+  def a2NodeNetwork(alpha: Int = alpha, k: Int = k)(
       implicit scheduler: Scheduler
   ): (SRouter, SRouter) = {
     val k1 = aKRouter(Set.empty, alpha, k)
@@ -88,7 +91,7 @@ object KRouterSpec {
     (k1, k2)
   }
 
-  def a3NodeNetwork(alpha: Int = 3, k: Int = 20)(
+  def a3NodeNetwork(alpha: Int = alpha, k: Int = k)(
       implicit scheduler: Scheduler
   ): (SRouter, SRouter, SRouter) = {
     val k1 = aKRouter(Set.empty, alpha, k)
@@ -97,7 +100,7 @@ object KRouterSpec {
     (k1, k2, k3)
   }
 
-  def aKRouter(knownPeers: Set[NodeRecord[String]] = Set.empty, alpha: Int = 3, k: Int = 20)(
+  def aKRouter(knownPeers: Set[NodeRecord[String]] = Set.empty, alpha: Int = alpha, k: Int = k)(
       implicit scheduler: Scheduler
   ): SRouter = {
 
