@@ -149,7 +149,7 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
 
       val alphaClosestToQuery: Seq[BitVector] = closestNodes
         .filterNot(querySet.contains)
-        .filterNot(_ == config.nodeRecord.id)
+        .filterNot(myself)
         .take(config.alpha)
 
       val treeResults: Future[Seq[Seq[NodeRecord[A]]]] = Future.traverse(alphaClosestToQuery) { knownNode: BitVector =>
@@ -165,7 +165,10 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
       treeResults.map(_.flatten)
     }
 
-    val closestKnownNodes: Seq[BitVector] = kBuckets.closestNodes(targetNodeId, config.alpha + 1)
+    val closestKnownNodes: Seq[BitVector] = kBuckets
+      .closestNodes(targetNodeId, config.k + 1)
+      .filterNot(myself)
+      .take(config.k)
 
     debug(s"Starting lookup for target node ${targetNodeId} with starting nodes ${closestKnownNodes.mkString(", ")}")
 
@@ -174,6 +177,10 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
     nodeResult.foreach(nodeRecords => debug(lookupReport(targetNodeId, nodeRecords)))
 
     nodeResult.transform(_ => Success(kBucketsLookup(targetNodeId)))
+  }
+
+  private def myself: BitVector => Boolean = {
+    _ == config.nodeRecord.id
   }
 
   private def lookupReport(targetNodeId: BitVector, nodeRecords: Seq[KRouter.NodeRecord[A]]): String = {
