@@ -13,18 +13,74 @@ import monix.reactive.Observable
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.mockito.MockitoSugar._
-import org.mockito.Mockito.{verify, when}
+import org.mockito.Mockito.{verify, when, never}
 
 import scala.concurrent.duration._
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.concurrent.ScalaFutures._
 import KNetworkSpec._
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 
 class KNetworkSpec extends FlatSpec {
 
   implicit val patienceConfig = PatienceConfig(1 second)
 
-  "KNetwork" should "close client channels when requests are successful" in {
+  "Server findNodes" should "not close server channels (it is the responsibility of the response handler)" in {
+    val (network, peerGroup) = createKNetwork
+    val channel = mock[Channel[String, KMessage[String]]]
+    when(peerGroup.server()).thenReturn(Observable.eval(ChannelCreated(channel)))
+    when(channel.in).thenReturn(Observable.eval(findNodes))
+    when(channel.close()).thenReturn(Task.unit)
+
+    val (request, _) = network.findNodes.headL.runAsync.futureValue
+
+    request shouldBe findNodes
+    verify(channel, never()).close()
+  }
+
+  "Server findNodes" should "close server channels when a request does not arrive before a timeout" in {
+    val (network, peerGroup) = createKNetwork
+    val channel = mock[Channel[String, KMessage[String]]]
+    when(peerGroup.server()).thenReturn(Observable.eval(ChannelCreated(channel)))
+    when(channel.in).thenReturn(Observable.never)
+    when(channel.close()).thenReturn(Task.unit)
+
+    val t = network.findNodes.headL.runAsync.failed.futureValue
+
+    t shouldBe a[TimeoutException]
+    verify(channel).close()
+  }
+
+  "Server findNodes" should "close server channel in the response task" in {
+    val (network, peerGroup) = createKNetwork
+    val channel = mock[Channel[String, KMessage[String]]]
+    when(peerGroup.server()).thenReturn(Observable.eval(ChannelCreated(channel)))
+    when(channel.in).thenReturn(Observable.eval(findNodes))
+    when(channel.sendMessage(nodes)).thenReturn(Task.unit)
+    when(channel.close()).thenReturn(Task.unit)
+
+    val (_, responseHandler) = network.findNodes.headL.runAsync.futureValue
+    responseHandler(nodes).futureValue
+
+    verify(channel).close()
+  }
+
+  "Server findNodes" should "close server channel in timed out response task" in {
+    val (network, peerGroup) = createKNetwork
+    val channel = mock[Channel[String, KMessage[String]]]
+    when(peerGroup.server()).thenReturn(Observable.eval(ChannelCreated(channel)))
+    when(channel.in).thenReturn(Observable.eval(findNodes))
+    when(channel.sendMessage(nodes)).thenReturn(Task.never)
+    when(channel.close()).thenReturn(Task.unit)
+
+    val (_, responseHandler) = network.findNodes.headL.runAsync.futureValue
+    val t = responseHandler(nodes).failed.futureValue
+
+    t shouldBe a[TimeoutException]
+    verify(channel).close()
+  }
+
+  "Client findNodes" should "close client channels when requests are successful" in {
     val (network, peerGroup) = createKNetwork
     val client = mock[Channel[String, KMessage[String]]]
     when(peerGroup.client(targetRecord.routingAddress)).thenReturn(Task(client))
@@ -39,7 +95,7 @@ class KNetworkSpec extends FlatSpec {
     verify(client).close()
   }
 
-  "KNetwork" should "pass exception when client call fails" in {
+  "Client findNodes" should "pass exception when client call fails" in {
     val (network, peerGroup) = createKNetwork
     val client = mock[Channel[String, KMessage[String]]]
     val exception = new Exception("failed")
@@ -53,7 +109,7 @@ class KNetworkSpec extends FlatSpec {
     t shouldBe exception
   }
 
-  "KNetwork" should "close client channels when sendMessage calls fail" in {
+  "Client findNodes" should "close client channels when sendMessage calls fail" in {
     val (network, peerGroup) = createKNetwork
     val client = mock[Channel[String, KMessage[String]]]
     val exception = new Exception("failed")
@@ -68,7 +124,7 @@ class KNetworkSpec extends FlatSpec {
     verify(client).close()
   }
 
-  "KNetwork" should "close client channels when response fails to arrive" in {
+  "Client findNodes" should "close client channels when response fails to arrive" in {
     val (network, peerGroup) = createKNetwork
     val client = mock[Channel[String, KMessage[String]]]
     when(peerGroup.client(targetRecord.routingAddress)).thenReturn(Task(client))

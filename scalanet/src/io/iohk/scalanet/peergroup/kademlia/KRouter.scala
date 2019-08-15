@@ -16,7 +16,7 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success, Try}
 
-class KRouter[A](val config: Config[A], network: KNetwork[A])(
+class KRouter[A](val config: Config[A], val network: KNetwork[A])(
     implicit scheduler: Scheduler
 ) {
 
@@ -41,30 +41,25 @@ class KRouter[A](val config: Config[A], network: KNetwork[A])(
   }
 
   // Handle findNodes requests...
-  network.server
-    .collect {
-      case (channel, message) =>
-        message match {
-          case FindNodes(uuid, nodeRecord, targetNodeId) =>
-            debug(
-              s"Received request FindNodes(${nodeRecord.id.toHex}, $nodeRecord, ${targetNodeId.toHex})"
+  network.findNodes.foreach {
+    case (findNodesRequest, responseHandler) =>
+      val (uuid, nodeRecord, targetNodeId) =
+        (findNodesRequest.requestId, findNodesRequest.nodeRecord, findNodesRequest.targetNodeId)
+
+      debug(
+        s"Received request FindNodes(${nodeRecord.id.toHex}, $nodeRecord, ${targetNodeId.toHex})"
+      )
+      add(nodeRecord)
+      val result = embellish(kBuckets.closestNodes(targetNodeId, config.k))
+      responseHandler(Nodes(uuid, config.nodeRecord, result))
+        .onComplete {
+          case Failure(t) =>
+            log.info(
+              s"Nodes response $uuid to ${nodeRecord.routingAddress} failed with exception: $t"
             )
-            add(nodeRecord)
-            val result =
-              embellish(kBuckets.closestNodes(targetNodeId, config.k))
-            channel
-              .sendMessage(Nodes(uuid, config.nodeRecord, result))
-              .runAsync
-              .onComplete {
-                case Failure(t) =>
-                  log.info(
-                    s"Nodes response $uuid to ${channel.to} failed with exception: $t"
-                  )
-                case _ =>
-              }
+          case _ =>
         }
-    }
-    .subscribe()
+  }
 
   def get(key: BitVector): Future[NodeRecord[A]] = {
     debug(s"get(${key.toHex})")
