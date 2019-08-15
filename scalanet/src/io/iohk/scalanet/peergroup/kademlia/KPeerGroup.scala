@@ -24,7 +24,7 @@ class KPeerGroup[A, M](
 
   override def processAddress: BitVector = kRouter.config.nodeRecord.id
 
-  override def initialize(): Task[Unit] = {
+  override def initialize(): Task[Unit] = Task {
     // The protocol defined here requires that a peer
     // connects then sends it node record as the first message
     // (it could send earlier messages but they will be ignored)
@@ -41,8 +41,6 @@ class KPeerGroup[A, M](
           }
       )
       .subscribe()
-
-    Task.unit
   }
 
   override def client(to: BitVector): Task[Channel[BitVector, M]] = {

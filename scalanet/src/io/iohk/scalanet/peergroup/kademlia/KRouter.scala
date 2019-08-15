@@ -3,19 +3,20 @@ package io.iohk.scalanet.peergroup.kademlia
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.FindNodes
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.Nodes
+import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
 import monix.execution.Scheduler
 import org.slf4j.LoggerFactory
 import scodec.bits.BitVector
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable
+import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success, Try}
-import scala.concurrent.duration._
 
-class KRouter[A](val config: Config[A], network: KNetwork[A])(
+class KRouter[A](val config: Config[A], val network: KNetwork[A])(
     implicit scheduler: Scheduler
 ) {
 
@@ -40,34 +41,35 @@ class KRouter[A](val config: Config[A], network: KNetwork[A])(
   }
 
   // Handle findNodes requests...
-  network.server
-    .collect {
-      case (channel, message) =>
-        message match {
-          case FindNodes(uuid, nodeRecord, targetNodeId) =>
-            debug(
-              s"Received request FindNodes(${nodeRecord.id.toHex}, $nodeRecord, ${targetNodeId.toHex})"
+  network.findNodes.foreach {
+    case (findNodesRequest, responseHandler) =>
+      val (uuid, nodeRecord, targetNodeId) =
+        (findNodesRequest.requestId, findNodesRequest.nodeRecord, findNodesRequest.targetNodeId)
+
+      debug(
+        s"Received request FindNodes(${nodeRecord.id.toHex}, $nodeRecord, ${targetNodeId.toHex})"
+      )
+      add(nodeRecord)
+      val result = embellish(kBuckets.closestNodes(targetNodeId, config.k))
+      responseHandler(Nodes(uuid, config.nodeRecord, result)).runAsync
+        .onComplete {
+          case Failure(t) =>
+            log.info(
+              s"Nodes response $uuid to ${nodeRecord.routingAddress} failed with exception: $t"
             )
-            add(nodeRecord)
-            val result =
-              embellish(kBuckets.closestNodes(targetNodeId, config.k))
-            channel
-              .sendMessage(Nodes(uuid, config.nodeRecord, result))
-              .runAsync
-              .onComplete {
-                case Failure(t) =>
-                  log.info(
-                    s"Nodes response $uuid to ${channel.to} failed with exception: $t"
-                  )
-                case _ =>
-              }
+          case _ =>
         }
-    }
-    .subscribe()
+  }
 
   def get(key: BitVector): Future[NodeRecord[A]] = {
     debug(s"get(${key.toHex})")
     getLocally(key).recoverWith { case _ => getRemotely(key) }.recoverWith { case t => giveUp(key, t) }
+  }
+
+  def add(nodeRecord: NodeRecord[A]): Unit = {
+    kBuckets.add(nodeRecord.id)
+    nodeRecords.put(nodeRecord.id, nodeRecord)
+    debug(s"Added record (${nodeRecord.id.toHex}, $nodeRecord) to the routing table.")
   }
 
   private def getRemotely(key: BitVector): Future[NodeRecord[A]] = {
@@ -100,81 +102,116 @@ class KRouter[A](val config: Config[A], network: KNetwork[A])(
 
     val xorOrdering = new XorOrdering(targetNodeId)
 
-    def loop(querySet: Set[BitVector], closestNodes: Seq[BitVector]): Future[Unit] = {
+    val querySet = newConcurrentSet[BitVector]
 
-      debug(
-        s"Performing lookup for ${targetNodeId.toHex} with ${closestNodes.length} " +
-          s"closest nodes: ${closestNodes.map(_.toHex).mkString(",")}"
+    def query(knownNode: BitVector): Future[Seq[NodeRecord[A]]] = {
+
+      val requestId = UUID.randomUUID()
+
+      val findNodesRequest = FindNodes(
+        requestId = requestId,
+        nodeRecord = config.nodeRecord,
+        targetNodeId = targetNodeId
       )
 
-      // the initiator then sends find node rpcs to these nodes
-      val fs = closestNodes
+      val knownNodeRecord = nodeRecords(knownNode)
+
+      debug(
+        s"Issuing " +
+          s"findNodes request to (${knownNode.toHex}, $knownNodeRecord). " +
+          s"RequestId = ${findNodesRequest.requestId}, " +
+          s"Target = ${targetNodeId.toHex}."
+      )
+
+      querySet.add(knownNode)
+
+      network
+        .findNodes(knownNodeRecord, findNodesRequest)
+        .map { kNodesResponse: Nodes[A] =>
+          debug(
+            s"Received Nodes response " +
+              s"RequestId = ${kNodesResponse.requestId}, " +
+              s"From = (${kNodesResponse.nodeRecord.id.toHex}, ${kNodesResponse.nodeRecord})," +
+              s"Results = ${kNodesResponse.nodes.map(_.id.toHex).mkString(",")}."
+          )
+
+          kNodesResponse.nodes
+        }
+        .runAsync
+        .recover {
+          case t: Throwable =>
+            info(s"Query to node $knownNode failed due to exception $t.")
+            Seq.empty
+        }
+    }
+
+    def loop(closestNodes: Seq[BitVector]): Future[Seq[NodeRecord[A]]] = {
+
+      val alphaClosestToQuery: Seq[BitVector] = closestNodes
         .filterNot(querySet.contains)
         .filterNot(_ == config.nodeRecord.id)
         .take(config.alpha)
-        .map { knownNode =>
-          val findNodesRequest = FindNodes(
-            requestId = UUID.randomUUID(),
-            nodeRecord = config.nodeRecord,
-            targetNodeId = targetNodeId
-          )
 
-          val knownNodeRecord = nodeRecords(knownNode)
-          debug(
-            s"Issuing " +
-              s"findNodes request to (${knownNode.toHex}, $knownNodeRecord). " +
-              s"RequestId = ${findNodesRequest.requestId}, " +
-              s"Target = ${targetNodeId.toHex}."
-          )
+      val treeResults: Future[Seq[Seq[NodeRecord[A]]]] = Future.traverse(alphaClosestToQuery) { knownNode: BitVector =>
+        val queryResult: Future[Seq[NodeRecord[A]]] = query(knownNode)
 
-          network.findNodes(knownNodeRecord, findNodesRequest).flatMap { kNodes: Nodes[A] =>
-            // verify uuids of request/response match (TODO)
+        queryResult.flatMap { nodeRecords: Seq[NodeRecord[A]] =>
+          nodeRecords.foreach(add)
 
-            debug(
-              s"Received Nodes response " +
-                s"RequestId = ${kNodes.requestId}, " +
-                s"From = (${kNodes.nodeRecord.id.toHex}, ${kNodes.nodeRecord})," +
-                s"Results = ${kNodes.nodes.map(_.id.toHex).mkString(",")}."
-            )
-
-            kNodes.nodes.foreach(add)
-
-            val kIds = kNodes.nodes.map(_.id)
-
-            val closestNext: Seq[BitVector] =
-              (closestNodes ++ kIds).sorted(xorOrdering)
-
-            val querySetNext: Set[BitVector] = querySet + knownNode
-
-            loop(querySetNext, closestNext)
-          }
+          val kIds = nodeRecords.map(_.id)
+          loop((closestNodes ++ kIds).sorted(xorOrdering)).map(nextRecords => nodeRecords ++ nextRecords)
         }
-
-      Future
-        .sequence(fs)
-        .map(_ => ()) // TODO don't want the whole thing to fail cos one future fails
+      }
+      treeResults.map(_.flatten)
     }
 
     val closestKnownNodes: Seq[BitVector] =
       kBuckets.closestNodes(targetNodeId, config.alpha).filterNot(_ == config.nodeRecord.id)
 
-    loop(Set.empty, closestKnownNodes).transform(
-      _ => Success(embellish(kBuckets.closestNodes(targetNodeId, config.k)))
-    )
+    debug(s"Starting lookup for target node ${targetNodeId} with starting nodes ${closestKnownNodes.mkString(", ")}")
+
+    val nodeResult: Future[Seq[NodeRecord[A]]] = loop(closestKnownNodes)
+
+    nodeResult.foreach(nodeRecords => debug(lookupReport(targetNodeId, nodeRecords)))
+
+    nodeResult.transform(_ => Success(kBucketsLookup(targetNodeId)))
+  }
+
+  private def lookupReport(targetNodeId: BitVector, nodeRecords: Seq[KRouter.NodeRecord[A]]): String = {
+
+    if (nodeRecords.isEmpty) {
+      s"Lookup to $targetNodeId returned no results."
+    } else {
+      val ids = nodeRecords.map(_.id).sorted(new XorOrdering(targetNodeId)).reverse
+
+      val ds: Map[BitVector, (NodeRecord[A], BigInt)] =
+        nodeRecords.map(nodeRecord => (nodeRecord.id, (nodeRecord, Xor.d(nodeRecord.id, targetNodeId)))).toMap
+
+      val rep = ids.map(nodeId => ds(nodeId)).mkString("\n| ")
+
+      s"""
+         | Lookup to target ${targetNodeId.toHex} returned
+         | $rep
+         |""".stripMargin
+    }
+  }
+
+  private def kBucketsLookup(targetNodeId: BitVector): Seq[NodeRecord[A]] = {
+    embellish(kBuckets.closestNodes(targetNodeId, config.k))
   }
 
   private def embellish(ids: Seq[BitVector]): Seq[NodeRecord[A]] = {
     ids.map(id => nodeRecords(id))
   }
 
-  private def add(nodeRecord: NodeRecord[A]): Unit = {
-    kBuckets.add(nodeRecord.id)
-    nodeRecords.put(nodeRecord.id, nodeRecord)
-    debug(s"Added record (${nodeRecord.id.toHex}, $nodeRecord) to the routing table.")
+  private def newConcurrentSet[T]: mutable.Set[T] = {
+    java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap[T, java.lang.Boolean]).asScala
   }
 
-  private def debug(msg: String): Unit = {
-    log.debug(s"${config.nodeRecord.id.toHex} $msg")
+  private def debug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(s"${config.nodeRecord.id.toHex} $msg")
+    }
   }
 
   private def info(msg: String): Unit = {

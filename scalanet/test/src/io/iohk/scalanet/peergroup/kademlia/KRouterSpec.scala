@@ -60,11 +60,12 @@ class KRouterSpec extends FreeSpec {
 
     "should inform the new node of its neighbourhood" in {
       val (_, n1, n2) = a3NodeNetwork()
-      // n1 and n2 will not know each other
-      // because they bootstrap from n0
+      // n1 will not know about n2
+      // because it starts up before n2 (has enrolled)
 
-      // assert that n1 and n2 now know about each other after
+      // assert that n1 can discover n2 after n2 has started.
       n1.get(n2.config.nodeRecord.id).futureValue shouldBe n2.config.nodeRecord
+      // and vice versa as a sanity check.
       n2.get(n1.config.nodeRecord.id).futureValue shouldBe n1.config.nodeRecord
     }
   }
