@@ -165,8 +165,7 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
       treeResults.map(_.flatten)
     }
 
-    val closestKnownNodes: Seq[BitVector] =
-      kBuckets.closestNodes(targetNodeId, config.alpha).filterNot(_ == config.nodeRecord.id)
+    val closestKnownNodes: Seq[BitVector] = kBuckets.closestNodes(targetNodeId, config.alpha + 1)
 
     debug(s"Starting lookup for target node ${targetNodeId} with starting nodes ${closestKnownNodes.mkString(", ")}")
 
