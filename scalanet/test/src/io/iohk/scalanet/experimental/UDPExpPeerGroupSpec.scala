@@ -28,8 +28,8 @@ class UDPExpPeerGroupSpec extends FlatSpec {
     println(s"Alice address: $aliceAddress")
     println(s"Bob address: $bobAddress")
 
-    val alicesMessage: String = Random.alphanumeric.take(1024).mkString
-    val bobsMessage: String = Random.alphanumeric.take(1024).mkString
+    val alicesMessage: String = Random.alphanumeric.take(10).mkString
+    val bobsMessage: String = Random.alphanumeric.take(10).mkString
 
     println(s"Alice message: $alicesMessage")
     println(s"bob message: $bobsMessage")
@@ -58,7 +58,10 @@ class UDPExpPeerGroupSpec extends FlatSpec {
     aliceClient.sendMessage(alicesMessage).evaluated
 
     Thread.sleep(1000)
+    println("Second message from first client")
+    aliceClient.sendMessage(alicesMessage).evaluated
 
+    Thread.sleep(1000)
     println("Second client")
     val aliceClient2 = alice.client(bob.processAddress).evaluated
     println(s"Second channel to ${aliceClient2.to}")
@@ -68,6 +71,58 @@ class UDPExpPeerGroupSpec extends FlatSpec {
     // exceptions
     Thread.sleep(1000)
     alice.shutdown().evaluated
+    bob.shutdown().evaluated
+  }
+
+  it should "communicate with another library through UDP seamlessly" in {
+    val aliceAddress = NetUtils.aRandomAddress()
+    val bobAddress = NetUtils.aRandomAddress()
+
+    println(s"Alice address: $aliceAddress")
+    println(s"Bob address: $bobAddress")
+
+    val alicesMessage: String = Random.alphanumeric.take(10).mkString
+    val bobsMessage: String = Random.alphanumeric.take(10).mkString
+
+    println(s"Alice message: $alicesMessage")
+    println(s"bob message: $bobsMessage")
+
+    var aliceReceived = 0
+    var bobReceived = 0
+
+    def serverCode(received: String): Unit = {
+      aliceReceived += 1
+      println(s"alice received message $aliceReceived")
+      received shouldBe bobsMessage
+    }
+
+    val alice = new NettyUDPWrapper[String](aliceAddress)(serverCode)
+    val bob = new UDPExpPeerGroup[String](bobAddress)
+
+    bob onMessageReception { envelope =>
+      bobReceived += 1
+      println(s"Bob received message $bobReceived")
+      envelope.msg shouldBe alicesMessage
+      // note that UDP does not provide reliable addressing, that is why we can not
+      // use the source channel
+      val bobClient = bob.client(aliceAddress).evaluated
+      bobClient.sendMessage(bobsMessage).evaluated
+    }
+
+    alice.start()
+    bob.connect().evaluated
+
+    println("first message")
+    alice.sendMessage(bobAddress, alicesMessage)
+    println("second message")
+    alice.sendMessage(bobAddress, alicesMessage)
+    println("third message")
+    alice.sendMessage(bobAddress, alicesMessage)
+
+    Thread.sleep(2000)
+    println(aliceReceived)
+    println(bobReceived)
+    alice.shutDown()
     bob.shutdown().evaluated
   }
 }
