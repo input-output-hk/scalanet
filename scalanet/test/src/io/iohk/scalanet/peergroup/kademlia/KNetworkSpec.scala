@@ -18,6 +18,7 @@ import org.mockito.Mockito.{verify, when, never}
 import scala.concurrent.duration._
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.concurrent.ScalaFutures._
+import io.iohk.scalanet.TaskValues._
 import KNetworkSpec._
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 
@@ -60,7 +61,7 @@ class KNetworkSpec extends FlatSpec {
     when(channel.close()).thenReturn(Task.unit)
 
     val (_, responseHandler) = network.findNodes.headL.runAsync.futureValue
-    responseHandler(nodes).futureValue
+    responseHandler(nodes).evaluated
 
     verify(channel).close()
   }
@@ -74,7 +75,7 @@ class KNetworkSpec extends FlatSpec {
     when(channel.close()).thenReturn(Task.unit)
 
     val (_, responseHandler) = network.findNodes.headL.runAsync.futureValue
-    val t = responseHandler(nodes).failed.futureValue
+    val t = responseHandler(nodes).failed.evaluated
 
     t shouldBe a[TimeoutException]
     verify(channel).close()
@@ -89,7 +90,7 @@ class KNetworkSpec extends FlatSpec {
     when(client.close()).thenReturn(Task.unit)
 
     val response: Nodes[String] =
-      network.findNodes(targetRecord, findNodes).futureValue
+      network.findNodes(targetRecord, findNodes).evaluated
 
     response shouldBe nodes
     verify(client).close()
@@ -104,7 +105,7 @@ class KNetworkSpec extends FlatSpec {
     when(client.close()).thenReturn(Task.unit)
 
     val t: Throwable =
-      network.findNodes(targetRecord, findNodes).failed.futureValue
+      network.findNodes(targetRecord, findNodes).failed.evaluated
 
     t shouldBe exception
   }
@@ -118,7 +119,7 @@ class KNetworkSpec extends FlatSpec {
     when(client.close()).thenReturn(Task.unit)
 
     val t: Throwable =
-      network.findNodes(targetRecord, findNodes).failed.futureValue
+      network.findNodes(targetRecord, findNodes).failed.evaluated
 
     t shouldBe exception
     verify(client).close()
@@ -133,7 +134,7 @@ class KNetworkSpec extends FlatSpec {
     when(client.close()).thenReturn(Task.unit)
 
     val t: Throwable =
-      network.findNodes(targetRecord, findNodes).failed.futureValue
+      network.findNodes(targetRecord, findNodes).failed.evaluated
 
     t shouldBe a[TimeoutException]
     verify(client).close()

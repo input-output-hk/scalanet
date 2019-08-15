@@ -8,8 +8,6 @@ import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
 
-import scala.concurrent.Future
-
 trait KNetwork[A] {
 
   /**
@@ -18,7 +16,7 @@ trait KNetwork[A] {
     *         Each element contains a tuple consisting of a FIND_NODES request
     *         with a function for accepting the required NODES response.
     */
-  def findNodes: Observable[(FindNodes[A], Nodes[A] => Future[Unit])]
+  def findNodes: Observable[(FindNodes[A], Nodes[A] => Task[Unit])]
 
   /**
     * Send a FIND_NODES message to another peer.
@@ -26,7 +24,7 @@ trait KNetwork[A] {
     * @param request the FIND_NODES request
     * @return the future response
     */
-  def findNodes(to: NodeRecord[A], request: FindNodes[A]): Future[Nodes[A]]
+  def findNodes(to: NodeRecord[A], request: FindNodes[A]): Task[Nodes[A]]
 }
 
 object KNetwork {
@@ -39,9 +37,8 @@ object KNetwork {
   )(implicit scheduler: Scheduler)
       extends KNetwork[A] {
 
-    override def findNodes(to: NodeRecord[A], message: FindNodes[A]): Future[Nodes[A]] = {
-
-      val findTask: Task[Nodes[A]] = for {
+    override def findNodes(to: NodeRecord[A], message: FindNodes[A]): Task[Nodes[A]] = {
+      for {
         clientChannel <- peerGroup.client(to.routingAddress)
         _ <- clientChannel
           .sendMessage(message)
@@ -54,11 +51,9 @@ object KNetwork {
           .doOnFinish(closeIfAnError(clientChannel))
         _ <- clientChannel.close()
       } yield nodes
-
-      findTask.runAsync
     }
 
-    override def findNodes: Observable[(FindNodes[A], Nodes[A] => Future[Unit])] = {
+    override def findNodes: Observable[(FindNodes[A], Nodes[A] => Task[Unit])] = {
       peerGroup.server().collectChannelCreated.mapTask { channel: Channel[A, KMessage[A]] =>
         channel.in
           .collect {
@@ -79,12 +74,11 @@ object KNetwork {
 
     private def nodesTask(
         channel: Channel[A, KMessage[A]]
-    ): Nodes[A] => Future[Unit] = { nodes =>
+    ): Nodes[A] => Task[Unit] = { nodes =>
       channel
         .sendMessage(nodes)
         .timeout(requestTimeout)
         .doOnFinish(_ => channel.close())
-        .runAsync
     }
   }
 }
