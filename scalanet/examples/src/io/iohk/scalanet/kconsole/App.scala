@@ -6,6 +6,7 @@ import io.iohk.scalanet.kconsole.Utils.{configToStr, generateRandomConfig}
 import io.iohk.scalanet.peergroup.InetMultiAddress
 import io.iohk.scalanet.peergroup.kademlia.KRouter
 import monix.execution.Scheduler.Implicits.global
+import scopt.OptionParser
 
 object App extends App with CommandParser {
 
@@ -17,7 +18,7 @@ object App extends App with CommandParser {
       alpha: Int = 3
   )
 
-  val optionsParser = new scopt.OptionParser[CommandLineOptions]("kconsole") {
+  val optionsParser = new OptionParser[CommandLineOptions]("kconsole") {
 
     head("kconsole", "0.1")
 
@@ -80,7 +81,7 @@ object App extends App with CommandParser {
 
   val nodeConfig = configFromBootstrapOption(commandLineOptions)
     .orElse(configFromConfigFile(commandLineOptions))
-    .getOrElse(generateRandomConfig)
+    .getOrElse(randomConfig(commandLineOptions))
 
   val kRouter = new AppContext(nodeConfig).kRouter
 
@@ -134,5 +135,4 @@ object App extends App with CommandParser {
     println(configToStr(generateRandomConfig))
     System.exit(0)
   }
-
 }
