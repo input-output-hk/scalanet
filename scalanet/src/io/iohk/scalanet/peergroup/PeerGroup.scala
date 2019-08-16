@@ -113,7 +113,7 @@ trait PeerGroup[A, M] {
   def server(): Observable[ServerEvent[A, M]]
 
   /**
-    * This methods clean resources of the current instance of a PeerGroup.
+    * This method cleans resources of the current instance of a PeerGroup.
     *
     * @return a task that will be completed at the end of the shutdown procedure.
     */
