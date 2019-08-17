@@ -110,7 +110,8 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
                   val channel = activeChannels(channelId)
                   messageE.foreach(message => channel.messageSubject.onNext(message))
                 } else {
-                  val channel = new ChannelImpl(nettyChannel, localAddress, remoteAddress, CacheUntilConnectSubject[M]())
+                  val channel =
+                    new ChannelImpl(nettyChannel, localAddress, remoteAddress, CacheUntilConnectSubject[M]())
                   log.debug(s"Channel with id $channelId NOT found in active channels table. Creating a new one")
                   activeChannels.put(channelId, channel)
                   serverSubject.onNext(ChannelCreated(channel))

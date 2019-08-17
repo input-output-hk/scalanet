@@ -20,9 +20,9 @@ import monix.reactive.subjects.PublishSubject
   * @tparam M the message type.
   */
 class StaticAddressMappedPeerGroup[A, AA, M](
-                                              val config: Config[A, AA],
-                                              underLyingPeerGroup: PeerGroup[AA, M]
-                                            ) extends PeerGroup[A, M] {
+    val config: Config[A, AA],
+    underLyingPeerGroup: PeerGroup[AA, M]
+) extends PeerGroup[A, M] {
 
   private val reverseLookup = config.knownPeers.map(_.swap)
   implicit val scheduler: Scheduler = Scheduler.global
@@ -34,7 +34,7 @@ class StaticAddressMappedPeerGroup[A, AA, M](
     }
 
   override def server() = {
-  underLyingPeerGroup.server().map {
+    underLyingPeerGroup.server().map {
       case ChannelCreated(underlyingChannel) =>
         val a = reverseLookup(underlyingChannel.to)
         ChannelCreated(new ChannelImpl(a, underlyingChannel))

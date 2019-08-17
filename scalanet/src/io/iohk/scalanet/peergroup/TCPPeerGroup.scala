@@ -10,7 +10,12 @@ import io.iohk.scalanet.monix_subject.{CacheUntilConnectSubject, ConnectableSubj
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, ServerEvent, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.{
+  ChannelBrokenException,
+  ChannelSetupException,
+  ServerEvent,
+  TerminalPeerGroup
+}
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
@@ -84,7 +89,6 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
     serverSubject
   }
 
-
   override def shutdown(): Task[Unit] = {
     serverSubject.onComplete()
     for {
@@ -133,7 +137,6 @@ object TCPPeerGroup {
     }
 
     override def in: ConnectableSubject[M] = messageSubject
-
 
     override def close(): Task[Unit] = {
       messageSubject.onComplete()

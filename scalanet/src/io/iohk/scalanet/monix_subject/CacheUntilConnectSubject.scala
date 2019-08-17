@@ -14,9 +14,8 @@ import scala.concurrent.Future
 // to the source subject where they may be cached depending
 // on whether the caller has connected any subscribers.
 class CacheUntilConnectSubject[T](source: Subject[T, T], subject: Subject[T, T])(implicit s: Scheduler)
-  extends ConnectableSubject[T] {
+    extends ConnectableSubject[T] {
   private val in: ConnectableObservable[T] = cacheUntilConnect(source, subject)
-
 
   override def size: Int = subject.size
 
@@ -33,9 +32,8 @@ class CacheUntilConnectSubject[T](source: Subject[T, T], subject: Subject[T, T])
   }
 }
 
-
 class CacheUntilConnectObservable[T](source: Observable[T], subject: Subject[T, T])(implicit s: Scheduler)
-  extends ConnectableSubject {
+    extends ConnectableSubject {
 
   private val in: ConnectableObservable[T] = cacheUntilConnect(source, subject)
 

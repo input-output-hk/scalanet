@@ -38,7 +38,7 @@ class StaticAddressMappedPeerGroupSpec extends FlatSpec {
       val aliceReceived = aliceClient.in.headL.runAsync
       aliceClient.sendMessage(alicesMessage).evaluated
 
-     // aliceClient.in.connect()
+      // aliceClient.in.connect()
       bob.server().collectChannelCreated.foreach(channel => channel.in.connect())
       bob.server().connect()
       bobReceived.futureValue shouldBe alicesMessage
