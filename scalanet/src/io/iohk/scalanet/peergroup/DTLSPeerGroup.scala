@@ -7,6 +7,7 @@ import java.security.{PrivateKey, PublicKey}
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.decco.{BufferInstantiator, Codec}
+import io.iohk.scalanet.monix_subject.{CacheUntilConnectSubject, ConnectableSubject}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{ChannelId, _}
@@ -14,8 +15,6 @@ import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup.{MessageMTUException, ServerEvent}
 import monix.eval.Task
 import monix.execution.{Cancelable, Scheduler}
-import monix.reactive.Observable
-import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.eclipse.californium.elements._
 import org.eclipse.californium.scandium.DTLSConnector
 import org.eclipse.californium.scandium.config.DtlsConnectorConfig
@@ -33,7 +32,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
   private val serverConnector = createServerConnector()
 
-  private val channelSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
+  private val channelSubject = CacheUntilConnectSubject[ServerEvent[InetMultiAddress, M]]()
 
   private val activeChannels = new ConcurrentHashMap[ChannelId, ChannelImpl]().asScala
 
@@ -55,7 +54,7 @@ class DTLSPeerGroup[M](val config: Config)(
     channel
   }
 
-  override def server(): Observable[ServerEvent[InetMultiAddress, M]] = channelSubject
+  override def server(): ConnectableSubject[ServerEvent[InetMultiAddress, M]] = channelSubject
 
   override def shutdown(): Task[Unit] =
     for {
@@ -66,7 +65,7 @@ class DTLSPeerGroup[M](val config: Config)(
   private class ChannelImpl(val to: InetMultiAddress, dtlsConnector: DTLSConnector)(implicit codec: Codec[M])
       extends Channel[InetMultiAddress, M] {
 
-    override val in: Subject[M, M] = ReplaySubject[M]()
+    override val in: ConnectableSubject[M] = CacheUntilConnectSubject[M]()
 
     override def sendMessage(message: M): Task[Unit] = {
       import io.iohk.scalanet.peergroup.BufferConversionOps._

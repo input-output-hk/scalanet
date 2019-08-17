@@ -3,7 +3,8 @@ package io.iohk.scalanet.peergroup
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.decco._
-import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, ServerEvent}
+import io.iohk.scalanet.monix_subject.ConnectableSubject
+import io.iohk.scalanet.peergroup.PeerGroup.HandshakeException
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.{ChannelCreated, HandshakeFailed}
 import io.iohk.scalanet.peergroup.SimplePeerGroup.{Config, _}
 import monix.eval.Task
@@ -46,7 +47,7 @@ class SimplePeerGroup[A, AA, M](
     underlyingChannels.map(new ChannelImpl(to, _))
   }
 
-  override def server(): Observable[ServerEvent[A, M]] = {
+  override def server() = {
     // FIXME pt1 addressing done as part of own proto
     // FIXME pt2 somehow addressing as QoS option in underlying peer group allows fallback to underlying addressing?
     val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
@@ -116,7 +117,7 @@ class SimplePeerGroup[A, AA, M](
       Task.gatherUnordered(underlyingChannel.map(_.sendMessage(Right(message)))).map(_ => ())
     }
 
-    override def in: Observable[M] = {
+    override def in: ConnectableSubject[M] = {
       Observable
         .fromIterable(underlyingChannel.map {
           _.in.collect {
@@ -129,7 +130,7 @@ class SimplePeerGroup[A, AA, M](
         })
         .merge
 
-    }
+    }.asInstanceOf[ConnectableSubject[M]]
 
     override def close(): Task[Unit] =
       Task.gatherUnordered(underlyingChannel.map(_.close())).map(_ => ())

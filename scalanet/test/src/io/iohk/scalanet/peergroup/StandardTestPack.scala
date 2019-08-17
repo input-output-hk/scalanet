@@ -1,6 +1,7 @@
 package io.iohk.scalanet.peergroup
 
 import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.PeerGroup.ChannelSetupException
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
 import monix.execution.Scheduler
@@ -24,9 +25,9 @@ object StandardTestPack {
     aliceClient.sendMessage(alicesMessage).runAsync
     val bobReceived: Future[String] =
       bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runAsync
-
-    aliceClient.connect().runAsync
-    bob.connect().runAsync
+    aliceClient.in.connect()
+    bob.server().collectChannelCreated.foreach(_.in.connect())
+    bob.server().asInstanceOf[ConnectableSubject[String]].connect()
 
     bobReceived.futureValue shouldBe alicesMessage
     aliceReceived.futureValue shouldBe bobsMessage
@@ -47,7 +48,10 @@ object StandardTestPack {
     val aliceReceived2 = aliceClient2.in.headL.runAsync
 
     aliceClient1.sendMessage(alicesMessage).runAsync
-
+    aliceClient1.in.connect()
+    aliceClient2.in.connect()
+    bob.server().collectChannelCreated.foreach(channel => channel.in.connect())
+    bob.server().asInstanceOf[ConnectableSubject[String]].connect()
     aliceReceived1.futureValue shouldBe bobsMessage
     recoverToSucceededIf[IllegalStateException](aliceReceived2)
   }

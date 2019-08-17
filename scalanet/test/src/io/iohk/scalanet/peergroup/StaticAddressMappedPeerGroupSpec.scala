@@ -1,8 +1,10 @@
 package io.iohk.scalanet.peergroup
 
-import io.iohk.decco.auto._
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils._
+import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
@@ -11,9 +13,6 @@ import org.scalatest.concurrent.ScalaFutures._
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
-import io.iohk.scalanet.TaskValues._
-import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
-
 import scala.util.Random
 
 class StaticAddressMappedPeerGroupSpec extends FlatSpec {
@@ -39,6 +38,9 @@ class StaticAddressMappedPeerGroupSpec extends FlatSpec {
       val aliceReceived = aliceClient.in.headL.runAsync
       aliceClient.sendMessage(alicesMessage).evaluated
 
+     // aliceClient.in.connect()
+      bob.server().collectChannelCreated.foreach(channel => channel.in.connect())
+      bob.server().connect()
       bobReceived.futureValue shouldBe alicesMessage
       aliceReceived.futureValue shouldBe bobsMessage
     }

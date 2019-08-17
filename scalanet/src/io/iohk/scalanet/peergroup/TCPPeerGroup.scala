@@ -4,14 +4,14 @@ import java.io.IOException
 import java.net.{ConnectException, InetAddress, InetSocketAddress}
 import java.nio.ByteBuffer
 
-import io.iohk.scalanet.peergroup.PeerGroup.{
-  ChannelBrokenException,
-  ChannelSetupException,
-  ServerEvent,
-  TerminalPeerGroup
-}
-import io.iohk.scalanet.peergroup.TCPPeerGroup._
+import io.iohk.decco._
+import io.iohk.scalanet.codec.StreamCodec
+import io.iohk.scalanet.monix_subject.{CacheUntilConnectSubject, ConnectableSubject}
+import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, ServerEvent, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.TCPPeerGroup._
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
 import io.netty.channel._
@@ -19,15 +19,9 @@ import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import monix.eval.Task
-import monix.reactive.Observable
-import monix.reactive.subjects.{PublishSubject, Subject}
+import monix.execution.Scheduler
+import monix.reactive.subjects.Subject
 import org.slf4j.LoggerFactory
-import io.iohk.decco._
-import io.iohk.scalanet.codec.StreamCodec
-import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
-import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import monix.execution.Cancelable
-import monix.reactive.observables.ConnectableObservable
 
 import scala.concurrent.Promise
 import scala.util.control.NonFatal
@@ -48,11 +42,9 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
     extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
-  import monix.execution.Scheduler.Implicits.global
+  implicit val scheduler: Scheduler = Scheduler.global
 
-  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
-  private val observable =
-    ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
+  private val serverSubject = CacheUntilConnectSubject[ServerEvent[InetMultiAddress, M]]()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -88,11 +80,10 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
     new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, codec.cleanSlate, bi).initialize
   }
 
-  override def server(): Observable[ServerEvent[InetMultiAddress, M]] = observable
-
-  override def connect(): Task[Cancelable] = toTask {
-    observable.connect()
+  override def server(): ConnectableSubject[ServerEvent[InetMultiAddress, M]] = {
+    serverSubject
   }
+
 
   override def shutdown(): Task[Unit] = {
     serverSubject.onComplete()
@@ -122,8 +113,7 @@ object TCPPeerGroup {
     import monix.execution.Scheduler.Implicits.global
 
     private val log = LoggerFactory.getLogger(getClass)
-    private val messageSubject = PublishSubject[M]()
-    private val observable = ConnectableObservable.cacheUntilConnect(messageSubject, PublishSubject[M]())
+    private val messageSubject = CacheUntilConnectSubject[M]()
     log.debug(
       s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
     )
@@ -142,9 +132,8 @@ object TCPPeerGroup {
         }
     }
 
-    override def in: Observable[M] = observable
+    override def in: ConnectableSubject[M] = messageSubject
 
-    override def connect(): Task[Cancelable] = toTask(observable.connect())
 
     override def close(): Task[Unit] = {
       messageSubject.onComplete()
@@ -169,8 +158,7 @@ object TCPPeerGroup {
     private val deactivationF = deactivation.future
     import monix.execution.Scheduler.Implicits.global
 
-    private val messageSubject = PublishSubject[M]()
-    private val observable = ConnectableObservable.cacheUntilConnect(messageSubject, PublishSubject[M]())
+    private val messageSubject = CacheUntilConnectSubject[M]()
     private val bootstrap: Bootstrap = clientBootstrap
       .clone()
       .handler(new ChannelInitializer[SocketChannel]() {
@@ -219,8 +207,7 @@ object TCPPeerGroup {
         .map(_ => ())
     }
 
-    override def in: Observable[M] = observable
-    override def connect(): Task[Cancelable] = toTask(observable.connect())
+    override def in: CacheUntilConnectSubject[M] = messageSubject
 
     override def close(): Task[Unit] = {
       messageSubject.onComplete()
