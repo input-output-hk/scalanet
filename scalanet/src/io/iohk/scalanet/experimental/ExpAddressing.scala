@@ -18,9 +18,9 @@ abstract class ExpAddressing[A, U, M](
 
   override def connect(): Task[Unit] = underlyingPeerGroup.connect()
 
-  override def client(to: A): Task[EClientChannel[A, M]] = {
+  override def client(to: A): Task[EChannel[A, M]] = {
     underlyingPeerGroup.client(underlyingAddress(to)).map { uCh =>
-      HeaderAddressingClientChannel[A, U, M](processAddress, to, uCh)
+      HeaderAddressingChannel[A, U, M](processAddress, to, uCh)
     }
   }
 
@@ -33,9 +33,7 @@ abstract class ExpAddressing[A, U, M](
   override def onMessageReception(handler: Envelope[A, M] => Unit): Unit = {
     underlyingPeerGroup.onMessageReception { envelope: Envelope[U, AddressHeader[A, M]] =>
       val addressedMessage = envelope.msg
-      val newCh = envelope.coneectionOpt map {
-        AddressingConnection(processAddress, _)
-      }
+      val newCh: EChannel[A, M] = AddressingChannel[A, U, M](processAddress, envelope.msg.address, envelope.channel)
       handler(Envelope[A, M](newCh, addressedMessage.address, addressedMessage.msg))
     }
   }
@@ -57,11 +55,11 @@ object ExpAddressing {
     override def close(): Task[Unit] = underlyingConn.close()
   }
 
-  case class HeaderAddressingClientChannel[A, U, M](
+  case class HeaderAddressingChannel[A, U, M](
       localAddress: A,
       remoteAddress: A,
-      underlyingChannel: EClientChannel[U, AddressHeader[A, M]]
-  ) extends EClientChannel[A, M] {
+      underlyingChannel: EChannel[U, AddressHeader[A, M]]
+  ) extends EChannel[A, M] {
 
     override def to: A = remoteAddress
 
@@ -78,4 +76,16 @@ case class AddressingConnection[A, M](localAddress: A, undAC: EConnection[Addres
   override def replyWith(m: M): Task[Unit] = undAC.replyWith(AddressHeader(localAddress, m))
 
   override def close(): Task[Unit] = undAC.close()
+}
+
+case class AddressingChannel[A, U, M](
+    localAddress: A,
+    remoteAddress: A,
+    underlyingChannel: EChannel[U, AddressHeader[A, M]]
+) extends EChannel[A, M] {
+  override def to: A = remoteAddress
+
+  override def sendMessage(m: M): Task[Unit] = underlyingChannel.sendMessage(AddressHeader(localAddress, m))
+
+  override def close(): Task[Unit] = underlyingChannel.close()
 }

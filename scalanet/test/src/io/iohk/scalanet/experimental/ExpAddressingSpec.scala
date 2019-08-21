@@ -58,14 +58,7 @@ class ExpAddressingSpec extends FlatSpec {
     bob onMessageReception { envelope =>
       println(s"Bob received a message")
       envelope.msg shouldBe alicesMessage
-      // The code below could be a method replyToSource defined in Envelope class
-      envelope.coneectionOpt match {
-        case None =>
-          val bobClient = bob.client("alice").evaluated
-          bobClient.sendMessage(bobsMessage).evaluated
-        case Some(connection) =>
-          connection.replyWith(bobsMessage)
-      }
+      envelope.channel.sendMessage(bobsMessage)
     }
 
     alice.connect().evaluated

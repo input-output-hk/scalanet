@@ -4,7 +4,7 @@ import scala.collection.mutable
 
 package object experimental {
 
-  case class Envelope[A, M](coneectionOpt: Option[EConnection[M]], remoteAddress: A, msg: M)
+  case class Envelope[A, M](channel: EChannel[A, M], remoteAddress: A, msg: M)
 
   def createSet[T]: mutable.Set[T] = {
     import scala.collection.JavaConverters._

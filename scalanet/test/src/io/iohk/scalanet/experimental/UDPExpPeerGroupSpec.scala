@@ -45,10 +45,8 @@ class UDPExpPeerGroupSpec extends FlatSpec {
     bob onMessageReception { envelope =>
       println(s"Bob received a message")
       envelope.msg shouldBe alicesMessage
-      // note that UDP does not provide reliable addressing, that is why we can not
-      // use the source channel
-      val bobClient = bob.client(aliceAddress).evaluated
-      bobClient.sendMessage(bobsMessage).evaluated
+      println(s"Envelope: $envelope")
+      envelope.channel.sendMessage(bobsMessage).evaluated
     }
 
     alice.connect().evaluated
@@ -90,26 +88,22 @@ class UDPExpPeerGroupSpec extends FlatSpec {
     var aliceReceived = 0
     var bobReceived = 0
 
-    def serverCode(received: String): Unit = {
+    def clientCode(received: String): Unit = {
       aliceReceived += 1
       println(s"alice received message $aliceReceived")
       received shouldBe bobsMessage
     }
 
-    val alice = new NettyUDPWrapper[String](aliceAddress)(serverCode)
+    val alice = new NettyUDPWrapper[String](aliceAddress)(clientCode)
     val bob = new UDPExpPeerGroup[String](bobAddress)
 
     bob onMessageReception { envelope =>
       bobReceived += 1
       println(s"Bob received message $bobReceived")
       envelope.msg shouldBe alicesMessage
-      // note that UDP does not provide reliable addressing, that is why we can not
-      // use the source channel
-      val bobClient = bob.client(aliceAddress).evaluated
-      bobClient.sendMessage(bobsMessage).evaluated
+      envelope.channel.sendMessage(bobsMessage).evaluated
     }
 
-    alice.start()
     bob.connect().evaluated
 
     println("first message")

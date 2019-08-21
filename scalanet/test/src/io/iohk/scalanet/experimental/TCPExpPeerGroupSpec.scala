@@ -55,8 +55,7 @@ class TCPExpPeerGroupSpec extends FlatSpec {
     bob onMessageReception { envelope =>
       println(s"Bob received a message")
       envelope.msg shouldBe alicesMessage
-      // note that in TCP the sender will listen to the source channel
-      envelope.coneectionOpt.get.replyWith(bobsMessage).evaluated
+      envelope.channel.sendMessage(bobsMessage).evaluated
     }
 
     alice.connect().evaluated

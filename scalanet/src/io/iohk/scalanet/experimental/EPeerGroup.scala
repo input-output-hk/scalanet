@@ -7,13 +7,13 @@ import monix.eval.Task
 trait EPeerGroup[A, M] {
   def processAddress: A
   def connect(): Task[Unit]
-  def client(to: A): Task[EClientChannel[A, M]]
+  def client(to: A): Task[EChannel[A, M]]
   def onConnectionArrival(connectionHandler: EConnection[M] => Unit): Unit
   def onMessageReception(messageHandler: Envelope[A, M] => Unit): Unit
   def shutdown(): Task[Unit]
 }
 
-trait EClientChannel[A, M] {
+trait EChannel[A, M] {
   def to: A
   def sendMessage(m: M): Task[Unit]
   def close(): Task[Unit]

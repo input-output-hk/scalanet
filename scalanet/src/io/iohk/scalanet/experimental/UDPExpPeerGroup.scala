@@ -50,7 +50,7 @@ class UDPExpPeerGroup[M](address: InetSocketAddress)(
                   message <- messageE
                   h <- messageHandlers
                   ch = ctx.channel().asInstanceOf[NioDatagramChannel]
-                } h(Envelope(None, ch.remoteAddress(), message))
+                } h(Envelope(new UDPExpChannel[M](ch, ch.remoteAddress()), ch.remoteAddress(), message))
               } finally {
                 datagram.content().release()
               }
@@ -78,7 +78,7 @@ class UDPExpPeerGroup[M](address: InetSocketAddress)(
                   message <- messageE
                   h <- messageHandlers
                   ch = ctx.channel().asInstanceOf[NioDatagramChannel]
-                } h(Envelope(None, ch.remoteAddress(), message))
+                } h(Envelope(new UDPExpChannel(ch, remoteAddress), remoteAddress, message))
               } finally {
                 datagram.content().release()
               }
@@ -100,12 +100,12 @@ class UDPExpPeerGroup[M](address: InetSocketAddress)(
         case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
       }
 
-  override def client(to: InetSocketAddress): Task[EClientChannel[InetSocketAddress, M]] = {
+  override def client(to: InetSocketAddress): Task[EChannel[InetSocketAddress, M]] = {
     val cf = clientBootstrap.connect(to)
     val ct: Task[NioDatagramChannel] = toTask(cf).map(_ => cf.channel().asInstanceOf[NioDatagramChannel])
     ct.map { nettyChannel =>
         log.debug(s"Client generated to talk to $to")
-        new UDPExpClientChannel(nettyChannel, to)
+        new UDPExpChannel(nettyChannel, to)
       }
       .onErrorRecoverWith {
         case e: Throwable =>
@@ -128,10 +128,10 @@ class UDPExpPeerGroup[M](address: InetSocketAddress)(
   }
 }
 
-class UDPExpClientChannel[M](nettyChannel: NioDatagramChannel, remoteAddress: InetSocketAddress)(
+class UDPExpChannel[M](nettyChannel: NioDatagramChannel, remoteAddress: InetSocketAddress)(
     implicit codec: Codec[M],
     bufferInstantiator: BufferInstantiator[ByteBuffer]
-) extends EClientChannel[InetSocketAddress, M] {
+) extends EChannel[InetSocketAddress, M] {
 
   private val log = LoggerFactory.getLogger(getClass)
 
