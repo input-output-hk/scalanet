@@ -90,6 +90,8 @@ object scalanet extends ScalaModule with PublishModule {
 
     override def scalacOptions = scalanet.scalacOptions
 
+    override def repositories = scalanet.repositories
+
     override def moduleDeps: Seq[JavaModule] = super.moduleDeps ++ Seq(scalanet)
 
     override def ivyDeps = Agg(
