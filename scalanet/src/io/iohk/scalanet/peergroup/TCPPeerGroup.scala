@@ -19,8 +19,9 @@ import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import monix.eval.Task
+import monix.execution.Scheduler.Implicits.global
 import monix.reactive.Observable
-import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
+import monix.reactive.subjects.{ConcurrentSubject, ReplaySubject, Subject}
 import org.slf4j.LoggerFactory
 import io.iohk.decco._
 import io.iohk.scalanet.codec.StreamCodec
@@ -47,7 +48,7 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
+  private val serverSubject = ConcurrentSubject.publish[ServerEvent[InetMultiAddress, M]]
 
   private val workerGroup = new NioEventLoopGroup()
 
