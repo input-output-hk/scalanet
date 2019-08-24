@@ -1,18 +1,21 @@
 package io.iohk.scalanet.peergroup
 
-import io.iohk.scalanet.monix_subject.{CacheUntilConnectSubject, ConnectableSubject}
 import io.iohk.scalanet.peergroup.InMemoryPeerGroup._
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import monix.eval.Task
 import monix.execution.Scheduler.Implicits.global
+import monix.reactive.observables.ConnectableObservable
+import monix.reactive.subjects.PublishSubject
 
 import scala.collection.concurrent.TrieMap
 
 class InMemoryPeerGroup[A, M](address: A)(implicit network: Network[A, M]) extends PeerGroup[A, M] {
 
   private[peergroup] var status: PeerStatus = PeerStatus.NotInitialized
-  private[peergroup] val channelStream = CacheUntilConnectSubject[ServerEvent[A, M]]()
+  private[peergroup] val channelStream  = PublishSubject[ServerEvent[A, M]]()
+  private[peergroup] val connectableObservable = ConnectableObservable.cacheUntilConnect(channelStream, PublishSubject[ServerEvent[A, M]]())
+
   private[peergroup] val channelsMap: TrieMap[ChannelID, InMemoryChannel[A, M]] = TrieMap()
 
   def receiveMessage(channelID: ChannelID, from: A, msg: M): Unit = {
@@ -41,10 +44,10 @@ class InMemoryPeerGroup[A, M](address: A)(implicit network: Network[A, M]) exten
     channelsMap += (channelID -> newChannel)
     allGood(newChannel)
   }
-  override def server(): ConnectableSubject[ServerEvent[A, M]] = {
+  override def server(): ConnectableObservable[ServerEvent[A, M]] = {
     status match {
       case PeerStatus.NotInitialized => throw new Exception(s"Peer $processAddress is not initialized yet")
-      case PeerStatus.Listening => channelStream
+      case PeerStatus.Listening => connectableObservable
       case PeerStatus.ShutDowned => throw new Exception(s"Peer $processAddress was shut downed")
     }
   }
@@ -113,13 +116,16 @@ object InMemoryPeerGroup {
   class InMemoryChannel[A, M](channelID: ChannelID, myAddress: A, destination: A)(implicit network: Network[A, M])
       extends Channel[A, M] {
     private var channelStatus: ChannelStatus = ChannelStatus.Opened
-    private val messagesQueue = CacheUntilConnectSubject[M]()
+    private val messagesQueue  = PublishSubject[M]()
+    private val connectableObservable = ConnectableObservable.cacheUntilConnect(messagesQueue, PublishSubject[M]())
+
+
     private[InMemoryPeerGroup] def depositMessage(m: M): Unit = messagesQueue.onNext(m)
 
     // Public interface
     override def to: A = destination
     override def sendMessage(message: M): Result[Unit] = network.deliverMessage(channelID, myAddress, to, message)
-    override def in: ConnectableSubject[M] = messagesQueue
+    override def in: ConnectableObservable[M] = connectableObservable
     override def close(): Result[Unit] = {
       // Note, what else should be done by close method? E.g. block messages that come to `in`?
       // what should happen to the other side of the channel?

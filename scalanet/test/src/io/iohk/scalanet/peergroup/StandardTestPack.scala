@@ -1,7 +1,6 @@
 package io.iohk.scalanet.peergroup
 
 import io.iohk.scalanet.TaskValues._
-import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.PeerGroup.ChannelSetupException
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
 import monix.execution.Scheduler
@@ -18,16 +17,16 @@ object StandardTestPack {
     val alicesMessage = Random.alphanumeric.take(1024).mkString
     val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
+    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runToFuture)
     val aliceClient = alice.client(bob.processAddress).evaluated
-    val aliceReceived = aliceClient.in.headL.runAsync
+    val aliceReceived = aliceClient.in.headL.runToFuture
 
-    aliceClient.sendMessage(alicesMessage).runAsync
+    aliceClient.sendMessage(alicesMessage).runToFuture
     val bobReceived: Future[String] =
-      bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runAsync
+      bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runToFuture
     aliceClient.in.connect()
     bob.server().collectChannelCreated.foreach(_.in.connect())
-    bob.server().asInstanceOf[ConnectableSubject[String]].connect()
+    bob.server().connect()
 
     bobReceived.futureValue shouldBe alicesMessage
     aliceReceived.futureValue shouldBe bobsMessage
@@ -39,19 +38,19 @@ object StandardTestPack {
     val alicesMessage = Random.alphanumeric.take(1024).mkString
     val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runAsync)
+    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runToFuture)
 
     val aliceClient1 = alice.client(bob.processAddress).evaluated
     val aliceClient2 = alice.client(bob.processAddress).evaluated
 
-    val aliceReceived1 = aliceClient1.in.headL.runAsync
-    val aliceReceived2 = aliceClient2.in.headL.runAsync
+    val aliceReceived1 = aliceClient1.in.headL.runToFuture
+    val aliceReceived2 = aliceClient2.in.headL.runToFuture
 
-    aliceClient1.sendMessage(alicesMessage).runAsync
+    aliceClient1.sendMessage(alicesMessage).runToFuture
     aliceClient1.in.connect()
     aliceClient2.in.connect()
     bob.server().collectChannelCreated.foreach(channel => channel.in.connect())
-    bob.server().asInstanceOf[ConnectableSubject[String]].connect()
+    bob.server().connect()
     aliceReceived1.futureValue shouldBe bobsMessage
     recoverToSucceededIf[IllegalStateException](aliceReceived2)
   }
@@ -61,7 +60,7 @@ object StandardTestPack {
   ): Unit = {
 
     val aliceError = recoverToExceptionIf[ChannelSetupException[InetMultiAddress]] {
-      alice.client(invalidAddress).runAsync
+      alice.client(invalidAddress).runToFuture
     }
 
     aliceError.futureValue.to shouldBe invalidAddress

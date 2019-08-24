@@ -31,7 +31,7 @@ class UDPPeerGroupSpec extends FlatSpec {
       val messageSize = Codec[Array[Byte]].encode(invalidMessage).capacity()
 
       val error = recoverToExceptionIf[MessageMTUException[InetMultiAddress]] {
-        alice.client(address).flatMap(channel => channel.sendMessage(invalidMessage)).runAsync
+        alice.client(address).flatMap(channel => channel.sendMessage(invalidMessage)).runToFuture
       }.futureValue
 
       error.size shouldBe messageSize
@@ -45,7 +45,7 @@ class UDPPeerGroupSpec extends FlatSpec {
     val pg1 = randomUDPPeerGroup[String]
     isListeningUDP(pg1.config.bindAddress) shouldBe true
 
-    pg1.shutdown().runAsync.futureValue
+    pg1.shutdown().runToFuture.futureValue
 
     isListeningUDP(pg1.config.bindAddress) shouldBe false
   }
@@ -55,11 +55,11 @@ class UDPPeerGroupSpec extends FlatSpec {
     val pg1 = new UDPPeerGroup[String](UDPPeerGroup.Config(address))
     val pg2 = new UDPPeerGroup[String](UDPPeerGroup.Config(address))
 
-    Await.result(pg1.initialize().runAsync, 10 seconds)
+    Await.result(pg1.initialize().runToFuture, 10 seconds)
     assertThrows[InitializationError] {
-      Await.result(pg2.initialize().runAsync, 10 seconds)
+      Await.result(pg2.initialize().runToFuture, 10 seconds)
     }
-    pg1.shutdown().runAsync.futureValue
+    pg1.shutdown().runToFuture.futureValue
   }
 
 }

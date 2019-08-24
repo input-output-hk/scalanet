@@ -13,7 +13,7 @@ import org.scalatest.concurrent.ScalaFutures._
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
-import scala.util.Random
+//import scala.util.Random
 
 class StaticAddressMappedPeerGroupSpec extends FlatSpec {
 
@@ -27,19 +27,19 @@ class StaticAddressMappedPeerGroupSpec extends FlatSpec {
       "Bob"
     ) { (alice, bob) =>
       println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
-      val alicesMessage = Random.alphanumeric.take(1024).mkString
-      val bobsMessage = Random.alphanumeric.take(1024).mkString
+      val alicesMessage = "Hi Bob"//Random.alphanumeric.take(1024).mkString
+      val bobsMessage = "Hi Alice"//Random.alphanumeric.take(1024).mkString
 
-      bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runAsync
+      bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runToFuture
       val bobReceived: Future[String] =
-        bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runAsync
+        bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
-      val aliceReceived = aliceClient.in.headL.runAsync
+      val aliceReceived = aliceClient.in.headL.runToFuture
       aliceClient.sendMessage(alicesMessage).evaluated
 
-      // aliceClient.in.connect()
-      bob.server().collectChannelCreated.foreach(channel => channel.in.connect())
+      bob.server().collectChannelCreated.foreach(_.in.connect())
+      aliceClient.in.connect()
       bob.server().connect()
       bobReceived.futureValue shouldBe alicesMessage
       aliceReceived.futureValue shouldBe bobsMessage

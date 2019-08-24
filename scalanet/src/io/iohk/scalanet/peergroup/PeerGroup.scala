@@ -1,12 +1,12 @@
 package io.iohk.scalanet.peergroup
 
 import io.iohk.decco.Codec
-import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
+import monix.reactive.observables.ConnectableObservable
 
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
@@ -47,7 +47,7 @@ trait Channel[A, M] {
   /**
     * The inbound stream of messages coming from the remote peer.
     */
-  def in: ConnectableSubject[M]
+  def in: ConnectableObservable[M]
 
   /**
     * Terminate the Channel and clean up any resources.
@@ -111,7 +111,7 @@ trait PeerGroup[A, M] {
     *
     * @return the stream of server events received by this peer.
     */
-  def server(): ConnectableSubject[ServerEvent[A, M]]
+  def server(): ConnectableObservable[ServerEvent[A, M]]
 
   /**
     * This methods clean resources of the current instance of a PeerGroup.
@@ -171,7 +171,7 @@ object PeerGroup {
       implicit scheduler: Scheduler
   ): Either[InitializationError, PG] =
     try {
-      Await.result(pg.initialize().runAsync, Duration.Inf)
+      Await.result(pg.initialize().runToFuture, Duration.Inf)
       Right(pg)
     } catch {
       case t: Throwable =>
@@ -191,7 +191,7 @@ object PeerGroup {
     */
   def createOrThrow[PG <: PeerGroup[_, _]](pg: => PG, config: Any)(implicit scheduler: Scheduler): PG =
     try {
-      Await.result(pg.initialize().runAsync, Duration.Inf)
+      Await.result(pg.initialize().runToFuture, Duration.Inf)
       pg
     } catch {
       case t: Throwable =>

@@ -33,10 +33,10 @@ class DTLSPeerGroupSpec extends FlatSpec {
 
   it should "report an error for a handshake failure -- server receives" in
     withTwoDTLSPeerGroups[String](duffKeyConfig) { (alice, bob) =>
-      val handshakeF = bob.server().collectHandshakeFailure.headL.runAsync
+      val handshakeF = bob.server().collectHandshakeFailure.headL.runToFuture
 
-      alice.client(bob.processAddress).evaluated.sendMessage("hello, bob").runAsync
-
+      alice.client(bob.processAddress).evaluated.sendMessage("hello, bob").runToFuture
+      bob.server().connect()
       handshakeF.futureValue.to shouldBe alice.processAddress
     }
 
@@ -47,7 +47,7 @@ class DTLSPeerGroupSpec extends FlatSpec {
       val aliceClient = alice.client(bob.processAddress).evaluated
 
       val error = recoverToExceptionIf[HandshakeException[InetMultiAddress]] {
-        aliceClient.sendMessage(alicesMessage).runAsync
+        aliceClient.sendMessage(alicesMessage).runToFuture
       }.futureValue
 
       error.to shouldBe bob.processAddress
@@ -60,7 +60,7 @@ class DTLSPeerGroupSpec extends FlatSpec {
       val messageSize = Codec[Array[Byte]].encode(invalidMessage).capacity()
 
       val error = recoverToExceptionIf[MessageMTUException[InetMultiAddress]] {
-        alice.client(address).flatMap(channel => channel.sendMessage(invalidMessage)).runAsync
+        alice.client(address).flatMap(channel => channel.sendMessage(invalidMessage)).runToFuture
       }.futureValue
 
       error.size shouldBe messageSize
@@ -80,7 +80,7 @@ class DTLSPeerGroupSpec extends FlatSpec {
     val pg1 = dtlsPeerGroup[String](rawKeyConfig("alice"))
     isListeningUDP(pg1.config.bindAddress) shouldBe true
 
-    pg1.shutdown().runAsync.futureValue
+    pg1.shutdown().runToFuture.futureValue
 
     isListeningUDP(pg1.config.bindAddress) shouldBe false
   }
@@ -90,11 +90,11 @@ class DTLSPeerGroupSpec extends FlatSpec {
     val pg1 = new DTLSPeerGroup[String](config)
     val pg2 = new DTLSPeerGroup[String](config)
 
-    Await.result(pg1.initialize().runAsync, Duration.Inf)
+    Await.result(pg1.initialize().runToFuture, Duration.Inf)
     assertThrows[InitializationError] {
-      Await.result(pg2.initialize().runAsync, Duration.Inf)
+      Await.result(pg2.initialize().runToFuture, Duration.Inf)
     }
-    pg1.shutdown().runAsync.futureValue
+    pg1.shutdown().runToFuture.futureValue
 
   }
 }
@@ -150,7 +150,7 @@ object DTLSPeerGroupSpec {
       config: Config
   )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): DTLSPeerGroup[M] = {
     val pg = new DTLSPeerGroup[M](config)
-    Await.result(pg.initialize().runAsync, Duration.Inf)
+    Await.result(pg.initialize().runToFuture, Duration.Inf)
     pg
   }
 

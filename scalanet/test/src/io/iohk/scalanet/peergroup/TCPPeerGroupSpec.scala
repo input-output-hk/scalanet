@@ -42,11 +42,11 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
       bob.server().collectChannelCreated.foreach(_.in.connect())
       bob.server().connect()
 
-      bob.server().collectChannelCreated.foreachL(channel => channel.close().runAsync).runAsync
+      bob.server().collectChannelCreated.foreachL(channel => channel.close().runToFuture).runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
       val aliceError = recoverToExceptionIf[ChannelBrokenException[InetMultiAddress]] {
-        aliceClient.sendMessage(alicesMessage).runAsync
+        aliceClient.sendMessage(alicesMessage).runToFuture
       }
 
       aliceError.futureValue.to shouldBe bob.processAddress
@@ -56,9 +56,9 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
       val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-      bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).runAsync).runAsync
+      bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).runToFuture).runToFuture
       val bobChannel: CancelableFuture[Channel[InetMultiAddress, String]] =
-        bob.server().collectChannelCreated.headL.runAsync
+        bob.server().collectChannelCreated.headL.runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
       bob.server().collectChannelCreated.foreach(_.in.connect())
@@ -66,7 +66,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
       aliceClient.close().evaluated
       val bobError = recoverToExceptionIf[ChannelBrokenException[InetMultiAddress]] {
-        bobChannel.futureValue.sendMessage(bobsMessage).runAsync
+        bobChannel.futureValue.sendMessage(bobsMessage).runToFuture
       }
 
       bobError.futureValue.to shouldBe alice.processAddress
@@ -81,7 +81,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     val tcpPeerGroup = randomTCPPeerGroup[String]
     isListening(tcpPeerGroup.config.bindAddress) shouldBe true
 
-    tcpPeerGroup.shutdown().runAsync.futureValue
+    tcpPeerGroup.shutdown().runToFuture.futureValue
 
     isListening(tcpPeerGroup.config.bindAddress) shouldBe false
   }
@@ -95,11 +95,11 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     val address = aRandomAddress()
     val pg1 = new TCPPeerGroup(TCPPeerGroup.Config(address))
     val pg2 = new TCPPeerGroup(TCPPeerGroup.Config(address))
-    Await.result(pg1.initialize().runAsync, 10 seconds)
+    Await.result(pg1.initialize().runToFuture, 10 seconds)
     assertThrows[InitializationError] {
-      Await.result(pg2.initialize().runAsync, 10 seconds)
+      Await.result(pg2.initialize().runToFuture, 10 seconds)
     }
-    pg1.shutdown().runAsync.futureValue
+    pg1.shutdown().runToFuture.futureValue
   }
 
 }

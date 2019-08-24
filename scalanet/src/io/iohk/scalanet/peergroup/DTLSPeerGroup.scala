@@ -7,14 +7,15 @@ import java.security.{PrivateKey, PublicKey}
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.decco.{BufferInstantiator, Codec}
-import io.iohk.scalanet.monix_subject.{CacheUntilConnectSubject, ConnectableSubject}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{ChannelId, _}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import io.iohk.scalanet.peergroup.PeerGroup.{MessageMTUException, ServerEvent}
+import io.iohk.scalanet.peergroup.PeerGroup._
 import monix.eval.Task
-import monix.execution.{Cancelable, Scheduler}
+import monix.execution.{Callback, Scheduler}
+import monix.reactive.observables.ConnectableObservable
+import monix.reactive.subjects.PublishSubject
 import org.eclipse.californium.elements._
 import org.eclipse.californium.scandium.DTLSConnector
 import org.eclipse.californium.scandium.config.DtlsConnectorConfig
@@ -32,7 +33,9 @@ class DTLSPeerGroup[M](val config: Config)(
 
   private val serverConnector = createServerConnector()
 
-  private val channelSubject = CacheUntilConnectSubject[ServerEvent[InetMultiAddress, M]]()
+  private val channelSubject  = PublishSubject[ServerEvent[InetMultiAddress, M]]()
+  private val connectableObservable = ConnectableObservable.cacheUntilConnect(channelSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
+
 
   private val activeChannels = new ConcurrentHashMap[ChannelId, ChannelImpl]().asScala
 
@@ -54,7 +57,7 @@ class DTLSPeerGroup[M](val config: Config)(
     channel
   }
 
-  override def server(): ConnectableSubject[ServerEvent[InetMultiAddress, M]] = channelSubject
+  override def server(): ConnectableObservable[ServerEvent[InetMultiAddress, M]] = connectableObservable
 
   override def shutdown(): Task[Unit] =
     for {
@@ -65,25 +68,31 @@ class DTLSPeerGroup[M](val config: Config)(
   private class ChannelImpl(val to: InetMultiAddress, dtlsConnector: DTLSConnector)(implicit codec: Codec[M])
       extends Channel[InetMultiAddress, M] {
 
-    override val in: ConnectableSubject[M] = CacheUntilConnectSubject[M]()
+
+    val channelSubject  = PublishSubject[M]()
+    private val connectableObservable = ConnectableObservable.cacheUntilConnect(channelSubject, PublishSubject[M]())
+
+
+
+    override val in: ConnectableObservable[M] = connectableObservable
 
     override def sendMessage(message: M): Task[Unit] = {
       import io.iohk.scalanet.peergroup.BufferConversionOps._
       val buffer = codec.encode(message)
 
       Task
-        .async[Unit] { (_, c) =>
+        .async[Unit]{ cb:Callback[Throwable,Unit] =>
           val messageCallback = new MessageCallback {
             override def onConnecting(): Unit = ()
             override def onDtlsRetransmission(i: Int): Unit = ()
             override def onContextEstablished(endpointContext: EndpointContext): Unit = ()
 
-            override def onSent(): Unit = c.onSuccess(())
+            override def onSent(): Unit = cb.onSuccess(())
             override def onError(throwable: Throwable): Unit = throwable match {
               case h: HandshakeException =>
-                c.onError(new PeerGroup.HandshakeException[InetMultiAddress](to, h))
+                cb.onError(new PeerGroup.HandshakeException[InetMultiAddress](to, h))
               case _: IllegalArgumentException =>
-                c.onError(new MessageMTUException[InetMultiAddress](to, buffer.capacity()))
+                cb.onError(new MessageMTUException[InetMultiAddress](to, buffer.capacity()))
             }
           }
 
@@ -92,13 +101,12 @@ class DTLSPeerGroup[M](val config: Config)(
 
           dtlsConnector.send(rawData)
 
-          Cancelable.empty
         }
     }
 
     override def close(): Task[Unit] = {
       val id = (dtlsConnector.getAddress, to.inetSocketAddress)
-      activeChannels(id).in.onComplete()
+      activeChannels(id).channelSubject.onComplete()
       activeChannels.remove(id)
       Task.unit
     }
@@ -130,7 +138,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
       val messageE = codec.decode(ByteBuffer.wrap(rawData.bytes))
 
-      messageE.foreach(message => activeChannel.in.onNext(message))
+      messageE.foreach(message => activeChannel.channelSubject.onNext(message))
     })
 
     connector
@@ -161,7 +169,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
         val messageE = codec.decode(ByteBuffer.wrap(rawData.bytes))
 
-        messageE.foreach(message => activeChannel.in.onNext(message))
+        messageE.foreach(message => activeChannel.channelSubject.onNext(message))
       }
 
       private def createNewChannel(rawData: RawData): ChannelImpl = {

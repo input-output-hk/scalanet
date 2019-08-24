@@ -1,12 +1,10 @@
 package io.iohk.scalanet.peergroup
 
-import io.iohk.scalanet.monix_subject.ConnectableSubject
-import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, ServerEvent}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
+import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, ServerEvent}
 import io.iohk.scalanet.peergroup.StaticAddressMappedPeerGroup.Config
 import monix.eval.Task
 import monix.execution.Scheduler
-import monix.reactive.Observable
 import monix.reactive.observables.ConnectableObservable
 import monix.reactive.subjects.PublishSubject
 
@@ -33,15 +31,18 @@ class StaticAddressMappedPeerGroup[A, AA, M](
       new ChannelImpl(to, underlyingChannel)
     }
 
-  override def server() = {
-    underLyingPeerGroup.server().map {
-      case ChannelCreated(underlyingChannel) =>
-        val a = reverseLookup(underlyingChannel.to)
-        ChannelCreated(new ChannelImpl(a, underlyingChannel))
-      case HandshakeFailed(failure) =>
-        HandshakeFailed[A, M](new HandshakeException[A](reverseLookup(failure.to), failure.cause))
-    }
+ private val observable = underLyingPeerGroup.server().map {
+    case ChannelCreated(underlyingChannel) =>
+      val a = reverseLookup(underlyingChannel.to)
+      ChannelCreated[A, M](new ChannelImpl(a, underlyingChannel))
+    case HandshakeFailed(failure) =>
+      HandshakeFailed[A, M](new HandshakeException[A](reverseLookup(failure.to), failure.cause))
   }
+ private val connectableObservable = ConnectableObservable.cacheUntilConnect(observable, PublishSubject[ServerEvent[A, M]]())
+
+  underLyingPeerGroup.server().connect()
+
+  override def server(): ConnectableObservable[ServerEvent[A, M]] = connectableObservable
 
   override def shutdown(): Task[Unit] =
     underLyingPeerGroup.shutdown()
@@ -54,7 +55,8 @@ class StaticAddressMappedPeerGroup[A, AA, M](
     override def sendMessage(message: M): Task[Unit] =
       underlyingChannel.sendMessage(message)
 
-    override def in: ConnectableSubject[M] = underlyingChannel.in
+    override def in: ConnectableObservable[M] = underlyingChannel.in
+
 
     override def close(): Task[Unit] =
       underlyingChannel.close()

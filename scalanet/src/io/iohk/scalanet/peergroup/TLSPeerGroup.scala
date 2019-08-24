@@ -9,7 +9,6 @@ import java.security.cert.{Certificate, X509Certificate}
 
 import io.iohk.decco._
 import io.iohk.scalanet.codec.StreamCodec
-import io.iohk.scalanet.monix_subject.{CacheUntilConnectSubject, ConnectableSubject}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
@@ -25,7 +24,8 @@ import io.netty.handler.ssl.{SslContext, SslContextBuilder, SslHandshakeCompleti
 import javax.net.ssl.SSLKeyException
 import monix.eval.Task
 import monix.execution.Scheduler
-import monix.reactive.subjects.Subject
+import monix.reactive.observables.ConnectableObservable
+import monix.reactive.subjects.{PublishSubject, Subject}
 import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
@@ -61,7 +61,9 @@ class TLSPeerGroup[M](val config: Config)(
     .ciphers(TLSPeerGroup.supportedCipherSuites.asJava)
     .build()
 
-  private val serverSubject = CacheUntilConnectSubject[ServerEvent[InetMultiAddress, M]]()
+  private val serverSubject  = PublishSubject[ServerEvent[InetMultiAddress, M]]()
+
+  private val connectableObservable = ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -99,7 +101,7 @@ class TLSPeerGroup[M](val config: Config)(
     new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, sslClientCtx, codec, bi).initialize
   }
 
-  override def server(): ConnectableSubject[ServerEvent[InetMultiAddress, M]] = serverSubject
+  override def server(): ConnectableObservable[ServerEvent[InetMultiAddress, M]] = connectableObservable
 
   override def shutdown(): Task[Unit] = {
     serverSubject.onComplete()
@@ -216,7 +218,8 @@ object TLSPeerGroup {
     private val deactivation = Promise[Unit]()
     private val deactivationF = deactivation.future
 
-    private val messageSubject = CacheUntilConnectSubject[M]()
+    private val messageSubject = PublishSubject[M]()
+    private val connectableObservable= ConnectableObservable.cacheUntilConnect(messageSubject,PublishSubject[M]())
 
     private val bootstrap: Bootstrap = clientBootstrap
       .clone()
@@ -295,7 +298,7 @@ object TLSPeerGroup {
         .map(_ => ())
     }
 
-    override def in: ConnectableSubject[M] = messageSubject
+    override def in: ConnectableObservable[M] = connectableObservable
 
     override def close(): Task[Unit] = {
       messageSubject.onComplete()
@@ -307,7 +310,7 @@ object TLSPeerGroup {
   }
 
   private[scalanet] class ServerChannelImpl[M](
-      serverSubject: ConnectableSubject[ServerEvent[InetMultiAddress, M]],
+      serverSubject: PublishSubject[ServerEvent[InetMultiAddress, M]],
       val nettyChannel: SocketChannel,
       sslServerCtx: SslContext,
       codec: StreamCodec[M],
@@ -316,8 +319,8 @@ object TLSPeerGroup {
 
     private val log = LoggerFactory.getLogger(getClass)
     implicit val scheduler: Scheduler = Scheduler.global
-
-    private val messageSubject = CacheUntilConnectSubject[M]()
+    val messageSubject = PublishSubject[M]()
+    val connectableObservable: ConnectableObservable[M] = ConnectableObservable.cacheUntilConnect(messageSubject,PublishSubject[M]())
 
     log.debug(
       s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
@@ -354,7 +357,7 @@ object TLSPeerGroup {
         }
     }
 
-    override def in: ConnectableSubject[M] = messageSubject
+    override def in: ConnectableObservable[M] = connectableObservable
 
     override def close(): Task[Unit] = {
       messageSubject.onComplete()
