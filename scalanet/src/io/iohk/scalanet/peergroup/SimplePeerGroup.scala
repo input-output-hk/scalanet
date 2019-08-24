@@ -47,7 +47,11 @@ class SimplePeerGroup[A, AA, M](
       })
     underlyingChannels.map(new ChannelImpl(to, _))
   }
+
   lazy val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
+
+  // FIXME pt1 addressing done as part of own proto
+  // FIXME pt2 somehow addressing as QoS option in underlying peer group allows fallback to underlying addressing?
   lazy val observable = underLyingPeerGroup.server().map {
     case ChannelCreated(underlyingChannel) =>
       val a = reverseLookup(underlyingChannel.to)
@@ -58,21 +62,7 @@ class SimplePeerGroup[A, AA, M](
 
   val connectableObservable = ConnectableObservable.cacheUntilConnect(observable, PublishSubject[ServerEvent[A, M]]())
 
-  override def server(): ConnectableObservable[ServerEvent[A, M]] = {
-    // FIXME pt1 addressing done as part of own proto
-    // FIXME pt2 somehow addressing as QoS option in underlying peer group allows fallback to underlying addressing?
-//    val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
-//   val observable =  underLyingPeerGroup.server().map {
-//      case ChannelCreated(underlyingChannel) =>
-//        val a = reverseLookup(underlyingChannel.to)
-//        ChannelCreated(new ChannelImpl(a, List(underlyingChannel)))
-//      case HandshakeFailed(failure) =>
-//        HandshakeFailed[A, M](new HandshakeException[A](reverseLookup(failure.to), failure.cause))
-//    }
-//
-//    val connectableObservable = ConnectableObservable.cacheUntilConnect(observable, PublishSubject[ServerEvent[A, M]]())
-    connectableObservable
-  }
+  override def server(): ConnectableObservable[ServerEvent[A, M]] = connectableObservable
 
   override def shutdown(): Task[Unit] = underLyingPeerGroup.shutdown()
 
@@ -154,22 +144,7 @@ class SimplePeerGroup[A, AA, M](
       ConnectableObservable.cacheUntilConnect(observable, PublishSubject[M]())
     underlyingChannel.foreach(_.in.connect())
 
-    override def in: ConnectableObservable[M] = {
-//    val observable=  Observable
-//        .fromIterable(underlyingChannel.map {
-//          _.in.collect {
-//            case Right(message) =>
-//              debug(
-//                s"Processing inbound message from remote address $to to local address $processAddress, $message"
-//              )
-//              message
-//          }
-//        })
-//        .merge
-//      val connectableObservable = ConnectableObservable.cacheUntilConnect(observable, PublishSubject[M]())
-//      underlyingChannel.foreach(_.in.connect())
-      connectableObservable
-    }
+    override def in: ConnectableObservable[M] = connectableObservable
 
     override def close(): Task[Unit] =
       Task.gatherUnordered(underlyingChannel.map(_.close())).map(_ => ())
