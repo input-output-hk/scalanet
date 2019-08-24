@@ -69,7 +69,6 @@ class SimplePeerGroupSpec extends FlatSpec {
     val bobReceived = bob.server().collectChannelCreated.mergeMap(_.in).headL.runToFuture
     bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).evaluated)
 
-
     val messageNews = "Latest News"
 
     val bobReceivedNews = bob
@@ -92,13 +91,11 @@ class SimplePeerGroupSpec extends FlatSpec {
       .headL
       .runToFuture
 
-
     val aliceClient = alice.client(bob.processAddress).evaluated
     val aliceClientNews = alice.client("news").evaluated
     val aliceClientSports = alice.client("sports").evaluated
 
     val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
-
 
     aliceClient.in.connect()
     bob.server().collectChannelCreated.foreach(_.in.connect())
@@ -134,8 +131,6 @@ class SimplePeerGroupSpec extends FlatSpec {
       val aliceReceived = aliceClient.in.filter(msg => msg == bobsMessage).headL.runToFuture
       aliceClient.sendMessage(alicesMessage).evaluated
 
-
-
       val messageNews = "Latest News"
 
       val bobReceivedNews = bob
@@ -157,8 +152,6 @@ class SimplePeerGroupSpec extends FlatSpec {
         .runToFuture
 
       val aliceClientNews = alice.client("news").evaluated
-
-
 
       val sportUpdates = "Sports Updates"
 
@@ -191,11 +184,9 @@ class SimplePeerGroupSpec extends FlatSpec {
       aliceReceived.futureValue shouldBe bobsMessage
       bobReceived.futureValue shouldBe alicesMessage
 
-
       aliceClientNews.sendMessage(messageNews).evaluated
       bobReceivedNews.futureValue shouldBe messageNews
       charlieReceivedNews.futureValue shouldBe messageNews
-
 
       aliceSportsClient.sendMessage(sportUpdates).evaluated
       bobSportsUpdate.futureValue shouldBe sportUpdates

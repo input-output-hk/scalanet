@@ -48,7 +48,7 @@ class SimplePeerGroup[A, AA, M](
     underlyingChannels.map(new ChannelImpl(to, _))
   }
   lazy val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
-  lazy val observable =  underLyingPeerGroup.server().map {
+  lazy val observable = underLyingPeerGroup.server().map {
     case ChannelCreated(underlyingChannel) =>
       val a = reverseLookup(underlyingChannel.to)
       ChannelCreated(new ChannelImpl(a, List(underlyingChannel)))
@@ -114,15 +114,17 @@ class SimplePeerGroup[A, AA, M](
           .foreach(
             channel =>
               channel
-                .sendMessage(Left(EnrolMe(processAddress, config.multicastAddresses, underLyingPeerGroup.processAddress))).runToFuture
+                .sendMessage(
+                  Left(EnrolMe(processAddress, config.multicastAddresses, underLyingPeerGroup.processAddress))
+                )
+                .runToFuture
           )
-
 
         enrolledTask
       } else {
         Task.unit
       }
-    }finally {
+    } finally {
       underLyingPeerGroup.server().connect()
     }
 
@@ -137,7 +139,8 @@ class SimplePeerGroup[A, AA, M](
       )
       Task.gatherUnordered(underlyingChannel.map(_.sendMessage(Right(message)))).map(_ => ())
     }
-    val observable=  Observable.fromIterable(underlyingChannel.map {
+    val observable = Observable
+      .fromIterable(underlyingChannel.map {
         _.in.collect {
           case Right(message) =>
             debug(
@@ -147,8 +150,9 @@ class SimplePeerGroup[A, AA, M](
         }
       })
       .merge
-     private val connectableObservable: ConnectableObservable[M] = ConnectableObservable.cacheUntilConnect(observable, PublishSubject[M]())
-     underlyingChannel.foreach(_.in.connect())
+    private val connectableObservable: ConnectableObservable[M] =
+      ConnectableObservable.cacheUntilConnect(observable, PublishSubject[M]())
+    underlyingChannel.foreach(_.in.connect())
 
     override def in: ConnectableObservable[M] = {
 //    val observable=  Observable

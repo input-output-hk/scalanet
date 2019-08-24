@@ -39,8 +39,9 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
 
   private val log = LoggerFactory.getLogger(getClass)
   implicit val scheduler: Scheduler = Scheduler.global
-  val serverSubject  = PublishSubject[ServerEvent[InetMultiAddress, M]]()
-  private val connectableObservable = ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
+  val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
+  private val connectableObservable =
+    ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -138,7 +139,8 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
         s"to remote address $remoteAddress. Netty channelId is ${nettyChannel.id()}. " +
         s"My channelId is ${getChannelId(remoteAddress, localAddress)}"
     )
-    val connectableObservable: ConnectableObservable[M] = ConnectableObservable.cacheUntilConnect(messageSubject,PublishSubject[M]())
+    val connectableObservable: ConnectableObservable[M] =
+      ConnectableObservable.cacheUntilConnect(messageSubject, PublishSubject[M]())
     override val to: InetMultiAddress = InetMultiAddress(remoteAddress)
 
     override def sendMessage(message: M): Task[Unit] = sendMessage(message, localAddress, remoteAddress, nettyChannel)

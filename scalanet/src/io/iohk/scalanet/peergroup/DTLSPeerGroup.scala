@@ -33,9 +33,9 @@ class DTLSPeerGroup[M](val config: Config)(
 
   private val serverConnector = createServerConnector()
 
-  private val channelSubject  = PublishSubject[ServerEvent[InetMultiAddress, M]]()
-  private val connectableObservable = ConnectableObservable.cacheUntilConnect(channelSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
-
+  private val channelSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
+  private val connectableObservable =
+    ConnectableObservable.cacheUntilConnect(channelSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
 
   private val activeChannels = new ConcurrentHashMap[ChannelId, ChannelImpl]().asScala
 
@@ -68,11 +68,8 @@ class DTLSPeerGroup[M](val config: Config)(
   private class ChannelImpl(val to: InetMultiAddress, dtlsConnector: DTLSConnector)(implicit codec: Codec[M])
       extends Channel[InetMultiAddress, M] {
 
-
-    val channelSubject  = PublishSubject[M]()
+    val channelSubject = PublishSubject[M]()
     private val connectableObservable = ConnectableObservable.cacheUntilConnect(channelSubject, PublishSubject[M]())
-
-
 
     override val in: ConnectableObservable[M] = connectableObservable
 
@@ -81,7 +78,7 @@ class DTLSPeerGroup[M](val config: Config)(
       val buffer = codec.encode(message)
 
       Task
-        .async[Unit]{ cb:Callback[Throwable,Unit] =>
+        .async[Unit] { cb: Callback[Throwable, Unit] =>
           val messageCallback = new MessageCallback {
             override def onConnecting(): Unit = ()
             override def onDtlsRetransmission(i: Int): Unit = ()

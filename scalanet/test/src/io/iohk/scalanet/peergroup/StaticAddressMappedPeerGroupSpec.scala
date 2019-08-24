@@ -27,8 +27,8 @@ class StaticAddressMappedPeerGroupSpec extends FlatSpec {
       "Bob"
     ) { (alice, bob) =>
       println(s"Alice is ${alice.processAddress}, bob is ${bob.processAddress}")
-      val alicesMessage = "Hi Bob"//Random.alphanumeric.take(1024).mkString
-      val bobsMessage = "Hi Alice"//Random.alphanumeric.take(1024).mkString
+      val alicesMessage = "Hi Bob" //Random.alphanumeric.take(1024).mkString
+      val bobsMessage = "Hi Alice" //Random.alphanumeric.take(1024).mkString
 
       bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).evaluated).runToFuture
       val bobReceived: Future[String] =

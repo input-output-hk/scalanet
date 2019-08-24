@@ -13,8 +13,9 @@ import scala.collection.concurrent.TrieMap
 class InMemoryPeerGroup[A, M](address: A)(implicit network: Network[A, M]) extends PeerGroup[A, M] {
 
   private[peergroup] var status: PeerStatus = PeerStatus.NotInitialized
-  private[peergroup] val channelStream  = PublishSubject[ServerEvent[A, M]]()
-  private[peergroup] val connectableObservable = ConnectableObservable.cacheUntilConnect(channelStream, PublishSubject[ServerEvent[A, M]]())
+  private[peergroup] val channelStream = PublishSubject[ServerEvent[A, M]]()
+  private[peergroup] val connectableObservable =
+    ConnectableObservable.cacheUntilConnect(channelStream, PublishSubject[ServerEvent[A, M]]())
 
   private[peergroup] val channelsMap: TrieMap[ChannelID, InMemoryChannel[A, M]] = TrieMap()
 
@@ -116,9 +117,8 @@ object InMemoryPeerGroup {
   class InMemoryChannel[A, M](channelID: ChannelID, myAddress: A, destination: A)(implicit network: Network[A, M])
       extends Channel[A, M] {
     private var channelStatus: ChannelStatus = ChannelStatus.Opened
-    private val messagesQueue  = PublishSubject[M]()
+    private val messagesQueue = PublishSubject[M]()
     private val connectableObservable = ConnectableObservable.cacheUntilConnect(messagesQueue, PublishSubject[M]())
-
 
     private[InMemoryPeerGroup] def depositMessage(m: M): Unit = messagesQueue.onNext(m)
 

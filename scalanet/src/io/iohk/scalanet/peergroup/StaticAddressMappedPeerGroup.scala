@@ -31,14 +31,15 @@ class StaticAddressMappedPeerGroup[A, AA, M](
       new ChannelImpl(to, underlyingChannel)
     }
 
- private val observable = underLyingPeerGroup.server().map {
+  private val observable = underLyingPeerGroup.server().map {
     case ChannelCreated(underlyingChannel) =>
       val a = reverseLookup(underlyingChannel.to)
       ChannelCreated[A, M](new ChannelImpl(a, underlyingChannel))
     case HandshakeFailed(failure) =>
       HandshakeFailed[A, M](new HandshakeException[A](reverseLookup(failure.to), failure.cause))
   }
- private val connectableObservable = ConnectableObservable.cacheUntilConnect(observable, PublishSubject[ServerEvent[A, M]]())
+  private val connectableObservable =
+    ConnectableObservable.cacheUntilConnect(observable, PublishSubject[ServerEvent[A, M]]())
 
   underLyingPeerGroup.server().connect()
 
@@ -56,7 +57,6 @@ class StaticAddressMappedPeerGroup[A, AA, M](
       underlyingChannel.sendMessage(message)
 
     override def in: ConnectableObservable[M] = underlyingChannel.in
-
 
     override def close(): Task[Unit] =
       underlyingChannel.close()

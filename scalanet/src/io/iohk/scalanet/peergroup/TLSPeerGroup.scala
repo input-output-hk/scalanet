@@ -61,9 +61,10 @@ class TLSPeerGroup[M](val config: Config)(
     .ciphers(TLSPeerGroup.supportedCipherSuites.asJava)
     .build()
 
-  private val serverSubject  = PublishSubject[ServerEvent[InetMultiAddress, M]]()
+  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
 
-  private val connectableObservable = ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
+  private val connectableObservable =
+    ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -219,7 +220,7 @@ object TLSPeerGroup {
     private val deactivationF = deactivation.future
 
     private val messageSubject = PublishSubject[M]()
-    private val connectableObservable= ConnectableObservable.cacheUntilConnect(messageSubject,PublishSubject[M]())
+    private val connectableObservable = ConnectableObservable.cacheUntilConnect(messageSubject, PublishSubject[M]())
 
     private val bootstrap: Bootstrap = clientBootstrap
       .clone()
@@ -320,7 +321,8 @@ object TLSPeerGroup {
     private val log = LoggerFactory.getLogger(getClass)
     implicit val scheduler: Scheduler = Scheduler.global
     val messageSubject = PublishSubject[M]()
-    val connectableObservable: ConnectableObservable[M] = ConnectableObservable.cacheUntilConnect(messageSubject,PublishSubject[M]())
+    val connectableObservable: ConnectableObservable[M] =
+      ConnectableObservable.cacheUntilConnect(messageSubject, PublishSubject[M]())
 
     log.debug(
       s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"

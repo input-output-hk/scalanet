@@ -9,7 +9,12 @@ import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, ServerEvent, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.{
+  ChannelBrokenException,
+  ChannelSetupException,
+  ServerEvent,
+  TerminalPeerGroup
+}
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
@@ -44,8 +49,9 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
   private val log = LoggerFactory.getLogger(getClass)
   implicit val scheduler: Scheduler = Scheduler.global
 
-  private val serverSubject  = PublishSubject[ServerEvent[InetMultiAddress, M]]()
-  private val connectableObservable = ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
+  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
+  private val connectableObservable =
+    ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -113,7 +119,6 @@ object TCPPeerGroup {
     private val log = LoggerFactory.getLogger(getClass)
     private val messageSubject = PublishSubject[M]()
     private val connectableObservable = ConnectableObservable.cacheUntilConnect(messageSubject, PublishSubject[M]())
-
 
     log.debug(
       s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
