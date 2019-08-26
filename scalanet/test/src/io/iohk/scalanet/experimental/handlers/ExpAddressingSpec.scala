@@ -1,26 +1,25 @@
-package io.iohk.scalanet.experimental
+package io.iohk.scalanet.experimental.handlers
 
-import io.iohk.decco.auto._
-import io.iohk.scalanet.codec.FramingCodec
+import java.net.InetSocketAddress
+
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-import io.iohk.decco.Codec
+import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils
+import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.experimental.handlers.ExpAddressing.{AddressHeader, HeaderAddressingConfig}
+import monix.execution.Scheduler.Implicits.global
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
+import org.scalatest.concurrent.ScalaFutures._
 
 import scala.concurrent.duration._
-import monix.execution.Scheduler.Implicits.global
-import org.scalatest.concurrent.ScalaFutures._
-import io.iohk.scalanet.TaskValues._
-
 import scala.util.Random
 
-class TCPExpPeerGroupSpec extends FlatSpec {
+class ExpAddressingSpec extends FlatSpec {
 
   implicit val patienceConfig = PatienceConfig(5 seconds)
-  implicit val codec = new FramingCodec(Codec[String])
 
-  behavior of "TCPExpPeerGroup"
+  behavior of "ExpAddressing"
 
   it should "send and receive messages" in {
     val aliceAddress = NetUtils.aRandomAddress()
@@ -35,17 +34,20 @@ class TCPExpPeerGroupSpec extends FlatSpec {
     println(s"Alice message: $alicesMessage")
     println(s"bob message: $bobsMessage")
 
-    val alice = new TCPExpPeerGroup[String](aliceAddress)
-    val bob = new TCPExpPeerGroup[String](bobAddress)
+    val aliceUnd = new UDPExpPeerGroup[AddressHeader[String, String]](aliceAddress)
+    val bobUnd = new UDPExpPeerGroup[AddressHeader[String, String]](bobAddress)
 
-    alice onConnectionArrival { _ =>
-      throw new Exception("Alice should receive no connection")
-    }
+    val alice =
+      new ExpAddressing[String, InetSocketAddress, String](aliceUnd, HeaderAddressingConfig("alice")) {
+        override def underlyingAddress(applicationAddress: String): InetSocketAddress =
+          if (applicationAddress == "alice") aliceAddress else bobAddress
+      }
 
-    bob onConnectionArrival { connection =>
-      println(s"Bob received a connection from ${connection.underlyingAddress}")
-      connection.underlyingAddress.getAddress shouldBe aliceAddress.getAddress
-    }
+    val bob =
+      new ExpAddressing[String, InetSocketAddress, String](bobUnd, HeaderAddressingConfig("bob")) {
+        override def underlyingAddress(applicationAddress: String): InetSocketAddress =
+          if (applicationAddress == "alice") aliceAddress else bobAddress
+      }
 
     alice onMessageReception { envelope =>
       println("Alice received a message")
@@ -55,13 +57,13 @@ class TCPExpPeerGroupSpec extends FlatSpec {
     bob onMessageReception { envelope =>
       println(s"Bob received a message")
       envelope.msg shouldBe alicesMessage
-      envelope.channel.sendMessage(bobsMessage).evaluated
+      envelope.channel.sendMessage(bobsMessage)
     }
 
     alice.connect().evaluated
     bob.connect().evaluated
 
-    val aliceClient = alice.client(bob.processAddress).evaluated
+    val aliceClient = alice.client("bob").evaluated
     aliceClient.sendMessage(alicesMessage).evaluated
 
     Thread.sleep(1000)
@@ -77,4 +79,5 @@ class TCPExpPeerGroupSpec extends FlatSpec {
     alice.shutdown().evaluated
     bob.shutdown().evaluated
   }
+
 }

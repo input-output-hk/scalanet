@@ -1,4 +1,4 @@
-package io.iohk.scalanet.experimental
+package io.iohk.scalanet.experimental.handlers
 
 import java.net.InetSocketAddress
 

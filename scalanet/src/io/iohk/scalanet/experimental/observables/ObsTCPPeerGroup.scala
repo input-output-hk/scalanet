@@ -1,11 +1,11 @@
-package io.iohk.scalanet.experimental
-
+package io.iohk.scalanet.experimental.observables
 import java.io.IOException
 import java.net.{ConnectException, InetSocketAddress}
 import java.nio.ByteBuffer
 
 import io.iohk.decco.BufferInstantiator
 import io.iohk.scalanet.codec.StreamCodec
+import io.iohk.scalanet.experimental._
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException}
@@ -16,25 +16,28 @@ import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import monix.eval.Task
+import monix.execution.Scheduler
+import monix.reactive.subjects.ConcurrentSubject
+import monix.reactive.{MulticastStrategy, Observable, Observer}
 import org.slf4j.LoggerFactory
 
 import scala.collection.mutable
 import scala.concurrent.Promise
 import scala.util.control.NonFatal
 
-class TCPExpPeerGroup[M](address: InetSocketAddress)(
+class ObsTCPPeerGroup[M](address: InetSocketAddress)(
     implicit
     codec: StreamCodec[M],
-    bi: BufferInstantiator[ByteBuffer]
-) extends EPeerGroup[InetSocketAddress, M] {
+    bi: BufferInstantiator[ByteBuffer],
+    scheduler: Scheduler
+) extends ObsPeerGroup[InetSocketAddress, M] {
 
   private val log = LoggerFactory.getLogger(getClass)
 
   private val workerGroup = new NioEventLoopGroup()
 
-  private val messageHandlers = createSet[Envelope[InetSocketAddress, M] => Unit]
-
-  private val connectionHandlers = createSet[EConnection[M] => Unit]
+  private val connectionsSubject = ConcurrentSubject[ObsConnection[M]](MulticastStrategy.publish)
+  private val messageHandler = createSet[Observer[ObsEnvelope[InetSocketAddress, M]]]
 
   private val clientBootstrap = new Bootstrap()
     .group(workerGroup)
@@ -47,7 +50,7 @@ class TCPExpPeerGroup[M](address: InetSocketAddress)(
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(nettyChannel: SocketChannel): Unit = {
-        for (h <- connectionHandlers) h(new TCPEConnection[M](nettyChannel, codec, bi))
+        connectionsSubject.onNext(TCPObsConnection(nettyChannel, codec, bi))
         nettyChannel
           .pipeline()
           .addLast(new ChannelInboundHandlerAdapter {
@@ -60,11 +63,9 @@ class TCPExpPeerGroup[M](address: InetSocketAddress)(
                 )
                 for {
                   message <- codec.streamDecode(byteBuf.nioBuffer())(bi)
-                  h <- messageHandlers
+                  o <- messageHandler
                   ch = ctx.channel().asInstanceOf[SocketChannel]
-                } h(
-                  Envelope(new TCPEServerChannel[M](ch, codec, bi), ch.remoteAddress(), message)
-                )
+                } o.onNext(ObsEnvelope(TCPObsServerChannel(ch, codec, bi), ch.remoteAddress(), message))
               } finally {
                 byteBuf.release()
               }
@@ -85,22 +86,17 @@ class TCPExpPeerGroup[M](address: InetSocketAddress)(
       case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
     }
 
-  override def client(to: InetSocketAddress): Task[EChannel[InetSocketAddress, M]] = {
-    new TCPExpChannel[M](messageHandlers, clientBootstrap.clone(), codec, bi, to).initialize
+  override def client(to: InetSocketAddress): Task[ObsChannel[M]] = {
+    TCPObsClientChannel[M](messageHandler, clientBootstrap, codec.cleanSlate, bi, to).initialize
   }
 
-  override def onConnectionArrival(connectionHandler: EConnection[M] => Unit): Unit = {
-    connectionHandlers += connectionHandler
-    log.info(
-      s"Connection's handled registered by $processAddress.\nThere are ${connectionHandlers.size} handlers for the next connection"
-    )
-  }
+  override def incomingConnections(): Observable[ObsConnection[M]] = connectionsSubject
 
-  override def onMessageReception(handler: Envelope[InetSocketAddress, M] => Unit): Unit = {
-    messageHandlers += handler
-    log.info(
-      s"Meesage's handler registered by $processAddress.\nThere are ${messageHandlers.size} handlers for the next message"
-    )
+  override def onMessageReception(feedTo: Observer[ObsEnvelope[InetSocketAddress, M]]): Unit = {
+    if (messageHandler.isEmpty) {
+      messageHandler += feedTo
+    }
+    log.info(s"Handler registered by $processAddress")
   }
 
   override def shutdown(): Task[Unit] = {
@@ -111,13 +107,13 @@ class TCPExpPeerGroup[M](address: InetSocketAddress)(
   }
 }
 
-class TCPExpChannel[M](
-    handlers: mutable.Set[Envelope[InetSocketAddress, M] => Unit],
+case class TCPObsClientChannel[M](
+    handler: mutable.Set[Observer[ObsEnvelope[InetSocketAddress, M]]],
     clientBootstrap: Bootstrap,
     codec: StreamCodec[M],
     bi: BufferInstantiator[ByteBuffer],
     remoteAddress: InetSocketAddress
-) extends EChannel[InetSocketAddress, M] {
+) extends ObsChannel[M] { channelSelf =>
 
   private val activation = Promise[ChannelHandlerContext]()
   private val activationF = activation.future
@@ -151,11 +147,8 @@ class TCPExpChannel[M](
                 )
                 for {
                   message <- codec.streamDecode(byteBuf.nioBuffer())(bi)
-                  h <- handlers
-                  ch = ctx.channel().asInstanceOf[SocketChannel]
-                } h(
-                  Envelope(new TCPEServerChannel[M](ch, codec, bi), ch.remoteAddress(), message)
-                )
+                  o <- handler
+                } o.onNext(ObsEnvelope(channelSelf, remoteAddress, message))
               } finally {
                 byteBuf.release()
               }
@@ -164,7 +157,7 @@ class TCPExpChannel[M](
       }
     })
 
-  def initialize: Task[TCPExpChannel[M]] = {
+  def initialize: Task[ObsChannel[M]] = {
     toTask(clientBootstrap.connect(remoteAddress))
       .onErrorRecoverWith {
         case e: ConnectException =>
@@ -196,11 +189,12 @@ class TCPExpChannel[M](
       .flatMap(_ => Task.fromFuture(deactivationF))
 }
 
-class TCPEServerChannel[M](
+case class TCPObsServerChannel[M](
     nettyChannel: SocketChannel,
     codec: StreamCodec[M],
     bi: BufferInstantiator[ByteBuffer]
-) extends EChannel[InetSocketAddress, M] {
+) extends ObsChannel[M] {
+
   override def to: InetSocketAddress = nettyChannel.remoteAddress()
 
   override def sendMessage(m: M): Task[Unit] =
@@ -211,18 +205,17 @@ class TCPEServerChannel[M](
       }
 
   override def close(): Task[Unit] = toTask(nettyChannel.close())
-
 }
 
-class TCPEConnection[M](
+case class TCPObsConnection[M](
     nettyChannel: SocketChannel,
     codec: StreamCodec[M],
     bi: BufferInstantiator[ByteBuffer]
-) extends EConnection[M] {
+) extends ObsConnection[M] {
 
-  override def underlyingAddress: InetSocketAddress = nettyChannel.remoteAddress()
+  override def from: InetSocketAddress = nettyChannel.remoteAddress()
 
-  override def replyWith(m: M): Task[Unit] =
+  override def sendMessage(m: M): Task[Unit] =
     toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(m)(bi))))
       .onErrorRecoverWith {
         case e: IOException =>

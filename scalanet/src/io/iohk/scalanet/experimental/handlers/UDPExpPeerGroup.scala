@@ -1,10 +1,11 @@
-package io.iohk.scalanet.experimental
+package io.iohk.scalanet.experimental.handlers
 
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 
 import io.iohk.decco.{BufferInstantiator, Codec}
+import io.iohk.scalanet.experimental.createSet
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetMultiAddress
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask

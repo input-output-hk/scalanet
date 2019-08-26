@@ -1,8 +1,10 @@
-package io.iohk.scalanet.experimental
+package io.iohk.scalanet.experimental.handlers
 
 import java.net.InetSocketAddress
 
 import monix.eval.Task
+
+case class Envelope[A, M](channel: EChannel[A, M], remoteAddress: A, msg: M)
 
 trait EPeerGroup[A, M] {
   def processAddress: A

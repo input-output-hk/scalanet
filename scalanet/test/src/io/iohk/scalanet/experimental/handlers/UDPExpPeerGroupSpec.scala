@@ -1,18 +1,16 @@
-package io.iohk.scalanet.experimental
+package io.iohk.scalanet.experimental.handlers
 
-import io.iohk.decco.auto._
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils
+import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.experimental.NettyUDPWrapper
+import monix.execution.Scheduler.Implicits.global
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
+import org.scalatest.concurrent.ScalaFutures._
 
 import scala.concurrent.duration._
-
-import monix.execution.Scheduler.Implicits.global
-
-import org.scalatest.concurrent.ScalaFutures._
-import io.iohk.scalanet.TaskValues._
-
 import scala.util.Random
 
 class UDPExpPeerGroupSpec extends FlatSpec {
