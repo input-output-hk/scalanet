@@ -25,7 +25,7 @@ import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.observables.ConnectableObservable
-import monix.reactive.subjects.{PublishSubject, Subject}
+import monix.reactive.subjects.{ConcurrentSubject, PublishSubject, Subject}
 import org.slf4j.LoggerFactory
 
 import scala.concurrent.Promise
@@ -49,7 +49,7 @@ class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: Bu
   private val log = LoggerFactory.getLogger(getClass)
   implicit val scheduler: Scheduler = Scheduler.global
 
-  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
+  private val serverSubject = ConcurrentSubject.publish[ServerEvent[InetMultiAddress, M]]
   private val connectableObservable =
     ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
 
