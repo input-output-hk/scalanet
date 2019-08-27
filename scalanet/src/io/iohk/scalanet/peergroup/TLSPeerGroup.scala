@@ -206,10 +206,10 @@ object TLSPeerGroup {
       sslClientCtx: SslContext,
       codec: StreamCodec[M],
       bi: BufferInstantiator[ByteBuffer]
-  ) extends Channel[InetMultiAddress, M] {
+  )(implicit scheduler: Scheduler)
+      extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
-    implicit val scheduler: Scheduler = Scheduler.global
 
     val to: InetMultiAddress = InetMultiAddress(inetSocketAddress)
 
@@ -316,10 +316,10 @@ object TLSPeerGroup {
       sslServerCtx: SslContext,
       codec: StreamCodec[M],
       bi: BufferInstantiator[ByteBuffer]
-  ) extends Channel[InetMultiAddress, M] {
+  )(implicit scheduler: Scheduler)
+      extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
-    implicit val scheduler: Scheduler = Scheduler.global
     val messageSubject = PublishSubject[M]()
     val connectableObservable: ConnectableObservable[M] =
       ConnectableObservable.cacheUntilConnect(messageSubject, PublishSubject[M]())
