@@ -15,7 +15,7 @@ import org.scalatest.{BeforeAndAfterAll, FlatSpec}
 
 import scala.concurrent.duration._
 
-class TCPPeerGroupCachetUntilConnectSpec extends FlatSpec with BeforeAndAfterAll {
+class TCPPeerGroupCachedUntilConnectSpec extends FlatSpec with BeforeAndAfterAll {
 
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(10 seconds)
 
