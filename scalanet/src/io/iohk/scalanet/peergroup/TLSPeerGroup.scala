@@ -45,11 +45,11 @@ import scala.util.control.NonFatal
   */
 class TLSPeerGroup[M](val config: Config)(
     implicit codec: StreamCodec[M],
-    bi: BufferInstantiator[ByteBuffer]
+    bi: BufferInstantiator[ByteBuffer],
+    scheduler: Scheduler
 ) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
-  implicit val scheduler: Scheduler = Scheduler.global
 
   private val sslClientCtx: SslContext = SslContextBuilder
     .forClient()

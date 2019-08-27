@@ -34,11 +34,10 @@ import scala.util.control.NonFatal
   * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer])
+class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer],scheduler: Scheduler)
     extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
-  implicit val scheduler: Scheduler = Scheduler.global
   val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
   private val connectableObservable =
     ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())

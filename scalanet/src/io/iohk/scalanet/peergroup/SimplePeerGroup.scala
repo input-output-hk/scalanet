@@ -69,8 +69,6 @@ class SimplePeerGroup[A, AA, M](
 
   override def initialize(): Task[Unit] = {
     try {
-      implicit val scheduler: Scheduler = Scheduler.global
-
       routingTable += processAddress -> underLyingPeerGroup.processAddress
 
       underLyingPeerGroup
