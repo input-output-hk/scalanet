@@ -20,7 +20,8 @@ import monix.reactive.subjects.PublishSubject
 class StaticAddressMappedPeerGroup[A, AA, M](
     val config: Config[A, AA],
     underLyingPeerGroup: PeerGroup[AA, M]
-)(implicit scheduler: Scheduler) extends PeerGroup[A, M] {
+)(implicit scheduler: Scheduler)
+    extends PeerGroup[A, M] {
 
   private val reverseLookup = config.knownPeers.map(_.swap)
   override def processAddress: A = config.processAddress

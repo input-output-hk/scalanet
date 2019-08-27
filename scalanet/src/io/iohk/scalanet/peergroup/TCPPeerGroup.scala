@@ -43,8 +43,11 @@ import scala.util.control.NonFatal
   *              to provide stream delimiting.
   * @tparam M the message type.
   */
-class TCPPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M], bi: BufferInstantiator[ByteBuffer],scheduler: Scheduler)
-    extends TerminalPeerGroup[InetMultiAddress, M]() {
+class TCPPeerGroup[M](val config: Config)(
+    implicit codec: StreamCodec[M],
+    bi: BufferInstantiator[ByteBuffer],
+    scheduler: Scheduler
+) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
   private val serverSubject = ConcurrentSubject.publish[ServerEvent[InetMultiAddress, M]]

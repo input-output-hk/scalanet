@@ -38,10 +38,8 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   it should "report an error for messaging on a closed channel -- server closes" in
     withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
-      val alicesMessage = Random.alphanumeric.take(1024).mkString
-      bob.server().collectChannelCreated.foreach(_.in.connect())
+      val alicesMessage = "Hi Alice"
       bob.server().connect()
-
       bob.server().collectChannelCreated.foreachL(channel => channel.close().runToFuture).runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
