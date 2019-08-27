@@ -45,13 +45,16 @@ object StandardTestPack {
 
     val aliceReceived1 = aliceClient1.in.headL.runToFuture
     val aliceReceived2 = aliceClient2.in.headL.runToFuture
-
     aliceClient1.sendMessage(alicesMessage).runToFuture
+    aliceClient2.sendMessage(alicesMessage).runToFuture
+
     aliceClient1.in.connect()
     aliceClient2.in.connect()
     bob.server().collectChannelCreated.foreach(channel => channel.in.connect())
     bob.server().connect()
     aliceReceived1.futureValue shouldBe bobsMessage
+    aliceReceived2.futureValue shouldBe bobsMessage
+
     recoverToSucceededIf[IllegalStateException](aliceReceived2)
   }
 
