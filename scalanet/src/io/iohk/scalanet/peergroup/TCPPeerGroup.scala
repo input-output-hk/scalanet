@@ -114,8 +114,8 @@ object TCPPeerGroup {
       val nettyChannel: SocketChannel,
       codec: StreamCodec[M],
       bi: BufferInstantiator[ByteBuffer]
-  ) extends Channel[InetMultiAddress, M] {
-    import monix.execution.Scheduler.Implicits.global
+  )(implicit scheduler: Scheduler)
+      extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
     private val messageSubject = PublishSubject[M]()
@@ -152,7 +152,8 @@ object TCPPeerGroup {
       clientBootstrap: Bootstrap,
       codec: StreamCodec[M],
       bi: BufferInstantiator[ByteBuffer]
-  ) extends Channel[InetMultiAddress, M] {
+  )(implicit scheduler: Scheduler)
+      extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
 
@@ -162,7 +163,6 @@ object TCPPeerGroup {
     private val activationF = activation.future
     private val deactivation = Promise[Unit]()
     private val deactivationF = deactivation.future
-    import monix.execution.Scheduler.Implicits.global
 
     private val messageSubject = PublishSubject[M]()
     private val connectableObservable = ConnectableObservable.cacheUntilConnect(messageSubject, PublishSubject[M]())
