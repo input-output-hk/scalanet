@@ -36,6 +36,7 @@ class StaticAddressMappedPeerGroup[A, AA, M](
         ChannelCreated(new ChannelImpl(a, underlyingChannel))
       case HandshakeFailed(failure) =>
         HandshakeFailed[A, M](new HandshakeException[A](reverseLookup(failure.to), failure.cause))
+      case NewConnectionArrived(connection) => ???
     }
   }
 

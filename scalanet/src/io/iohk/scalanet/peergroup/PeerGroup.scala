@@ -120,6 +120,12 @@ trait PeerGroup[A, M] {
   def shutdown(): Task[Unit]
 }
 
+trait Connection[M] {
+  def from: InetMultiAddress
+  def sendMessage(m: M): Task[Unit]
+  def close(): Task[Unit]
+}
+
 object PeerGroup {
 
   abstract class TerminalPeerGroup[A, M](implicit codec: Codec[M]) extends PeerGroup[A, M]
@@ -149,6 +155,8 @@ object PeerGroup {
         case HandshakeFailed(failure) => failure
       }
     }
+
+    case class NewConnectionArrived[A, M](connection: Connection[M]) extends ServerEvent[A, M]
 
     implicit class ServerOps[A, M](observable: Observable[ServerEvent[A, M]]) {
       def collectChannelCreated: Observable[Channel[A, M]] = observable.collect(ChannelCreated.collector)
