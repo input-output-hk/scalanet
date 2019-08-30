@@ -26,12 +26,6 @@ object InetPeerGroupUtils {
     }
   }
 
-  def toTask[T](f: => Cancelable)(implicit tag: ClassTag[T]): Task[Cancelable] = {
-    Task.create[Cancelable] { (_, _) =>
-      f
-    }
-  }
-
   def getChannelId(remoteAddress: InetSocketAddress, localAddress: InetSocketAddress): ChannelId = {
     (remoteAddress, localAddress)
   }
