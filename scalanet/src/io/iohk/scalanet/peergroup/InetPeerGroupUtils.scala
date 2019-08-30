@@ -1,12 +1,8 @@
 package io.iohk.scalanet.peergroup
-
 import java.net.InetSocketAddress
-
 import io.netty.util
 import monix.eval.Task
 import monix.execution.Cancelable
-
-import scala.reflect.ClassTag
 
 object InetPeerGroupUtils {
 
