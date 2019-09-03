@@ -14,8 +14,6 @@ object Xor {
   }
 
   private def roundUp(i: Long): Long = {
-    var u = i
-    while (u % 8 != 0) u += 1
-    u
+    i + (8 - i % 8) % 8
   }
 }
