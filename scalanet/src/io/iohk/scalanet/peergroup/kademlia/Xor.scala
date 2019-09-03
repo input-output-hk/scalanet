@@ -6,6 +6,16 @@ object Xor {
 
   def d(a: BitVector, b: BitVector): BigInt = {
     assert(a.length == b.length)
-    BigInt((a xor b).toBin, 2)
+    BigInt(1, alignRight(a xor b).toByteArray)
+  }
+
+  private def alignRight(b: BitVector): BitVector = {
+    BitVector.low(roundUp(b.length) - b.length) ++ b
+  }
+
+  private def roundUp(i: Long): Long = {
+    var u = i
+    while (u % 8 != 0) u += 1
+    u
   }
 }

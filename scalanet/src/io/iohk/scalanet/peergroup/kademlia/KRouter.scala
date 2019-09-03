@@ -43,8 +43,7 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
   // Handle findNodes requests...
   network.findNodes.foreach {
     case (findNodesRequest, responseHandler) =>
-      val (uuid, nodeRecord, targetNodeId) =
-        (findNodesRequest.requestId, findNodesRequest.nodeRecord, findNodesRequest.targetNodeId)
+      val FindNodes(uuid, nodeRecord, targetNodeId) = findNodesRequest
 
       debug(
         s"Received request FindNodes(${nodeRecord.id.toHex}, $nodeRecord, ${targetNodeId.toHex})"

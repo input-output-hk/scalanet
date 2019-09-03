@@ -38,19 +38,13 @@ object KNetwork {
       extends KNetwork[A] {
 
     override def findNodes(to: NodeRecord[A], message: FindNodes[A]): Task[Nodes[A]] = {
-      for {
-        clientChannel <- peerGroup.client(to.routingAddress)
-        _ <- clientChannel
-          .sendMessage(message)
-          .timeout(requestTimeout)
-          .doOnFinish(closeIfAnError(clientChannel))
-        nodes <- clientChannel.in
-          .collect { case n @ Nodes(_, _, _) => n }
-          .headL
-          .timeout(requestTimeout)
-          .doOnFinish(closeIfAnError(clientChannel))
-        _ <- clientChannel.close()
-      } yield nodes
+      peerGroup
+        .client(to.routingAddress)
+        .bracket { clientChannel =>
+          makeFindNodesRequest(message, clientChannel)
+        } { clientChannel =>
+          clientChannel.close()
+        }
     }
 
     override def findNodes: Observable[(FindNodes[A], Nodes[A] => Task[Unit])] = {
@@ -64,6 +58,16 @@ object KNetwork {
           .timeout(requestTimeout)
           .doOnFinish(closeIfAnError(channel))
       }
+    }
+
+    private def makeFindNodesRequest(message: FindNodes[A], clientChannel: Channel[A, KMessage[A]]): Task[Nodes[A]] = {
+      for {
+        _ <- clientChannel.sendMessage(message).timeout(requestTimeout)
+        nodes <- clientChannel.in
+          .collect { case n @ Nodes(_, _, _) => n }
+          .headL
+          .timeout(requestTimeout)
+      } yield nodes
     }
 
     private def closeIfAnError(
