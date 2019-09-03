@@ -188,10 +188,13 @@ object PeerGroup {
     *         for creating peer groups at application startup, where you would like to abort the startup
     *         process when errors arise.
     */
-  def createOrThrow[PG <: PeerGroup[_, _]](pg: => PG, config: Any)(implicit scheduler: Scheduler): PG =
+  def createOrThrow[PG <: PeerGroup[_, _]](pg: => PG, config: Any)(
+      implicit scheduler: Scheduler
+  ): PG =
     try {
-      Await.result(pg.initialize().runAsync, Duration.Inf)
-      pg
+      val peerGroup = pg
+      Await.result(peerGroup.initialize().runAsync, Duration.Inf)
+      peerGroup
     } catch {
       case t: Throwable =>
         throw new IllegalStateException(initializationErrorMsg(config), t)

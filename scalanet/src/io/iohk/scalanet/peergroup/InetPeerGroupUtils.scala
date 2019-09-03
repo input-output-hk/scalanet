@@ -1,6 +1,7 @@
 package io.iohk.scalanet.peergroup
 
-import java.net.InetSocketAddress
+import java.net.{InetSocketAddress, ServerSocket}
+
 import io.netty.util
 import monix.eval.Task
 import monix.execution.Cancelable
@@ -25,5 +26,14 @@ object InetPeerGroupUtils {
 
   def getChannelId(remoteAddress: InetSocketAddress, localAddress: InetSocketAddress): ChannelId = {
     (remoteAddress, localAddress)
+  }
+
+  def aRandomAddress(): InetSocketAddress = {
+    val s = new ServerSocket(0)
+    try {
+      new InetSocketAddress("localhost", s.getLocalPort)
+    } finally {
+      s.close()
+    }
   }
 }

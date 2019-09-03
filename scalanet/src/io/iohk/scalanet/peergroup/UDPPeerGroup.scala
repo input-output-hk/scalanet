@@ -142,9 +142,8 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
 
     override def in: Observable[M] = messageSubject
 
-    override def close(): Task[Unit] = {
+    override def close(): Task[Unit] = Task {
       messageSubject.onComplete()
-      Task.unit
     }
 
     private def sendMessage(
@@ -162,7 +161,7 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
     }
   }
 
-  private val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
+  private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
 
   override def initialize(): Task[Unit] =
     toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}")).onErrorRecoverWith {
@@ -194,8 +193,8 @@ class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M], bufferInstan
   override def server(): Observable[ServerEvent[InetMultiAddress, M]] = serverSubject
 
   override def shutdown(): Task[Unit] = {
-    serverSubject.onComplete()
     for {
+      _ <- Task(serverSubject.onComplete())
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
     } yield ()
