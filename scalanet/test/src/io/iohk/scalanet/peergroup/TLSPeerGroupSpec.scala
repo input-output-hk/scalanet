@@ -58,7 +58,7 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   it should "report an error for messaging to an invalid address" in
     withATLSPeerGroup[String](selfSignedCertConfig) { alice =>
-      StandardTestPack.shouldErrorForMessagingAnInvalidAddress(alice,NetUtils.aRandomAddress())
+      StandardTestPack.shouldErrorForMessagingAnInvalidAddress(alice, NetUtils.aRandomAddress())
     }
 
   // TODO this is a copy/paste version of the test in TCPPeerGroupSpec
@@ -120,8 +120,8 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
       alice.client(bob.processAddress).evaluated
       alice.client(bob.processAddress).evaluated
 
-     // firstInbound.futureValue.to shouldBe alice.processAddress
-     // secondInbound.futureValue.to shouldBe alice.processAddress
+    // firstInbound.futureValue.to shouldBe alice.processAddress
+    // secondInbound.futureValue.to shouldBe alice.processAddress
     }
 
   it should "throw InitializationError when port already in use" in {

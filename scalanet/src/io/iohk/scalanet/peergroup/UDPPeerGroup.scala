@@ -194,7 +194,7 @@ class UDPPeerGroup[M](val config: Config)(
       }
       .onErrorRecoverWith {
         case e: Throwable =>
-          Task.raiseError(new ChannelSetupException(to,e))
+          Task.raiseError(new ChannelSetupException(to, e))
       }
   }
 

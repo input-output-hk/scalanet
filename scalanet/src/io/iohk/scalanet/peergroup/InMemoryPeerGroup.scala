@@ -17,7 +17,7 @@ class InMemoryPeerGroup[A, M](address: A)(implicit network: Network[A, M]) exten
   private[peergroup] val connectableObservable =
     ConnectableObservable.cacheUntilConnect(channelStream, PublishSubject[ServerEvent[A, M]]())
 
-  private[peergroup] val channelsMap: TrieMap[ChannelID, InMemoryChannel[A,M]] = TrieMap()
+  private[peergroup] val channelsMap: TrieMap[ChannelID, InMemoryChannel[A, M]] = TrieMap()
 
   def receiveMessage(channelID: ChannelID, from: A, msg: M): Unit = {
     channelsMap.get(channelID) match {
@@ -39,9 +39,9 @@ class InMemoryPeerGroup[A, M](address: A)(implicit network: Network[A, M]) exten
       status = PeerStatus.Listening
       network.register(this)
     }
-  override def client(to: A): Result[InMemoryChannel[A,M]] = {
+  override def client(to: A): Result[InMemoryChannel[A, M]] = {
     val channelID = newChannelID()
-    val newChannel = new InMemoryChannel[A,M](channelID, processAddress, to)
+    val newChannel = new InMemoryChannel[A, M](channelID, processAddress, to)
     channelsMap += (channelID -> newChannel)
     allGood(newChannel)
   }
@@ -114,7 +114,7 @@ object InMemoryPeerGroup {
   def error(msg: String): Result[Nothing] = Task.raiseError(new Exception(msg))
 
   // Reference Channel trait
-  class InMemoryChannel[A,M](channelID: ChannelID, myAddress: A, destination: A)(implicit network: Network[A, M])
+  class InMemoryChannel[A, M](channelID: ChannelID, myAddress: A, destination: A)(implicit network: Network[A, M])
       extends Channel[M] {
     private var channelStatus: ChannelStatus = ChannelStatus.Opened
     private val messagesQueue = PublishSubject[M]()
@@ -124,7 +124,8 @@ object InMemoryPeerGroup {
 
     // Public interface
     //override def to: A = destination
-    override def sendMessage(message: M): Result[Unit] = network.deliverMessage(channelID, myAddress, destination, message)
+    override def sendMessage(message: M): Result[Unit] =
+      network.deliverMessage(channelID, myAddress, destination, message)
     override def in: ConnectableObservable[M] = connectableObservable
     override def close(): Result[Unit] = {
       // Note, what else should be done by close method? E.g. block messages that come to `in`?

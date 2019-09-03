@@ -260,11 +260,11 @@ object TLSPeerGroup {
         }
       })
 
-    private def mapException(to:InetSocketAddress,t: Throwable): Throwable = t match {
+    private def mapException(to: InetSocketAddress, t: Throwable): Throwable = t match {
       case _: ClosedChannelException =>
-        new PeerGroup.ChannelBrokenException(to,t)
+        new PeerGroup.ChannelBrokenException(to, t)
       case _: ConnectException =>
-        new PeerGroup.ChannelSetupException(to,t)
+        new PeerGroup.ChannelSetupException(to, t)
       case _: SSLKeyException =>
         new PeerGroup.HandshakeException(to, t)
       case _ =>
@@ -277,7 +277,7 @@ object TLSPeerGroup {
         .map(_ => this)
         .onErrorRecoverWith {
           case t: Throwable =>
-            Task.raiseError(mapException(inetSocketAddress,t))
+            Task.raiseError(mapException(inetSocketAddress, t))
         }
     }
 

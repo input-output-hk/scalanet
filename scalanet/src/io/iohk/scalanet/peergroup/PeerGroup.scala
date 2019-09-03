@@ -204,8 +204,7 @@ object PeerGroup {
   class ChannelSetupException[A](val to: A, val cause: Throwable)
       extends RuntimeException(s"Error establishing channel.", cause)
 
-  class ChannelBrokenException[A](val to: A, val cause: Throwable)
-      extends RuntimeException(s"Channel broken .", cause)
+  class ChannelBrokenException[A](val to: A, val cause: Throwable) extends RuntimeException(s"Channel broken .", cause)
 
   class MessageMTUException[A](val to: A, val size: Long)
       extends RuntimeException(s"Unsupported message of length $size.")

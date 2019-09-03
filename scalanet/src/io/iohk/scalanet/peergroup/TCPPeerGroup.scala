@@ -9,7 +9,12 @@ import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, ServerEvent, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.{
+  ChannelBrokenException,
+  ChannelSetupException,
+  ServerEvent,
+  TerminalPeerGroup
+}
 import io.iohk.scalanet.peergroup.TCPPeerGroup.{ConnectableObservable, _}
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
@@ -127,13 +132,13 @@ object TCPPeerGroup {
       .pipeline()
       .addLast(new MessageNotifier(messageSubject, codec, bi))
 
-   // override val to: InetSocketAddress = nettyChannel.remoteAddress()
+    // override val to: InetSocketAddress = nettyChannel.remoteAddress()
 
     override def sendMessage(message: M): Task[Unit] = {
       toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
         .onErrorRecoverWith {
           case e: IOException =>
-            Task.raiseError(new ChannelBrokenException(nettyChannel.remoteAddress(),e))
+            Task.raiseError(new ChannelBrokenException(nettyChannel.remoteAddress(), e))
         }
     }
 
@@ -190,7 +195,7 @@ object TCPPeerGroup {
       toTask(bootstrap.connect(inetSocketAddress))
         .onErrorRecoverWith {
           case e: ConnectException =>
-            Task.raiseError(new ChannelSetupException(inetSocketAddress,e))
+            Task.raiseError(new ChannelSetupException(inetSocketAddress, e))
         }
         .map(_ => this)
     }
@@ -207,7 +212,7 @@ object TCPPeerGroup {
         })
         .onErrorRecoverWith {
           case e: IOException =>
-            Task.raiseError(new ChannelBrokenException(inetSocketAddress,e))
+            Task.raiseError(new ChannelBrokenException(inetSocketAddress, e))
         }
         .map(_ => ())
     }
