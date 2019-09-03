@@ -9,13 +9,8 @@ import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import io.iohk.scalanet.peergroup.PeerGroup.{
-  ChannelBrokenException,
-  ChannelSetupException,
-  ServerEvent,
-  TerminalPeerGroup
-}
-import io.iohk.scalanet.peergroup.TCPPeerGroup._
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, ServerEvent, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.TCPPeerGroup.{ConnectableObservable, _}
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
 import io.netty.channel._
@@ -23,12 +18,14 @@ import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import monix.eval.Task
-import monix.execution.Scheduler
+import monix.execution.{Ack, Cancelable, Scheduler}
+import monix.reactive.{Observable, Observer}
 import monix.reactive.observables.ConnectableObservable
+import monix.reactive.observers.Subscriber
 import monix.reactive.subjects.{ConcurrentSubject, PublishSubject, Subject}
 import org.slf4j.LoggerFactory
 
-import scala.concurrent.Promise
+import scala.concurrent.{Future, Promise}
 import scala.util.control.NonFatal
 
 /**
@@ -47,12 +44,12 @@ class TCPPeerGroup[M](val config: Config)(
     implicit codec: StreamCodec[M],
     bi: BufferInstantiator[ByteBuffer],
     scheduler: Scheduler
-) extends TerminalPeerGroup[InetMultiAddress, M]() {
+) extends TerminalPeerGroup[InetSocketAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
-  private val serverSubject = ConcurrentSubject.publish[ServerEvent[InetMultiAddress, M]]
+  private val serverSubject = ConcurrentSubject.publish[ServerEvent[InetSocketAddress, M]]
   private val connectableObservable =
-    ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
+    ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetSocketAddress, M]]())
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -82,13 +79,13 @@ class TCPPeerGroup[M](val config: Config)(
       case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
     }
 
-  override def processAddress: InetMultiAddress = config.processAddress
+  override def processAddress: InetSocketAddress = config.processAddress
 
-  override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
-    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, codec.cleanSlate, bi).initialize
+  override def client(to: InetSocketAddress): Task[Channel[M]] = {
+    new ClientChannelImpl[M](to, clientBootstrap, codec.cleanSlate, bi).initialize
   }
 
-  override def server(): ConnectableObservable[ServerEvent[InetMultiAddress, M]] = connectableObservable
+  override def server(): ConnectableObservable[ServerEvent[InetSocketAddress, M]] = connectableObservable
 
   override def shutdown(): Task[Unit] = {
     serverSubject.onComplete()
@@ -100,14 +97,15 @@ class TCPPeerGroup[M](val config: Config)(
 }
 
 object TCPPeerGroup {
+
   case class Config(
       bindAddress: InetSocketAddress,
-      processAddress: InetMultiAddress,
+      processAddress: InetSocketAddress,
       remoteHostConfig: Map[InetAddress, Int] = Map.empty[InetAddress, Int]
   )
 
   object Config {
-    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, InetMultiAddress(bindAddress))
+    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
   }
 
   private[scalanet] class ServerChannelImpl[M](
@@ -115,7 +113,7 @@ object TCPPeerGroup {
       codec: StreamCodec[M],
       bi: BufferInstantiator[ByteBuffer]
   )(implicit scheduler: Scheduler)
-      extends Channel[InetMultiAddress, M] {
+      extends Channel[M] {
 
     private val log = LoggerFactory.getLogger(getClass)
     private val messageSubject = PublishSubject[M]()
@@ -129,13 +127,13 @@ object TCPPeerGroup {
       .pipeline()
       .addLast(new MessageNotifier(messageSubject, codec, bi))
 
-    override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
+   // override val to: InetSocketAddress = nettyChannel.remoteAddress()
 
     override def sendMessage(message: M): Task[Unit] = {
       toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
         .onErrorRecoverWith {
           case e: IOException =>
-            Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
+            Task.raiseError(new ChannelBrokenException(nettyChannel.remoteAddress(),e))
         }
     }
 
@@ -153,11 +151,11 @@ object TCPPeerGroup {
       codec: StreamCodec[M],
       bi: BufferInstantiator[ByteBuffer]
   )(implicit scheduler: Scheduler)
-      extends Channel[InetMultiAddress, M] {
+      extends Channel[M] {
 
     private val log = LoggerFactory.getLogger(getClass)
 
-    val to: InetMultiAddress = InetMultiAddress(inetSocketAddress)
+    //val to: InetMultiAddress = InetMultiAddress(inetSocketAddress)
 
     private val activation = Promise[ChannelHandlerContext]()
     private val activationF = activation.future
@@ -192,7 +190,7 @@ object TCPPeerGroup {
       toTask(bootstrap.connect(inetSocketAddress))
         .onErrorRecoverWith {
           case e: ConnectException =>
-            Task.raiseError(new ChannelSetupException[InetMultiAddress](to, e))
+            Task.raiseError(new ChannelSetupException(inetSocketAddress,e))
         }
         .map(_ => this)
     }
@@ -209,7 +207,7 @@ object TCPPeerGroup {
         })
         .onErrorRecoverWith {
           case e: IOException =>
-            Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
+            Task.raiseError(new ChannelBrokenException(inetSocketAddress,e))
         }
         .map(_ => ())
     }

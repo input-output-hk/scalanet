@@ -38,14 +38,14 @@ class SimplePeerGroup[A, AA, M](
 
   override def processAddress: A = config.processAddress
 
-  override def client(to: A): Task[Channel[A, M]] = {
+  override def client(to: A): Task[Channel[M]] = {
     val underlyingAddresses: List[AA] = if (routingTable.contains(to)) List(routingTable(to)) else multiCastTable(to)
 
-    val underlyingChannels: Task[List[Channel[AA, Either[ControlMessage[A, AA], M]]]] =
+    val underlyingChannels: Task[List[Channel[Either[ControlMessage[A, AA], M]]]] =
       Task.gatherUnordered(underlyingAddresses.map { aa =>
         underLyingPeerGroup.client(aa)
       })
-    underlyingChannels.map(new ChannelImpl(to, _))
+    underlyingChannels.map(new ChannelImpl(_))
   }
 
   // FIXME pt1 addressing done as part of own proto
@@ -54,8 +54,8 @@ class SimplePeerGroup[A, AA, M](
     val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
     event match {
       case ChannelCreated(underlyingChannel) =>
-        val a = reverseLookup(underlyingChannel.to)
-        ChannelCreated(new ChannelImpl(a, List(underlyingChannel)))
+        //val a = reverseLookup(underlyingChannel.to)
+        ChannelCreated[A,M](new ChannelImpl(List(underlyingChannel)))
       case HandshakeFailed(failure) =>
         HandshakeFailed[A, M](new HandshakeException[A](reverseLookup(failure.to), failure.cause))
     }
@@ -119,12 +119,12 @@ class SimplePeerGroup[A, AA, M](
 
   }
 
-  private class ChannelImpl(val to: A, underlyingChannel: List[Channel[AA, Either[ControlMessage[A, AA], M]]])
-      extends Channel[A, M] {
+  private class ChannelImpl(underlyingChannel: List[Channel[Either[ControlMessage[A, AA], M]]])
+      extends Channel[M] {
 
     override def sendMessage(message: M): Task[Unit] = {
       debug(
-        s"message from local address $processAddress to remote address $to  , $message"
+        s"message from local address $processAddress to channel  , $message"
       )
       Task.gatherUnordered(underlyingChannel.map(_.sendMessage(Right(message)))).map(_ => ())
     }
@@ -133,7 +133,7 @@ class SimplePeerGroup[A, AA, M](
         _.in.collect {
           case Right(message) =>
             debug(
-              s"Processing inbound message from remote address $to to local address $processAddress, $message"
+              s"Processing inbound message from remote address to local address $processAddress, $message"
             )
             message
         }

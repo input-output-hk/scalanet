@@ -29,17 +29,17 @@ class DTLSPeerGroup[M](val config: Config)(
     implicit codec: Codec[M],
     bufferInstantiator: BufferInstantiator[ByteBuffer],
     scheduler: Scheduler
-) extends PeerGroup[InetMultiAddress, M] {
+) extends PeerGroup[InetSocketAddress, M] {
 
   private val serverConnector = createServerConnector()
 
-  private val channelSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
+  private val channelSubject = PublishSubject[ServerEvent[InetSocketAddress, M]]()
   private val connectableObservable =
-    ConnectableObservable.cacheUntilConnect(channelSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
+    ConnectableObservable.cacheUntilConnect(channelSubject, PublishSubject[ServerEvent[InetSocketAddress, M]]())
 
   private val activeChannels = new ConcurrentHashMap[ChannelId, ChannelImpl]().asScala
 
-  override def processAddress: InetMultiAddress = config.processAddress
+  override def processAddress: InetSocketAddress = config.processAddress
 
   override def initialize(): Task[Unit] = {
     Task(serverConnector.start()).onErrorRecoverWith {
@@ -47,17 +47,17 @@ class DTLSPeerGroup[M](val config: Config)(
     }
   }
 
-  override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = Task {
+  override def client(to: InetSocketAddress): Task[Channel[M]] = Task {
     val connector = createClientConnector()
     connector.start()
-    val id = getChannelId(connector.getAddress, to.inetSocketAddress)
+    val id = getChannelId(connector.getAddress, to)
     assert(!activeChannels.contains(id), s"HOUSTON, WE HAVE A MULTIPLEXING PROBLEM")
     val channel = new ClientChannelImpl(to, connector)
     activeChannels.put(id, channel)
     channel
   }
 
-  override def server(): ConnectableObservable[ServerEvent[InetMultiAddress, M]] = connectableObservable
+  override def server(): ConnectableObservable[ServerEvent[InetSocketAddress, M]] = connectableObservable
 
   override def shutdown(): Task[Unit] =
     for {
@@ -65,8 +65,8 @@ class DTLSPeerGroup[M](val config: Config)(
       _ <- Task(serverConnector.destroy())
     } yield ()
 
-  private class ChannelImpl(val to: InetMultiAddress, dtlsConnector: DTLSConnector)(implicit codec: Codec[M])
-      extends Channel[InetMultiAddress, M] {
+  private class ChannelImpl(val to: InetSocketAddress, dtlsConnector: DTLSConnector)(implicit codec: Codec[M])
+      extends Channel[M] {
 
     val channelSubject = PublishSubject[M]()
     private val connectableObservable = ConnectableObservable.cacheUntilConnect(channelSubject, PublishSubject[M]())
@@ -87,14 +87,14 @@ class DTLSPeerGroup[M](val config: Config)(
             override def onSent(): Unit = cb.onSuccess(())
             override def onError(throwable: Throwable): Unit = throwable match {
               case h: HandshakeException =>
-                cb.onError(new PeerGroup.HandshakeException[InetMultiAddress](to, h))
+                cb.onError(new PeerGroup.HandshakeException[InetSocketAddress](to, h))
               case _: IllegalArgumentException =>
-                cb.onError(new MessageMTUException[InetMultiAddress](to, buffer.capacity()))
+                cb.onError(new MessageMTUException[InetSocketAddress](to, buffer.capacity()))
             }
           }
 
           val rawData =
-            RawData.outbound(buffer.toArray, new AddressEndpointContext(to.inetSocketAddress), messageCallback, false)
+            RawData.outbound(buffer.toArray, new AddressEndpointContext(to), messageCallback, false)
 
           dtlsConnector.send(rawData)
 
@@ -102,14 +102,14 @@ class DTLSPeerGroup[M](val config: Config)(
     }
 
     override def close(): Task[Unit] = {
-      val id = (dtlsConnector.getAddress, to.inetSocketAddress)
+      val id = (dtlsConnector.getAddress, to)
       activeChannels(id).channelSubject.onComplete()
       activeChannels.remove(id)
       Task.unit
     }
   }
 
-  private class ClientChannelImpl(to: InetMultiAddress, dtlsConnector: DTLSConnector)(implicit codec: Codec[M])
+  private class ClientChannelImpl(to: InetSocketAddress, dtlsConnector: DTLSConnector)(implicit codec: Codec[M])
       extends ChannelImpl(to, dtlsConnector) {
     override def close(): Task[Unit] = {
       dtlsConnector.stop()
@@ -120,7 +120,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
   private def createClientConnector(): DTLSConnector = {
     val connectorConfig = config.scandiumConfigBuilder
-      .setAddress(new InetSocketAddress(config.processAddress.inetSocketAddress.getAddress, 0))
+      .setAddress(new InetSocketAddress(config.processAddress.getAddress, 0))
       .setClientOnly()
       .build()
 
@@ -151,7 +151,7 @@ class DTLSPeerGroup[M](val config: Config)(
           override def handshakeFailed(handshaker: Handshaker, error: Throwable): Unit = {
             channelSubject.onNext(
               ServerEvent
-                .HandshakeFailed(new PeerGroup.HandshakeException(InetMultiAddress(handshaker.getPeerAddress), error))
+                .HandshakeFailed(new PeerGroup.HandshakeException(handshaker.getPeerAddress, error))
             )
           }
         })
@@ -160,7 +160,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
     connector.setRawDataReceiver(new RawDataChannel {
       override def receiveData(rawData: RawData): Unit = {
-        val channelId = getChannelId(processAddress.inetSocketAddress, rawData.getInetSocketAddress)
+        val channelId = getChannelId(processAddress, rawData.getInetSocketAddress)
 
         val activeChannel: ChannelImpl = activeChannels.getOrElseUpdate(channelId, createNewChannel(rawData))
 
@@ -170,7 +170,7 @@ class DTLSPeerGroup[M](val config: Config)(
       }
 
       private def createNewChannel(rawData: RawData): ChannelImpl = {
-        val newChannel = new ChannelImpl(InetMultiAddress(rawData.getInetSocketAddress), connector)
+        val newChannel = new ChannelImpl(rawData.getInetSocketAddress, connector)
         channelSubject.onNext(ChannelCreated(newChannel))
         newChannel
       }
@@ -195,7 +195,7 @@ object DTLSPeerGroup {
 
   trait Config {
     val bindAddress: InetSocketAddress
-    val processAddress: InetMultiAddress
+    val processAddress: InetSocketAddress
     private[scalanet] def scandiumConfigBuilder: DtlsConnectorConfig.Builder
   }
 
@@ -203,7 +203,7 @@ object DTLSPeerGroup {
 
     case class Unauthenticated(
         bindAddress: InetSocketAddress,
-        processAddress: InetMultiAddress,
+        processAddress: InetSocketAddress,
         publicKey: PublicKey,
         privateKey: PrivateKey
     ) extends Config {
@@ -223,7 +223,7 @@ object DTLSPeerGroup {
       ): Unauthenticated =
         Unauthenticated(
           bindAddress,
-          InetMultiAddress(bindAddress),
+          bindAddress,
           publicKey,
           privateKey
         )
@@ -242,7 +242,7 @@ object DTLSPeerGroup {
      */
     case class CertAuthenticated(
         bindAddress: InetSocketAddress,
-        processAddress: InetMultiAddress,
+        processAddress: InetSocketAddress,
         certificateChain: Array[Certificate],
         privateKey: PrivateKey,
         trustedCerts: Array[Certificate]
@@ -263,7 +263,7 @@ object DTLSPeerGroup {
           privateKey: PrivateKey,
           trustedCerts: Array[Certificate]
       ): CertAuthenticated =
-        CertAuthenticated(bindAddress, InetMultiAddress(bindAddress), certificateChain, privateKey, trustedCerts)
+        CertAuthenticated(bindAddress, bindAddress, certificateChain, privateKey, trustedCerts)
     }
   }
 }

@@ -1,5 +1,7 @@
 package io.iohk.scalanet.peergroup
 
+import java.net.InetSocketAddress
+
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.peergroup.SimplePeerGroup.ControlMessage
 import org.scalatest.FlatSpec
@@ -26,7 +28,7 @@ class SimplePeerGroupSpec extends FlatSpec {
   it should "send a message to itself" in withASimplePeerGroup("Alice") { alice =>
     val message = Random.alphanumeric.take(1044).mkString
     val aliceReceived = alice.server().collectChannelCreated.mergeMap(_.in).headL.runToFuture
-    val aliceClient: Channel[String, String] = alice.client(alice.processAddress).evaluated
+    val aliceClient: Channel[String] = alice.client(alice.processAddress).evaluated
 
     alice.server().collectChannelCreated.foreach(_.in.connect())
     alice.server().connect()
@@ -193,7 +195,7 @@ class SimplePeerGroupSpec extends FlatSpec {
 
   private def withASimplePeerGroup(
       a: String
-  )(testCode: SimplePeerGroup[String, InetMultiAddress, String] => Any): Unit = {
+  )(testCode: SimplePeerGroup[String, InetSocketAddress, String] => Any): Unit = {
     withSimplePeerGroups(a, List.empty[String])(groups => testCode(groups(0)))
   }
 
@@ -203,8 +205,8 @@ class SimplePeerGroupSpec extends FlatSpec {
       b: String
   )(
       testCode: (
-          SimplePeerGroup[String, InetMultiAddress, String],
-          SimplePeerGroup[String, InetMultiAddress, String]
+          SimplePeerGroup[String, InetSocketAddress, String],
+          SimplePeerGroup[String, InetSocketAddress, String]
       ) => Any
   ): Unit = {
 
@@ -218,9 +220,9 @@ class SimplePeerGroupSpec extends FlatSpec {
       c: String
   )(
       testCode: (
-          SimplePeerGroup[String, InetMultiAddress, String],
-          SimplePeerGroup[String, InetMultiAddress, String],
-          SimplePeerGroup[String, InetMultiAddress, String]
+          SimplePeerGroup[String, InetSocketAddress, String],
+          SimplePeerGroup[String, InetSocketAddress, String],
+          SimplePeerGroup[String, InetSocketAddress, String]
       ) => Any
   ): Unit = {
 
@@ -229,20 +231,20 @@ class SimplePeerGroupSpec extends FlatSpec {
     )
   }
 
-  type UnderlyingMessage = Either[ControlMessage[String, InetMultiAddress], String]
+  type UnderlyingMessage = Either[ControlMessage[String, InetSocketAddress], String]
 
   private def withSimplePeerGroups(
       bootstrapAddress: String,
       multiCastAddresses: List[String],
       addresses: String*
   )(
-      testCode: Seq[SimplePeerGroup[String, InetMultiAddress, String]] => Any
+      testCode: Seq[SimplePeerGroup[String, InetSocketAddress, String]] => Any
   ): Unit = {
 
     val bootStrapTerminalGroup = randomUDPPeerGroup[UnderlyingMessage]
 
     val bootstrap = new SimplePeerGroup(
-      SimplePeerGroup.Config(bootstrapAddress, List.empty[String], Map.empty[String, InetMultiAddress]),
+      SimplePeerGroup.Config(bootstrapAddress, List.empty[String], Map.empty[String, InetSocketAddress]),
       bootStrapTerminalGroup
     )
     bootstrap.initialize().runToFuture.futureValue

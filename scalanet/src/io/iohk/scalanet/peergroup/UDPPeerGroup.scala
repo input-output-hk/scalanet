@@ -38,12 +38,12 @@ class UDPPeerGroup[M](val config: Config)(
     implicit codec: Codec[M],
     bufferInstantiator: BufferInstantiator[ByteBuffer],
     scheduler: Scheduler
-) extends TerminalPeerGroup[InetMultiAddress, M]() {
+) extends TerminalPeerGroup[InetSocketAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
-  val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
+  val serverSubject = PublishSubject[ServerEvent[InetSocketAddress, M]]()
   private val connectableObservable =
-    ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
+    ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetSocketAddress, M]]())
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -101,7 +101,7 @@ class UDPPeerGroup[M](val config: Config)(
 
               try {
                 val remoteAddress = datagram.sender()
-                val localAddress = processAddress.inetSocketAddress
+                val localAddress = processAddress
 
                 val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
 
@@ -134,7 +134,7 @@ class UDPPeerGroup[M](val config: Config)(
       localAddress: InetSocketAddress,
       remoteAddress: InetSocketAddress,
       val messageSubject: PublishSubject[M]
-  ) extends Channel[InetMultiAddress, M] {
+  ) extends Channel[M] {
 
     log.debug(
       s"Setting up new channel from local address $localAddress " +
@@ -143,7 +143,7 @@ class UDPPeerGroup[M](val config: Config)(
     )
     val connectableObservable: ConnectableObservable[M] =
       ConnectableObservable.cacheUntilConnect(messageSubject, PublishSubject[M]())
-    override val to: InetMultiAddress = InetMultiAddress(remoteAddress)
+    //override val to: InetSocketAddress = remoteAddress
 
     override def sendMessage(message: M): Task[Unit] = sendMessage(message, localAddress, remoteAddress, nettyChannel)
 
@@ -164,7 +164,7 @@ class UDPPeerGroup[M](val config: Config)(
       toTask(nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(encodedMessage), recipient, sender)))
         .onErrorRecoverWith {
           case _: IOException =>
-            Task.raiseError(new MessageMTUException[InetMultiAddress](to, encodedMessage.capacity()))
+            Task.raiseError(new MessageMTUException[InetSocketAddress](recipient, encodedMessage.capacity()))
         }
     }
   }
@@ -176,29 +176,29 @@ class UDPPeerGroup[M](val config: Config)(
       case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
     }
 
-  override def processAddress: InetMultiAddress = config.processAddress
+  override def processAddress: InetSocketAddress = config.processAddress
 
-  override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
-    val cf = clientBootstrap.connect(to.inetSocketAddress)
+  override def client(to: InetSocketAddress): Task[Channel[M]] = {
+    val cf = clientBootstrap.connect(to)
     val ct: Task[NioDatagramChannel] = toTask(cf).map(_ => cf.channel().asInstanceOf[NioDatagramChannel])
     ct.map { nettyChannel =>
         val localAddress = nettyChannel.localAddress()
         log.debug(s"Generated local address for new client is $localAddress")
-        val channelId = getChannelId(to.inetSocketAddress, localAddress)
+        val channelId = getChannelId(to, localAddress)
 
         assert(!activeChannels.contains(channelId), s"HOUSTON, WE HAVE A MULTIPLEXING PROBLEM")
 
-        val channel = new ChannelImpl(nettyChannel, localAddress, to.inetSocketAddress, PublishSubject[M]())
+        val channel = new ChannelImpl(nettyChannel, localAddress, to, PublishSubject[M]())
         activeChannels.put(channelId, channel)
         channel
       }
       .onErrorRecoverWith {
         case e: Throwable =>
-          Task.raiseError(new ChannelSetupException[InetMultiAddress](to, e))
+          Task.raiseError(new ChannelSetupException(to,e))
       }
   }
 
-  override def server(): ConnectableObservable[ServerEvent[InetMultiAddress, M]] = connectableObservable
+  override def server(): ConnectableObservable[ServerEvent[InetSocketAddress, M]] = connectableObservable
 
   override def shutdown(): Task[Unit] = {
     serverSubject.onComplete()
@@ -213,9 +213,9 @@ object UDPPeerGroup {
 
   val mtu: Int = 16384
 
-  case class Config(bindAddress: InetSocketAddress, processAddress: InetMultiAddress)
+  case class Config(bindAddress: InetSocketAddress, processAddress: InetSocketAddress)
 
   object Config {
-    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, InetMultiAddress(bindAddress))
+    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, bindAddress)
   }
 }

@@ -1,5 +1,7 @@
 package io.iohk.scalanet.peergroup
 
+import java.net.InetSocketAddress
+
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils._
@@ -47,8 +49,8 @@ class StaticAddressMappedPeerGroupSpec extends FlatSpec {
 
   private def withTwoStaticPeerGroups(a: String, b: String)(
       testCode: (
-          StaticAddressMappedPeerGroup[String, InetMultiAddress, String],
-          StaticAddressMappedPeerGroup[String, InetMultiAddress, String]
+          StaticAddressMappedPeerGroup[String, InetSocketAddress, String],
+          StaticAddressMappedPeerGroup[String, InetSocketAddress, String]
       ) => Any
   ): Unit = {
 

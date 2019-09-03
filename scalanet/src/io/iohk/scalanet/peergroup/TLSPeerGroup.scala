@@ -47,7 +47,7 @@ class TLSPeerGroup[M](val config: Config)(
     implicit codec: StreamCodec[M],
     bi: BufferInstantiator[ByteBuffer],
     scheduler: Scheduler
-) extends TerminalPeerGroup[InetMultiAddress, M]() {
+) extends TerminalPeerGroup[InetSocketAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -61,10 +61,10 @@ class TLSPeerGroup[M](val config: Config)(
     .ciphers(TLSPeerGroup.supportedCipherSuites.asJava)
     .build()
 
-  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
+  private val serverSubject = PublishSubject[ServerEvent[InetSocketAddress, M]]()
 
   private val connectableObservable =
-    ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetMultiAddress, M]]())
+    ConnectableObservable.cacheUntilConnect(serverSubject, PublishSubject[ServerEvent[InetSocketAddress, M]]())
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -96,13 +96,13 @@ class TLSPeerGroup[M](val config: Config)(
       case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
     }
 
-  override def processAddress: InetMultiAddress = config.processAddress
+  override def processAddress: InetSocketAddress = config.processAddress
 
-  override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
-    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, sslClientCtx, codec, bi).initialize
+  override def client(to: InetSocketAddress): Task[Channel[M]] = {
+    new ClientChannelImpl[M](to, clientBootstrap, sslClientCtx, codec, bi).initialize
   }
 
-  override def server(): ConnectableObservable[ServerEvent[InetMultiAddress, M]] = connectableObservable
+  override def server(): ConnectableObservable[ServerEvent[InetSocketAddress, M]] = connectableObservable
 
   override def shutdown(): Task[Unit] = {
     serverSubject.onComplete()
@@ -117,7 +117,7 @@ object TLSPeerGroup {
 
   case class Config(
       bindAddress: InetSocketAddress,
-      processAddress: InetMultiAddress,
+      processAddress: InetSocketAddress,
       certChainPrivateKey: PrivateKey,
       certChain: List[Certificate],
       trustStore: List[Certificate],
@@ -133,7 +133,7 @@ object TLSPeerGroup {
     ): Config =
       Config(
         bindAddress,
-        InetMultiAddress(bindAddress),
+        bindAddress,
         certChainPrivateKey,
         certChain,
         trustStore = trustStore,
@@ -147,7 +147,7 @@ object TLSPeerGroup {
         trustStore: List[Certificate],
         clientAuthRequired: Boolean = true
     ): Config =
-      Config(bindAddress, InetMultiAddress(bindAddress), certChainPrivateKey, certChain, trustStore, clientAuthRequired)
+      Config(bindAddress, bindAddress, certChainPrivateKey, certChain, trustStore, clientAuthRequired)
 
   }
 
@@ -207,11 +207,11 @@ object TLSPeerGroup {
       codec: StreamCodec[M],
       bi: BufferInstantiator[ByteBuffer]
   )(implicit scheduler: Scheduler)
-      extends Channel[InetMultiAddress, M] {
+      extends Channel[M] {
 
     private val log = LoggerFactory.getLogger(getClass)
 
-    val to: InetMultiAddress = InetMultiAddress(inetSocketAddress)
+    val to: InetSocketAddress = inetSocketAddress
 
     private val activation = Promise[ChannelHandlerContext]()
     private val activationF = activation.future
@@ -260,11 +260,11 @@ object TLSPeerGroup {
         }
       })
 
-    private def mapException(t: Throwable): Throwable = t match {
+    private def mapException(to:InetSocketAddress,t: Throwable): Throwable = t match {
       case _: ClosedChannelException =>
-        new PeerGroup.ChannelBrokenException(to, t)
+        new PeerGroup.ChannelBrokenException(to,t)
       case _: ConnectException =>
-        new PeerGroup.ChannelSetupException(to, t)
+        new PeerGroup.ChannelSetupException(to,t)
       case _: SSLKeyException =>
         new PeerGroup.HandshakeException(to, t)
       case _ =>
@@ -277,7 +277,7 @@ object TLSPeerGroup {
         .map(_ => this)
         .onErrorRecoverWith {
           case t: Throwable =>
-            Task.raiseError(mapException(t))
+            Task.raiseError(mapException(inetSocketAddress,t))
         }
     }
 
@@ -294,7 +294,7 @@ object TLSPeerGroup {
         })
         .onErrorRecoverWith {
           case e: IOException =>
-            Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
+            Task.raiseError(new ChannelBrokenException[InetSocketAddress](to, e))
         }
         .map(_ => ())
     }
@@ -311,13 +311,13 @@ object TLSPeerGroup {
   }
 
   private[scalanet] class ServerChannelImpl[M](
-      serverSubject: PublishSubject[ServerEvent[InetMultiAddress, M]],
+      serverSubject: PublishSubject[ServerEvent[InetSocketAddress, M]],
       val nettyChannel: SocketChannel,
       sslServerCtx: SslContext,
       codec: StreamCodec[M],
       bi: BufferInstantiator[ByteBuffer]
   )(implicit scheduler: Scheduler)
-      extends Channel[InetMultiAddress, M] {
+      extends Channel[M] {
 
     private val log = LoggerFactory.getLogger(getClass)
     val messageSubject = PublishSubject[M]()
@@ -335,8 +335,8 @@ object TLSPeerGroup {
         override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
           evt match {
             case e: SslHandshakeCompletionEvent =>
-              val localAddress = InetMultiAddress(ctx.channel().localAddress().asInstanceOf[InetSocketAddress])
-              val remoteAddress = InetMultiAddress(ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress])
+              val localAddress = ctx.channel().localAddress().asInstanceOf[InetSocketAddress]
+              val remoteAddress = ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress]
               log.debug(
                 s"Ssl Handshake server channel from $localAddress " +
                   s"to $remoteAddress with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
@@ -349,13 +349,13 @@ object TLSPeerGroup {
       })
       .addLast(new MessageNotifier(messageSubject, codec, bi))
 
-    override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
+    //override val to: InetSocketAddress = nettyChannel.remoteAddress()
 
     override def sendMessage(message: M): Task[Unit] = {
       toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
         .onErrorRecoverWith {
           case e: ClosedChannelException =>
-            Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
+            Task.raiseError(new ChannelBrokenException[InetSocketAddress](nettyChannel.remoteAddress(), e))
         }
     }
 

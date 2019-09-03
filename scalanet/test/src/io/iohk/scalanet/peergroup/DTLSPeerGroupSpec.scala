@@ -1,5 +1,6 @@
 package io.iohk.scalanet.peergroup
 
+import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.security.PrivateKey
 import java.security.cert.{Certificate, CertificateFactory}
@@ -46,7 +47,7 @@ class DTLSPeerGroupSpec extends FlatSpec {
 
       val aliceClient = alice.client(bob.processAddress).evaluated
 
-      val error = recoverToExceptionIf[HandshakeException[InetMultiAddress]] {
+      val error = recoverToExceptionIf[HandshakeException[InetSocketAddress]] {
         aliceClient.sendMessage(alicesMessage).runToFuture
       }.futureValue
 
@@ -55,11 +56,11 @@ class DTLSPeerGroupSpec extends FlatSpec {
 
   it should "report an error for sending a message greater than the MTU" in
     withADTLSPeerGroup[Array[Byte]](rawKeyConfig) { alice =>
-      val address = InetMultiAddress(NetUtils.aRandomAddress())
+      val address = NetUtils.aRandomAddress()
       val invalidMessage = NetUtils.randomBytes(16584)
       val messageSize = Codec[Array[Byte]].encode(invalidMessage).capacity()
 
-      val error = recoverToExceptionIf[MessageMTUException[InetMultiAddress]] {
+      val error = recoverToExceptionIf[MessageMTUException[InetSocketAddress]] {
         alice.client(address).flatMap(channel => channel.sendMessage(invalidMessage)).runToFuture
       }.futureValue
 

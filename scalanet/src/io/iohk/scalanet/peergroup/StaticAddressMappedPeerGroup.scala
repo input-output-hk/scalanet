@@ -26,15 +26,15 @@ class StaticAddressMappedPeerGroup[A, AA, M](
   private val reverseLookup = config.knownPeers.map(_.swap)
   override def processAddress: A = config.processAddress
 
-  override def client(to: A): Task[Channel[A, M]] =
+  override def client(to: A): Task[Channel[M]] =
     underLyingPeerGroup.client(config.knownPeers(to)).map { underlyingChannel =>
-      new ChannelImpl(to, underlyingChannel)
+      new ChannelImpl(underlyingChannel)
     }
 
   private val observable = underLyingPeerGroup.server().map {
     case ChannelCreated(underlyingChannel) =>
-      val a = reverseLookup(underlyingChannel.to)
-      ChannelCreated[A, M](new ChannelImpl(a, underlyingChannel))
+      //val a = reverseLookup(underlyingChannel.to)
+      ChannelCreated[A, M](new ChannelImpl(underlyingChannel))
     case HandshakeFailed(failure) =>
       HandshakeFailed[A, M](new HandshakeException[A](reverseLookup(failure.to), failure.cause))
   }
@@ -51,7 +51,7 @@ class StaticAddressMappedPeerGroup[A, AA, M](
   override def initialize(): Task[Unit] =
     Task.unit
 
-  private class ChannelImpl(val to: A, underlyingChannel: Channel[AA, M]) extends Channel[A, M] {
+  private class ChannelImpl(underlyingChannel: Channel[M]) extends Channel[M] {
 
     override def sendMessage(message: M): Task[Unit] =
       underlyingChannel.sendMessage(message)

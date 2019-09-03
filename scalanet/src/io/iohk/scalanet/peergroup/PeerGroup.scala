@@ -23,15 +23,15 @@ import scala.concurrent.duration.Duration
   * property that two distinct channels represent distinct streams of
   * messages. A message sent down one channel should not cross over into another.
   *
-  * @tparam A the address type
+  *
   * @tparam M the message type
   */
-trait Channel[A, M] {
+trait Channel[M] {
 
   /**
     * The remote address from this nodes point of view.
     */
-  def to: A
+  //def to: A
 
   /**
     * Send a typed message down the channel.
@@ -104,7 +104,7 @@ trait PeerGroup[A, M] {
     *           set of peers).
     * @return the channel to interact with the desired peer(s).
     */
-  def client(to: A): Task[Channel[A, M]]
+  def client(to: A): Task[Channel[M]]
 
   /**
     * This method provides a stream of the events received by the server.
@@ -137,10 +137,10 @@ object PeerGroup {
       * only to A or to the whole group that is referenced by the multicast address. Different
       * implementations could handle this logic differently.
       */
-    case class ChannelCreated[A, M](channel: Channel[A, M]) extends ServerEvent[A, M]
+    case class ChannelCreated[A, M](channel: Channel[M]) extends ServerEvent[A, M]
 
     object ChannelCreated {
-      def collector[A, M]: PartialFunction[ServerEvent[A, M], Channel[A, M]] = { case ChannelCreated(c) => c }
+      def collector[A, M]: PartialFunction[ServerEvent[A, M], Channel[M]] = { case ChannelCreated(c) => c }
     }
 
     case class HandshakeFailed[A, M](failure: HandshakeException[A]) extends ServerEvent[A, M]
@@ -152,7 +152,7 @@ object PeerGroup {
     }
 
     implicit class ServerOps[A, M](observable: Observable[ServerEvent[A, M]]) {
-      def collectChannelCreated: Observable[Channel[A, M]] = observable.collect(ChannelCreated.collector)
+      def collectChannelCreated: Observable[Channel[M]] = observable.collect(ChannelCreated.collector)
       def collectHandshakeFailure: Observable[HandshakeException[A]] = observable.collect(HandshakeFailed.collector)
     }
   }
@@ -202,10 +202,10 @@ object PeerGroup {
     s"Failed initialization of peer group member with config $config. Cause follows."
 
   class ChannelSetupException[A](val to: A, val cause: Throwable)
-      extends RuntimeException(s"Error establishing channel to $to.", cause)
+      extends RuntimeException(s"Error establishing channel.", cause)
 
   class ChannelBrokenException[A](val to: A, val cause: Throwable)
-      extends RuntimeException(s"Channel broken to $to.", cause)
+      extends RuntimeException(s"Channel broken .", cause)
 
   class MessageMTUException[A](val to: A, val size: Long)
       extends RuntimeException(s"Unsupported message of length $size.")

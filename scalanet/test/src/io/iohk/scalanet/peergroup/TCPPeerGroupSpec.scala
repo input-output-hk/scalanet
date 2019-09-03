@@ -1,5 +1,7 @@
 package io.iohk.scalanet.peergroup
 
+import java.net.InetSocketAddress
+
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import io.iohk.decco.Codec
 import io.iohk.decco.auto._
@@ -33,7 +35,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   it should "report an error for messaging to an invalid address" in
     withARandomTCPPeerGroup[String] { alice =>
-      StandardTestPack.shouldErrorForMessagingAnInvalidAddress(alice, InetMultiAddress(NetUtils.aRandomAddress()))
+      StandardTestPack.shouldErrorForMessagingAnInvalidAddress(alice, NetUtils.aRandomAddress())
     }
 
   it should "report an error for messaging on a closed channel -- server closes" in
@@ -43,7 +45,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
       bob.server().collectChannelCreated.foreachL(channel => channel.close().runToFuture).runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
-      val aliceError = recoverToExceptionIf[ChannelBrokenException[InetMultiAddress]] {
+      val aliceError = recoverToExceptionIf[ChannelBrokenException[InetSocketAddress]] {
         aliceClient.sendMessage(alicesMessage).runToFuture
       }
 
@@ -55,7 +57,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
       val bobsMessage = Random.alphanumeric.take(1024).mkString
 
       bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).runToFuture).runToFuture
-      val bobChannel: CancelableFuture[Channel[InetMultiAddress, String]] =
+      val bobChannel: CancelableFuture[Channel[String]] =
         bob.server().collectChannelCreated.headL.runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
@@ -63,7 +65,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
       bob.server().connect()
 
       aliceClient.close().evaluated
-      val bobError = recoverToExceptionIf[ChannelBrokenException[InetMultiAddress]] {
+      val bobError = recoverToExceptionIf[ChannelBrokenException[InetSocketAddress]] {
         bobChannel.futureValue.sendMessage(bobsMessage).runToFuture
       }
 
