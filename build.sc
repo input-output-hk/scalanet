@@ -84,44 +84,4 @@ object scalanet extends ScalaModule with PublishModule {
       super.runMain("org.scalatest.run", args: _*)
     }
   }
-
-  object examples extends ScalaModule {
-    override def scalaVersion = "2.12.7"
-
-    override def scalacOptions = scalanet.scalacOptions
-
-    override def repositories = scalanet.repositories
-
-    override def moduleDeps: Seq[JavaModule] = super.moduleDeps ++ Seq(scalanet)
-
-    override def ivyDeps = Agg(
-      ivy"ch.qos.logback:logback-core:1.2.3",
-      ivy"ch.qos.logback:logback-classic:1.2.3",
-      ivy"org.mockito:mockito-core:2.21.0",
-      ivy"com.github.pureconfig::pureconfig:0.11.1",
-      ivy"com.github.scopt::scopt:3.7.1",
-      ivy"org.scodec::scodec-bits:1.1.6",
-      ivy"io.monix::monix:3.0.0-RC1",
-      ivy"org.scala-lang.modules::scala-parser-combinators:1.1.2"
-    )
-
-    object test extends Tests {
-      override def ivyDeps = Agg(
-        ivy"org.scalatest::scalatest:3.0.5",
-        ivy"org.scalacheck::scalacheck:1.14.0",
-        ivy"ch.qos.logback:logback-core:1.2.3",
-        ivy"ch.qos.logback:logback-classic:1.2.3",
-        ivy"org.mockito:mockito-core:2.21.0",
-        ivy"org.scodec::scodec-bits:1.1.6"
-      )
-
-      override def moduleDeps: Seq[JavaModule] = super.moduleDeps ++ Seq(scalanet)
-
-      def testFrameworks = Seq("org.scalatest.tools.Framework")
-
-      def single(args: String*) = T.command {
-        super.runMain("org.scalatest.run", args: _*)
-      }
-    }
-  }
 }
