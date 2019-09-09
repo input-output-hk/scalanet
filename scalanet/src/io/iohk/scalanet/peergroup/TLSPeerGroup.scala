@@ -22,7 +22,7 @@ import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.ssl.{SslContext, SslContextBuilder, SslHandshakeCompletionEvent}
-import javax.net.ssl.SSLKeyException
+import javax.net.ssl.{SSLHandshakeException, SSLKeyException}
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.observables.ConnectableObservable
@@ -261,6 +261,8 @@ object TLSPeerGroup {
       case _: ConnectException =>
         new PeerGroup.ChannelSetupException(to, t)
       case _: SSLKeyException =>
+        new PeerGroup.HandshakeException(to, t)
+      case _: SSLHandshakeException =>
         new PeerGroup.HandshakeException(to, t)
       case _ =>
         t
