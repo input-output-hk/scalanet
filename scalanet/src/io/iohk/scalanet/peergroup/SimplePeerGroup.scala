@@ -97,7 +97,7 @@ class SimplePeerGroup[A, AA, M](
           channel =>
             channel
               .sendMessage(Left(EnrolMe(processAddress, config.multicastAddresses, underLyingPeerGroup.processAddress)))
-              .runAsync
+              .runToFuture
         )
 
       enrolledTask
@@ -157,7 +157,7 @@ class SimplePeerGroup[A, AA, M](
     val enrolledReply = Enrolled(address, underlyingAddress, routingTable.toMap, multiCastTable.toMap)
     underLyingPeerGroup
       .client(underlyingAddress)
-      .foreach(channel => channel.sendMessage(Left(enrolledReply)).runAsync)
+      .foreach(channel => channel.sendMessage(Left(enrolledReply)).runToFuture)
   }
 
   private def debug(logMsg: String): Unit = {

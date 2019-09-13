@@ -48,7 +48,7 @@ object KNetwork {
     }
 
     override def findNodes: Observable[(FindNodes[A], Nodes[A] => Task[Unit])] = {
-      peerGroup.server().collectChannelCreated.mapTask { channel: Channel[A, KMessage[A]] =>
+      peerGroup.server().collectChannelCreated.mapEval { channel: Channel[A, KMessage[A]] =>
         channel.in
           .collect {
             case f @ FindNodes(_, _, _) =>
