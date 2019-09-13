@@ -89,7 +89,7 @@ object NetUtils {
       bufferInstantiator: BufferInstantiator[ByteBuffer]
   ): TCPPeerGroup[M] = {
     val pg = new TCPPeerGroup(TCPPeerGroup.Config(aRandomAddress()))
-    Await.result(pg.initialize().runAsync, 10 seconds)
+    Await.result(pg.initialize().runToFuture, 10 seconds)
     pg
   }
   def randomTLSPeerGroup[M](
@@ -99,7 +99,7 @@ object NetUtils {
   ): TLSPeerGroup[M] = {
     val sc1 = new SelfSignedCertificate()
     val pg = new TLSPeerGroup(TLSPeerGroup.Config(aRandomAddress(), sc1.key(), List(sc1.cert()), Nil))
-    Await.result(pg.initialize().runAsync, 10 seconds)
+    Await.result(pg.initialize().runToFuture, 10 seconds)
     pg
   }
 
@@ -109,7 +109,7 @@ object NetUtils {
       bufferInstantiator: BufferInstantiator[ByteBuffer]
   ): UDPPeerGroup[M] = {
     val pg = new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
-    Await.result(pg.initialize().runAsync, 10 seconds)
+    Await.result(pg.initialize().runToFuture, 10 seconds)
     pg
   }
 
@@ -163,8 +163,8 @@ object NetUtils {
     val pg1 = new TLSPeerGroup(TLSPeerGroup.Config(address1, sc1.key(), List(sc1.cert()), List(sc2.cert()), clientAuth))
     val pg2 = new TLSPeerGroup(TLSPeerGroup.Config(address2, sc2.key(), List(sc2.cert()), List(sc1.cert()), clientAuth))
 
-    Await.result(pg1.initialize().runAsync, 10 seconds)
-    Await.result(pg2.initialize().runAsync, 10 seconds)
+    Await.result(pg1.initialize().runToFuture, 10 seconds)
+    Await.result(pg2.initialize().runToFuture, 10 seconds)
 
     (pg1, pg2)
   }
@@ -180,8 +180,8 @@ object NetUtils {
     val pg1 = new TCPPeerGroup(TCPPeerGroup.Config(address))
     val pg2 = new TCPPeerGroup(TCPPeerGroup.Config(address2))
 
-    Await.result(pg1.initialize().runAsync, 10 seconds)
-    Await.result(pg2.initialize().runAsync, 10 seconds)
+    Await.result(pg1.initialize().runToFuture, 10 seconds)
+    Await.result(pg2.initialize().runToFuture, 10 seconds)
 
     (pg1, pg2)
   }

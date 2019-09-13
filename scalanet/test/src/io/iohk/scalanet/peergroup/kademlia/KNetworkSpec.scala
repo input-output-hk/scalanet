@@ -62,7 +62,7 @@ class KNetworkSpec extends FlatSpec {
       when(channel.in).thenReturn(Observable.eval(request))
       when(channel.close()).thenReturn(Task.unit)
 
-      val actualRequest = requestExtractor(network).runAsync.futureValue
+      val actualRequest = requestExtractor(network).runToFuture.futureValue
 
       actualRequest shouldBe request
       verify(channel, never()).close()
@@ -76,7 +76,7 @@ class KNetworkSpec extends FlatSpec {
       when(channel.in).thenReturn(Observable.never)
       when(channel.close()).thenReturn(Task.unit)
 
-      val t = requestExtractor(network).runAsync.failed.futureValue
+      val t = requestExtractor(network).runToFuture.failed.futureValue
 
       t shouldBe a[TimeoutException]
       verify(channel).close()
@@ -193,7 +193,7 @@ object KNetworkSpec {
   private def sendResponse[Request <: KRequest[String], Response <: KResponse[String]](
       rpc: KNetwork[String] => Observable[(Request, Response => Task[Unit])]
   )(response: Response)(network: KNetwork[String]): Task[Unit] = {
-    val (_, handler) = rpc(network).headL.runAsync.futureValue
+    val (_, handler) = rpc(network).headL.runToFuture.futureValue
     handler(response)
   }
 }

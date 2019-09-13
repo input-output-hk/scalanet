@@ -117,7 +117,7 @@ object KNetwork {
     private def serverTemplate[Request <: KRequest[A], Response <: KResponse[A]](
         pf: PartialFunction[KMessage[A], Request]
     ): Observable[(Request, KMessage[A] => Task[Unit])] = {
-      peerGroup.server().collectChannelCreated.mapTask { channel: Channel[A, KMessage[A]] =>
+      peerGroup.server().collectChannelCreated.mapEval { channel: Channel[A, KMessage[A]] =>
         channel.in
           .collect(pf)
           .map(request => (request, sendResponse(channel)))

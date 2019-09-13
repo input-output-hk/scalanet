@@ -84,8 +84,8 @@ object KPeerGroupSpec {
     try {
       testCode(kPeerGroup1, kPeerGroup2)
     } finally {
-      Await.result(kPeerGroup1.shutdown().runAsync, Duration.Inf)
-      Await.result(kPeerGroup1.shutdown().runAsync, Duration.Inf)
+      Await.result(kPeerGroup1.shutdown().runToFuture, Duration.Inf)
+      Await.result(kPeerGroup1.shutdown().runToFuture, Duration.Inf)
     }
   }
 

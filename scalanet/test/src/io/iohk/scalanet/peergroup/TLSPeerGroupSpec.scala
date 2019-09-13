@@ -39,9 +39,9 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
 
   it should "report an error for a handshake failure -- server receives" in
     withTwoTLSPeerGroups[String](duffKeyConfig) { (alice, bob) =>
-      val handshakeF = bob.server().collectHandshakeFailure.headL.runAsync
+      val handshakeF = bob.server().collectHandshakeFailure.headL.runToFuture
 
-      alice.client(bob.processAddress).runAsync
+      alice.client(bob.processAddress).runToFuture
 
       handshakeF.futureValue.to shouldBe alice.processAddress
     }
@@ -49,7 +49,7 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   it should "report an error for a handshake failure -- client receives" in
     withTwoTLSPeerGroups[String](duffKeyConfig) { (alice, bob) =>
       val error = recoverToExceptionIf[HandshakeException[InetMultiAddress]] {
-        alice.client(bob.processAddress).runAsync
+        alice.client(bob.processAddress).runToFuture
       }.futureValue
 
       error.to shouldBe bob.processAddress
@@ -64,12 +64,12 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   it should "report an error for messaging on a closed channel -- server closes" in
     withTwoTLSPeerGroups[String](selfSignedCertConfig) { (alice, bob) =>
       val alicesMessage = Random.alphanumeric.take(1024).mkString
-      val bobsChannelF = bob.server().collectChannelCreated.headL.runAsync
+      val bobsChannelF = bob.server().collectChannelCreated.headL.runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
       bobsChannelF.futureValue.close().evaluated
       val aliceError = recoverToExceptionIf[ChannelBrokenException[InetMultiAddress]] {
-        aliceClient.sendMessage(alicesMessage).runAsync
+        aliceClient.sendMessage(alicesMessage).runToFuture
       }
 
       aliceError.futureValue.to shouldBe bob.processAddress
@@ -79,14 +79,14 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   it should "report an error for messaging on a closed channel -- client closes" in
     withTwoTLSPeerGroups[String](selfSignedCertConfig) { (alice, bob) =>
       val bobsMessage = Random.alphanumeric.take(1024).mkString
-      bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).runAsync).runAsync
+      bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).runToFuture).runToFuture
       val bobChannel: CancelableFuture[Channel[InetMultiAddress, String]] =
-        bob.server().collectChannelCreated.headL.runAsync
+        bob.server().collectChannelCreated.headL.runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
       aliceClient.close().evaluated
       val bobError = recoverToExceptionIf[ChannelBrokenException[InetMultiAddress]] {
-        bobChannel.futureValue.sendMessage(bobsMessage).runAsync
+        bobChannel.futureValue.sendMessage(bobsMessage).runToFuture
       }
 
       bobError.futureValue.to shouldBe alice.processAddress
@@ -102,7 +102,7 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     val tlsPeerGroup = randomTLSPeerGroup[String]
     isListening(tlsPeerGroup.config.bindAddress) shouldBe true
 
-    tlsPeerGroup.shutdown().runAsync.futureValue
+    tlsPeerGroup.shutdown().runToFuture.futureValue
 
     isListening(tlsPeerGroup.config.bindAddress) shouldBe false
   }
@@ -110,8 +110,8 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   // TODO this is a copy/paste version of the test in TCPPeerGroupSpec
   it should "report the same address for two inbound channels" in
     withTwoRandomTLSPeerGroups[String](false) { (alice, bob) =>
-      val firstInbound = bob.server().collectChannelCreated.headL.runAsync
-      val secondInbound = bob.server().collectChannelCreated.drop(1).headL.runAsync
+      val firstInbound = bob.server().collectChannelCreated.headL.runToFuture
+      val secondInbound = bob.server().collectChannelCreated.drop(1).headL.runToFuture
 
       alice.client(bob.processAddress).evaluated
       alice.client(bob.processAddress).evaluated
@@ -128,11 +128,11 @@ class TLSPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
     val pg1 = new TLSPeerGroup(TLSPeerGroup.Config(address, sc1.key(), List(sc1.cert()), List(sc2.cert()), false))
     val pg2 = new TLSPeerGroup(TLSPeerGroup.Config(address, sc2.key(), List(sc2.cert()), List(sc1.cert()), false))
 
-    Await.result(pg1.initialize().runAsync, 10 seconds)
+    Await.result(pg1.initialize().runToFuture, 10 seconds)
     assertThrows[InitializationError] {
-      Await.result(pg2.initialize().runAsync, 10 seconds)
+      Await.result(pg2.initialize().runToFuture, 10 seconds)
     }
-    pg1.shutdown().runAsync.futureValue
+    pg1.shutdown().runToFuture.futureValue
 
   }
 
@@ -195,7 +195,7 @@ object TLSPeerGroupSpec {
       config: Config
   )(implicit codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): TLSPeerGroup[M] = {
     val pg = new TLSPeerGroup[M](config)
-    Await.result(pg.initialize().runAsync, Duration.Inf)
+    Await.result(pg.initialize().runToFuture, Duration.Inf)
     pg
   }
 

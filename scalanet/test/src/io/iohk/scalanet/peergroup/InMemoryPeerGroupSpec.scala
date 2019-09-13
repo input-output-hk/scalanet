@@ -33,16 +33,16 @@ class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
   it should "not listen to the network before initialization" in {
     val peer = generateRandomPeerGroup()
     isListening(peer) shouldBe false
-    peer.initialize().runAsync
+    peer.initialize().runToFuture
     isListening(peer) shouldBe true
-    peer.shutdown().runAsync
+    peer.shutdown().runToFuture
   }
 
   it should "not start a channel before the first message is sent" in
     peerUtils.withTwoRandomPeerGroups { (alice, bob) =>
       val aliceMessage = Random.alphanumeric.take(1024).mkString
 
-      val bobServer = bob.server().collectChannelCreated.headL.runAsync
+      val bobServer = bob.server().collectChannelCreated.headL.runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
 
@@ -50,7 +50,7 @@ class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
         bobServer.futureValue.to shouldBe alice.processAddress
       }
 
-      aliceClient.sendMessage(aliceMessage).runAsync
+      aliceClient.sendMessage(aliceMessage).runToFuture
 
       bobServer.futureValue.to shouldBe alice.processAddress
     }
@@ -61,16 +61,16 @@ class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
       val aliceMessage2 = aliceMessage1 + "1"
 
       val aliceClient1 = alice.client(bob.processAddress).evaluated
-      aliceClient1.sendMessage(aliceMessage1).runAsync
+      aliceClient1.sendMessage(aliceMessage1).runToFuture
 
-      val bobServer = bob.server().collectChannelCreated.headL.runAsync
+      val bobServer = bob.server().collectChannelCreated.headL.runToFuture
 
       intercept[Exception] {
         bobServer.futureValue.to shouldBe alice.processAddress
       }
 
       val aliceClient2 = alice.client(bob.processAddress).evaluated
-      aliceClient2.sendMessage(aliceMessage2).runAsync
+      aliceClient2.sendMessage(aliceMessage2).runToFuture
 
       bobServer.futureValue.to shouldBe alice.processAddress
       bobServer.futureValue.in.headL.evaluated shouldBe aliceMessage2
@@ -82,11 +82,11 @@ class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
       val alicesMessage = Random.alphanumeric.take(1024).mkString
       val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-      bob.server().collectChannelCreated.headL.runAsync.map(_.sendMessage(bobsMessage).runAsync)
-      val bobReceived: Future[String] = bob.server().collectChannelCreated.mergeMap(_.in).headL.runAsync
+      bob.server().collectChannelCreated.headL.runToFuture.map(_.sendMessage(bobsMessage).runToFuture)
+      val bobReceived: Future[String] = bob.server().collectChannelCreated.mergeMap(_.in).headL.runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
-      val aliceReceived = aliceClient.in.headL.runAsync
+      val aliceReceived = aliceClient.in.headL.runToFuture
 
       aliceClient.sendMessage(alicesMessage).evaluated
 
@@ -106,14 +106,14 @@ class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
     peerUtils.withTwoRandomPeerGroups { (alice, bob) =>
       val aliceMessage = Random.alphanumeric.take(1024).mkString
 
-      val firstInbound = bob.server().collectChannelCreated.headL.runAsync
-      val secondInbound = bob.server().collectChannelCreated.drop(1).headL.runAsync
+      val firstInbound = bob.server().collectChannelCreated.headL.runToFuture
+      val secondInbound = bob.server().collectChannelCreated.drop(1).headL.runToFuture
 
       val aliceClient1 = alice.client(bob.processAddress).evaluated
       val aliceClient2 = alice.client(bob.processAddress).evaluated
 
-      aliceClient1.sendMessage(aliceMessage).runAsync
-      aliceClient2.sendMessage(aliceMessage).runAsync
+      aliceClient1.sendMessage(aliceMessage).runToFuture
+      aliceClient2.sendMessage(aliceMessage).runToFuture
 
       firstInbound.futureValue.to shouldBe alice.processAddress
       secondInbound.futureValue.to shouldBe alice.processAddress

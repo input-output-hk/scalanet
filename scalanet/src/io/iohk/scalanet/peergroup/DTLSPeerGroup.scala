@@ -13,7 +13,7 @@ import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{ChannelId, _}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup.{MessageMTUException, ServerEvent}
 import monix.eval.Task
-import monix.execution.{Cancelable, Scheduler}
+import monix.execution.Scheduler
 import monix.reactive.Observable
 import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
 import org.eclipse.californium.elements._
@@ -73,7 +73,7 @@ class DTLSPeerGroup[M](val config: Config)(
       val buffer = codec.encode(message)
 
       Task
-        .async[Unit] { (_, c) =>
+        .async[Unit] { c =>
           val messageCallback = new MessageCallback {
             override def onConnecting(): Unit = ()
             override def onDtlsRetransmission(i: Int): Unit = ()
@@ -92,8 +92,6 @@ class DTLSPeerGroup[M](val config: Config)(
             RawData.outbound(buffer.toArray, new AddressEndpointContext(to.inetSocketAddress), messageCallback, false)
 
           dtlsConnector.send(rawData)
-
-          Cancelable.empty
         }
     }
 

@@ -17,18 +17,18 @@ class ObservableOpsSpec extends FlatSpec {
 
     val (l, r) = o.split(isEven)
 
-    l.toListL.runAsync.futureValue shouldBe List(1, 3, 5)
-    r.toListL.runAsync.futureValue shouldBe List(2, 4)
+    l.toListL.runToFuture.futureValue shouldBe List(1, 3, 5)
+    r.toListL.runToFuture.futureValue shouldBe List(2, 4)
   }
 
   it should "split a hot observable" in {
     val o = PublishSubject[Int]()
 
     val (l, r) = o.split(isEven)
-    val lbuf = l.toListL.runAsync
-    val rbuf = r.toListL.runAsync
+    val lbuf = l.toListL.runToFuture
+    val rbuf = r.toListL.runToFuture
 
-    Observable.fromIterable(1 to 5).mapFuture(i => o.onNext(i)).subscribe()
+    Observable.fromIterable(1 to 5).mapEvalF(i => o.onNext(i)).subscribe()
     o.onComplete()
 
     lbuf.futureValue shouldBe List(1, 3, 5)
