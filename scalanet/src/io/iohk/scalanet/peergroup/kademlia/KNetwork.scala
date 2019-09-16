@@ -99,10 +99,11 @@ object KNetwork {
       } yield response
     }
 
-    private def closeIfAnError(
+    private def closeTheChannel[Request <: KRequest[A]](
         channel: Channel[A, KMessage[A]]
-    )(maybeError: Option[Throwable]): Task[Unit] = {
-      maybeError.fold(Task.unit)(_ => channel.close())
+    )(error: Throwable): (Request, KMessage[A] => Task[Unit]) = {
+      channel.close()
+      null
     }
 
     private def sendResponse(
@@ -117,14 +118,18 @@ object KNetwork {
     private def serverTemplate[Request <: KRequest[A], Response <: KResponse[A]](
         pf: PartialFunction[KMessage[A], Request]
     ): Observable[(Request, KMessage[A] => Task[Unit])] = {
-      peerGroup.server().collectChannelCreated.mapEval { channel: Channel[A, KMessage[A]] =>
-        channel.in
-          .collect(pf)
-          .map(request => (request, sendResponse(channel)))
-          .headL
-          .timeout(requestTimeout)
-          .doOnFinish(closeIfAnError(channel))
-      }
+      peerGroup
+        .server()
+        .collectChannelCreated
+        .mapEval { channel: Channel[A, KMessage[A]] =>
+          channel.in
+            .collect(pf)
+            .map(request => (request, sendResponse(channel)))
+            .headL
+            .timeout(requestTimeout)
+            .onErrorHandle(closeTheChannel(channel))
+        }
+        .filterNot(_ == null)
     }
   }
 }

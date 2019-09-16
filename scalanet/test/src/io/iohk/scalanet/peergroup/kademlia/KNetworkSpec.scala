@@ -78,7 +78,7 @@ class KNetworkSpec extends FlatSpec {
 
       val t = requestExtractor(network).runToFuture.failed.futureValue
 
-      t shouldBe a[TimeoutException]
+      t shouldBe a[NoSuchElementException]
       verify(channel).close()
     }
 
@@ -109,6 +109,26 @@ class KNetworkSpec extends FlatSpec {
 
       t shouldBe a[TimeoutException]
       verify(channel).close()
+    }
+
+    s"Server $label" should "keep working even if there is an error" in {
+      val (network: KNetwork[String], peerGroup) = createKNetwork
+      val channel1 = mock[Channel[String, KMessage[String]]]
+      val channel2 = mock[Channel[String, KMessage[String]]]
+      when(peerGroup.server())
+        .thenReturn(Observable(ChannelCreated(channel1), ChannelCreated(channel2)))
+
+      when(channel1.in).thenReturn(Observable.never)
+      when(channel2.in).thenReturn(Observable.eval(request))
+
+      when(channel1.close()).thenReturn(Task.unit)
+      when(channel2.close()).thenReturn(Task.unit)
+
+      val actualRequest = requestExtractor(network).runToFuture.futureValue
+
+      actualRequest shouldBe request
+      verify(channel1).close()
+      verify(channel2, never()).close()
     }
 
     s"Client $label" should "close client channels when requests are successful" in {
