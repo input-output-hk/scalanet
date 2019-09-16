@@ -33,13 +33,13 @@ trait PeerUtils[A, M, PG[_, _]] {
   )(implicit sc: Scheduler): Unit = {
     val alice = generateRandomPeerGroup()
     val bob = generateRandomPeerGroup()
-    initialize(alice).runAsync
-    initialize(bob).runAsync
+    initialize(alice).runToFuture
+    initialize(bob).runToFuture
     try {
       testFunction(alice, bob)
     } finally {
-      shutdown(alice).runAsync
-      shutdown(bob).runAsync
+      shutdown(alice).runToFuture
+      shutdown(bob).runToFuture
     }
   }
 }

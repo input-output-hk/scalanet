@@ -103,7 +103,7 @@ class KPeerGroup[A, M](
     debug(s"Setting up new channel to $nodeRecord.")
 
     // send the peer our own node record
-    channel.sendMessage(Left(kRouter.config.nodeRecord)).runAsync.foreach { _ =>
+    channel.sendMessage(Left(kRouter.config.nodeRecord)).runToFuture.foreach { _ =>
       debug(s"Acknowledgement sent to $nodeRecord.")
 
       val newChannel = new ChannelImpl[A, M](

@@ -33,7 +33,7 @@ class KNetworkSpec extends FlatSpec {
     when(channel.in).thenReturn(Observable.eval(findNodes))
     when(channel.close()).thenReturn(Task.unit)
 
-    val (request, _) = network.findNodes.headL.runAsync.futureValue
+    val (request, _) = network.findNodes.headL.runToFuture.futureValue
 
     request shouldBe findNodes
     verify(channel, never()).close()
@@ -46,7 +46,7 @@ class KNetworkSpec extends FlatSpec {
     when(channel.in).thenReturn(Observable.never)
     when(channel.close()).thenReturn(Task.unit)
 
-    val t = network.findNodes.headL.runAsync.failed.futureValue
+    val t = network.findNodes.headL.runToFuture.failed.futureValue
 
     t shouldBe a[TimeoutException]
     verify(channel).close()
@@ -60,7 +60,7 @@ class KNetworkSpec extends FlatSpec {
     when(channel.sendMessage(nodes)).thenReturn(Task.unit)
     when(channel.close()).thenReturn(Task.unit)
 
-    val (_, responseHandler) = network.findNodes.headL.runAsync.futureValue
+    val (_, responseHandler) = network.findNodes.headL.runToFuture.futureValue
     responseHandler(nodes).evaluated
 
     verify(channel).close()
@@ -74,7 +74,7 @@ class KNetworkSpec extends FlatSpec {
     when(channel.sendMessage(nodes)).thenReturn(Task.never)
     when(channel.close()).thenReturn(Task.unit)
 
-    val (_, responseHandler) = network.findNodes.headL.runAsync.futureValue
+    val (_, responseHandler) = network.findNodes.headL.runToFuture.futureValue
     val t = responseHandler(nodes).failed.evaluated
 
     t shouldBe a[TimeoutException]

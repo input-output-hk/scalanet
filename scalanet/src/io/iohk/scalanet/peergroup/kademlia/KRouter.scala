@@ -50,7 +50,7 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
       )
       add(nodeRecord)
       val result = embellish(kBuckets.closestNodes(targetNodeId, config.k))
-      responseHandler(Nodes(uuid, config.nodeRecord, result)).runAsync
+      responseHandler(Nodes(uuid, config.nodeRecord, result)).runToFuture
         .onComplete {
           case Failure(t) =>
             log.info(
@@ -136,7 +136,7 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
 
           kNodesResponse.nodes
         }
-        .runAsync
+        .runToFuture
         .recover {
           case t: Throwable =>
             info(s"Query to node $knownNode failed due to exception $t.")
