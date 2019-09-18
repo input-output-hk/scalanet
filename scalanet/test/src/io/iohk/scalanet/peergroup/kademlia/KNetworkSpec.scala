@@ -42,21 +42,6 @@ class KNetworkSpec extends FlatSpec {
     verify(channel, never()).close()
   }
 
-//   "Server findNodes" should "close server channels when a request does not arrive before a timeout" in {
-//    val (network, peerGroup) = createKNetwork
-//    val channel = mock[Channel[String, KMessage[String]]]
-//
-//    when(peerGroup.server()).thenReturn(Observable.eval(ChannelCreated(channel)).publish)
-//    when(channel.in).thenReturn(Observable.never.publish)
-//    when(channel.close()).thenReturn(Task.unit)
-//    val findNodesConnectable = network.findNodes
-//    val nodesCF = findNodesConnectable.headL.runToFuture
-//    findNodesConnectable.connect()
-//    val t = nodesCF.failed.futureValue
-//    t shouldBe a[TimeoutException]
-//    verify(channel).close()
-//  }
-
   "Server findNodes" should "close server channel in the response task" in {
     val (network, peerGroup) = createKNetwork
     val channel = mock[Channel[String, KMessage[String]]]
