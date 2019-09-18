@@ -1,5 +1,6 @@
 package io.iohk.scalanet.peergroup.kademlia
 
+import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.FindNodes
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.Nodes
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
@@ -7,6 +8,7 @@ import io.iohk.scalanet.peergroup.{Channel, PeerGroup}
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
+import monix.reactive.observables.ConnectableObservable
 
 trait KNetwork[A] {
 
@@ -16,7 +18,7 @@ trait KNetwork[A] {
     *         Each element contains a tuple consisting of a FIND_NODES request
     *         with a function for accepting the required NODES response.
     */
-  def findNodes: Observable[(FindNodes[A], Nodes[A] => Task[Unit])]
+  def findNodes: ConnectableObservable[(FindNodes[A], Nodes[A] => Task[Unit])]
 
   /**
     * Send a FIND_NODES message to another peer.
@@ -38,6 +40,7 @@ object KNetwork {
       extends KNetwork[A] {
 
     override def findNodes(to: NodeRecord[A], message: FindNodes[A]): Task[Nodes[A]] = {
+
       peerGroup
         .client(to.routingAddress)
         .bracket { clientChannel =>
@@ -47,27 +50,33 @@ object KNetwork {
         }
     }
 
-    override def findNodes: Observable[(FindNodes[A], Nodes[A] => Task[Unit])] = {
-      peerGroup.server().collectChannelCreated.mapEval { channel: Channel[A, KMessage[A]] =>
-        channel.in
-          .collect {
-            case f @ FindNodes(_, _, _) =>
-              (f, nodesTask(channel))
-          }
-          .headL
-          .timeout(requestTimeout)
-          .doOnFinish(closeIfAnError(channel))
+    override def findNodes: ConnectableObservable[(FindNodes[A], Nodes[A] => Task[Unit])] = {
+      val serverChannels: Observable[Channel[A, KMessage[A]]] = peerGroup.server().collectChannelCreated
+      try {
+        val collectedChannels = serverChannels.mergeMap { channel: Channel[A, KMessage[A]] =>
+          channel.in
+            .collect {
+              case f @ FindNodes(_, _, _) =>
+                (f, nodesTask(channel))
+            }
+        }
+        val connectableNodes = ConnectableSubject[(FindNodes[A], Nodes[A] => Task[Unit])](collectedChannels)
+        peerGroup.server().collectChannelCreated.foreach(_.in.connect())
+        peerGroup.server().connect()
+        connectableNodes
+      } finally {
+        serverChannels.map(closeIfAnError)
       }
     }
-
     private def makeFindNodesRequest(message: FindNodes[A], clientChannel: Channel[A, KMessage[A]]): Task[Nodes[A]] = {
-      for {
-        _ <- clientChannel.sendMessage(message).timeout(requestTimeout)
-        nodes <- clientChannel.in
-          .collect { case n @ Nodes(_, _, _) => n }
-          .headL
-          .timeout(requestTimeout)
-      } yield nodes
+      clientChannel.sendMessage(message).timeout(requestTimeout).flatMap { _ =>
+        {
+          val observable = clientChannel.in.collect { case n @ Nodes(_, _, _) => n }
+          val nodesF = observable.headL.runToFuture
+          clientChannel.in.connect()
+          Task.fromFuture(nodesF).timeout(requestTimeout)
+        }
+      }
     }
 
     private def closeIfAnError(
@@ -84,5 +93,6 @@ object KNetwork {
         .timeout(requestTimeout)
         .doOnFinish(_ => channel.close())
     }
+
   }
 }

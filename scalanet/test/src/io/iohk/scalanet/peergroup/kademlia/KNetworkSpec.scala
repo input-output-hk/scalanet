@@ -13,7 +13,7 @@ import monix.reactive.Observable
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.mockito.MockitoSugar._
-import org.mockito.Mockito.{verify, when, never}
+import org.mockito.Mockito.{never, verify, when}
 
 import scala.concurrent.duration._
 import monix.execution.Scheduler.Implicits.global
@@ -24,43 +24,37 @@ import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 
 class KNetworkSpec extends FlatSpec {
 
-  implicit val patienceConfig = PatienceConfig(1 second)
+  implicit val patienceConfig = PatienceConfig(3 second)
 
   "Server findNodes" should "not close server channels (it is the responsibility of the response handler)" in {
     val (network, peerGroup) = createKNetwork
     val channel = mock[Channel[String, KMessage[String]]]
-    when(peerGroup.server()).thenReturn(Observable.eval(ChannelCreated(channel)))
-    when(channel.in).thenReturn(Observable.eval(findNodes))
+
+    when(peerGroup.server()).thenReturn(Observable.eval(ChannelCreated(channel)).publish)
+    when(channel.in).thenReturn(Observable.eval(findNodes).publish)
     when(channel.close()).thenReturn(Task.unit)
+    val findNodesConnectable = network.findNodes
+    val nodesCF = findNodesConnectable.headL.runToFuture
+    findNodesConnectable.connect()
 
-    val (request, _) = network.findNodes.headL.runToFuture.futureValue
-
+    val (request, _) = nodesCF.futureValue
     request shouldBe findNodes
     verify(channel, never()).close()
-  }
-
-  "Server findNodes" should "close server channels when a request does not arrive before a timeout" in {
-    val (network, peerGroup) = createKNetwork
-    val channel = mock[Channel[String, KMessage[String]]]
-    when(peerGroup.server()).thenReturn(Observable.eval(ChannelCreated(channel)))
-    when(channel.in).thenReturn(Observable.never)
-    when(channel.close()).thenReturn(Task.unit)
-
-    val t = network.findNodes.headL.runToFuture.failed.futureValue
-
-    t shouldBe a[TimeoutException]
-    verify(channel).close()
   }
 
   "Server findNodes" should "close server channel in the response task" in {
     val (network, peerGroup) = createKNetwork
     val channel = mock[Channel[String, KMessage[String]]]
-    when(peerGroup.server()).thenReturn(Observable.eval(ChannelCreated(channel)))
-    when(channel.in).thenReturn(Observable.eval(findNodes))
+
+    when(peerGroup.server()).thenReturn(Observable.eval(ChannelCreated(channel)).publish)
+    when(channel.in).thenReturn(Observable.eval(findNodes).publish)
     when(channel.sendMessage(nodes)).thenReturn(Task.unit)
     when(channel.close()).thenReturn(Task.unit)
+    val findNodesConnectable = network.findNodes
 
-    val (_, responseHandler) = network.findNodes.headL.runToFuture.futureValue
+    val nodesCF = findNodesConnectable.headL.runToFuture
+    findNodesConnectable.connect()
+    val (_, responseHandler) = nodesCF.futureValue
     responseHandler(nodes).evaluated
 
     verify(channel).close()
@@ -69,12 +63,17 @@ class KNetworkSpec extends FlatSpec {
   "Server findNodes" should "close server channel in timed out response task" in {
     val (network, peerGroup) = createKNetwork
     val channel = mock[Channel[String, KMessage[String]]]
-    when(peerGroup.server()).thenReturn(Observable.eval(ChannelCreated(channel)))
-    when(channel.in).thenReturn(Observable.eval(findNodes))
+
+    when(peerGroup.server()).thenReturn(Observable.eval(ChannelCreated(channel)).publish)
+    when(channel.in).thenReturn(Observable.eval(findNodes).publish)
+
     when(channel.sendMessage(nodes)).thenReturn(Task.never)
     when(channel.close()).thenReturn(Task.unit)
+    val findNodesConnectable = network.findNodes
+    val nodesCF = findNodesConnectable.headL.runToFuture
+    findNodesConnectable.connect()
 
-    val (_, responseHandler) = network.findNodes.headL.runToFuture.futureValue
+    val (_, responseHandler) = nodesCF.futureValue
     val t = responseHandler(nodes).failed.evaluated
 
     t shouldBe a[TimeoutException]
@@ -84,16 +83,19 @@ class KNetworkSpec extends FlatSpec {
   "Client findNodes" should "close client channels when requests are successful" in {
     val (network, peerGroup) = createKNetwork
     val client = mock[Channel[String, KMessage[String]]]
+
     when(peerGroup.client(targetRecord.routingAddress)).thenReturn(Task(client))
     when(client.sendMessage(findNodes)).thenReturn(Task.unit)
-    when(client.in).thenReturn(Observable.eval(nodes))
+    val nodeConnectableStream = Observable.eval(nodes).publish
+    when(client.in).thenReturn(nodeConnectableStream)
     when(client.close()).thenReturn(Task.unit)
 
-    val response: Nodes[String] =
-      network.findNodes(targetRecord, findNodes).evaluated
+    val responseCF = network.findNodes(targetRecord, findNodes).runToFuture
 
-    response shouldBe nodes
+    responseCF.futureValue shouldBe nodes
+
     verify(client).close()
+
   }
 
   "Client findNodes" should "pass exception when client call fails" in {
@@ -116,10 +118,14 @@ class KNetworkSpec extends FlatSpec {
     val exception = new Exception("failed")
     when(peerGroup.client(targetRecord.routingAddress)).thenReturn(Task(client))
     when(client.sendMessage(findNodes)).thenReturn(Task.raiseError(exception))
+    val nodeConnectableStream = Observable.eval(nodes).publish
+    when(client.in).thenReturn(nodeConnectableStream)
     when(client.close()).thenReturn(Task.unit)
+    val responseCF = network.findNodes(targetRecord, findNodes).failed.runToFuture
+    nodeConnectableStream.connect()
 
     val t: Throwable =
-      network.findNodes(targetRecord, findNodes).failed.evaluated
+      responseCF.futureValue
 
     t shouldBe exception
     verify(client).close()
@@ -130,11 +136,13 @@ class KNetworkSpec extends FlatSpec {
     val client = mock[Channel[String, KMessage[String]]]
     when(peerGroup.client(targetRecord.routingAddress)).thenReturn(Task(client))
     when(client.sendMessage(findNodes)).thenReturn(Task.unit)
-    when(client.in).thenReturn(Observable.fromTask(Task.never))
+    val con = Observable.fromTask(Task.never).publish
+    when(client.in).thenReturn(con)
     when(client.close()).thenReturn(Task.unit)
 
+    val failed = network.findNodes(targetRecord, findNodes).failed.runToFuture
     val t: Throwable =
-      network.findNodes(targetRecord, findNodes).failed.evaluated
+      failed.futureValue
 
     t shouldBe a[TimeoutException]
     verify(client).close()
