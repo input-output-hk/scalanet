@@ -3,12 +3,14 @@ package io.iohk.scalanet.peergroup
 import java.util.concurrent.ConcurrentHashMap
 
 import io.iohk.decco._
-import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, ServerEvent}
+import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.{ChannelCreated, HandshakeFailed}
+import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, ServerEvent}
 import io.iohk.scalanet.peergroup.SimplePeerGroup.{Config, _}
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
+import monix.reactive.observables.ConnectableObservable
 import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
@@ -46,11 +48,11 @@ class SimplePeerGroup[A, AA, M](
     underlyingChannels.map(new ChannelImpl(to, _))
   }
 
-  override def server(): Observable[ServerEvent[A, M]] = {
-    // FIXME pt1 addressing done as part of own proto
-    // FIXME pt2 somehow addressing as QoS option in underlying peer group allows fallback to underlying addressing?
+  // FIXME pt1 addressing done as part of own proto
+  // FIXME pt2 somehow addressing as QoS option in underlying peer group allows fallback to underlying addressing?
+  val observable = underLyingPeerGroup.server().map { event =>
     val reverseLookup: mutable.Map[AA, A] = routingTable.map(_.swap)
-    underLyingPeerGroup.server().map {
+    event match {
       case ChannelCreated(underlyingChannel) =>
         val a = reverseLookup(underlyingChannel.to)
         ChannelCreated(new ChannelImpl(a, List(underlyingChannel)))
@@ -59,51 +61,62 @@ class SimplePeerGroup[A, AA, M](
     }
   }
 
+  val connectableObservable = ConnectableSubject[ServerEvent[A, M]](observable)
+
+  override def server(): ConnectableObservable[ServerEvent[A, M]] = connectableObservable
+
   override def shutdown(): Task[Unit] = underLyingPeerGroup.shutdown()
 
   override def initialize(): Task[Unit] = {
-    routingTable += processAddress -> underLyingPeerGroup.processAddress
-
-    underLyingPeerGroup
-      .server()
-      .collect(ChannelCreated.collector)
-      .mergeMap(channel => channel.in)
-      .collect {
-        case Left(e: EnrolMe[A, AA]) => e
-      }
-      .foreach(handleEnrollment)
-
-    if (config.knownPeers.nonEmpty) {
-      val (knownPeerAddress, knownPeerAddressUnderlying) = config.knownPeers.head
-      routingTable += knownPeerAddress -> knownPeerAddressUnderlying
-
-      val enrolledTask: Task[Unit] = underLyingPeerGroup
-        .server()
-        .collectChannelCreated
-        .mergeMap(channel => channel.in)
-        .collect {
-          case Left(e: Enrolled[A, AA]) =>
-            routingTable.clear()
-            routingTable ++= e.routingTable
-            debug(
-              s"Peer address '$processAddress' enrolled into group and installed new routing table:\n${e.routingTable}"
-            )
-        }
-        .headL
+    try {
+      routingTable += processAddress -> underLyingPeerGroup.processAddress
 
       underLyingPeerGroup
-        .client(knownPeerAddressUnderlying)
-        .foreach(
-          channel =>
-            channel
-              .sendMessage(Left(EnrolMe(processAddress, config.multicastAddresses, underLyingPeerGroup.processAddress)))
-              .runToFuture
-        )
+        .server()
+        .collect(ChannelCreated.collector)
+        .mergeMap(channel => channel.in)
+        .collect {
+          case Left(e: EnrolMe[A, AA]) => e
+        }
+        .foreach(handleEnrollment)
 
-      enrolledTask
-    } else {
-      Task.unit
+      if (config.knownPeers.nonEmpty) {
+        val (knownPeerAddress, knownPeerAddressUnderlying) = config.knownPeers.head
+        routingTable += knownPeerAddress -> knownPeerAddressUnderlying
+
+        val enrolledTask: Task[Unit] = underLyingPeerGroup
+          .server()
+          .collectChannelCreated
+          .mergeMap(channel => channel.in)
+          .collect {
+            case Left(e: Enrolled[A, AA]) =>
+              routingTable.clear()
+              routingTable ++= e.routingTable
+              debug(
+                s"Peer address '$processAddress' enrolled into group and installed new routing table:\n${e.routingTable}"
+              )
+          }
+          .headL
+
+        underLyingPeerGroup
+          .client(knownPeerAddressUnderlying)
+          .foreach(
+            channel =>
+              channel
+                .sendMessage(
+                  Left(EnrolMe(processAddress, config.multicastAddresses, underLyingPeerGroup.processAddress))
+                )
+                .runToFuture
+          )
+
+        enrolledTask
+      } else {
+        Task.unit
+      }
+    } finally {
+      underLyingPeerGroup.server().connect()
     }
+
   }
 
   private class ChannelImpl(val to: A, underlyingChannel: List[Channel[AA, Either[ControlMessage[A, AA], M]]])
@@ -115,21 +128,22 @@ class SimplePeerGroup[A, AA, M](
       )
       Task.gatherUnordered(underlyingChannel.map(_.sendMessage(Right(message)))).map(_ => ())
     }
+    val observable = Observable
+      .fromIterable(underlyingChannel.map {
+        _.in.collect {
+          case Right(message) =>
+            debug(
+              s"Processing inbound message from remote address $to to local address $processAddress, $message"
+            )
+            message
+        }
+      })
+      .merge
 
-    override def in: Observable[M] = {
-      Observable
-        .fromIterable(underlyingChannel.map {
-          _.in.collect {
-            case Right(message) =>
-              debug(
-                s"Processing inbound message from remote address $to to local address $processAddress, $message"
-              )
-              message
-          }
-        })
-        .merge
+    private val connectableObservable = ConnectableSubject[M](observable)
+    underlyingChannel.foreach(_.in.connect())
 
-    }
+    override def in: ConnectableObservable[M] = connectableObservable
 
     override def close(): Task[Unit] =
       Task.gatherUnordered(underlyingChannel.map(_.close())).map(_ => ())

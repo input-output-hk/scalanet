@@ -6,7 +6,9 @@ import java.util.concurrent.ConcurrentHashMap
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.FindNodes
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.Nodes
 import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
+import monix.eval.Task
 import monix.execution.Scheduler
+import monix.reactive.observables.ConnectableObservable
 import org.slf4j.LoggerFactory
 import scodec.bits.BitVector
 
@@ -29,7 +31,7 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
   config.knownPeers.foreach(add)
 
   info("Executing initial enrolment process to join the network...")
-  Try(Await.result(lookup(config.nodeRecord.id), 2 seconds)).toEither match {
+  Try(Await.result(lookup(config.nodeRecord.id), 3 seconds)).toEither match {
     case Left(t) =>
       info(s"Enrolment lookup failed with exception: $t")
     case Right(nodes) =>
@@ -41,7 +43,8 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
   }
 
   // Handle findNodes requests...
-  network.findNodes.foreach {
+  val nodes: ConnectableObservable[(FindNodes[A], Nodes[A] => Task[Unit])] = network.findNodes
+  nodes.foreach {
     case (findNodesRequest, responseHandler) =>
       val FindNodes(uuid, nodeRecord, targetNodeId) = findNodesRequest
 
@@ -59,6 +62,7 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
           case _ =>
         }
   }
+  nodes.connect()
 
   def get(key: BitVector): Future[NodeRecord[A]] = {
     debug(s"get(${key.toHex})")
@@ -142,6 +146,7 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
             info(s"Query to node $knownNode failed due to exception $t.")
             Seq.empty
         }
+
     }
 
     def loop(closestNodes: Seq[BitVector]): Future[Seq[NodeRecord[A]]] = {

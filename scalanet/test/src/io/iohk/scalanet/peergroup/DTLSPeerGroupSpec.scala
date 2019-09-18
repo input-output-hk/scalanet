@@ -36,7 +36,7 @@ class DTLSPeerGroupSpec extends FlatSpec {
       val handshakeF = bob.server().collectHandshakeFailure.headL.runToFuture
 
       alice.client(bob.processAddress).evaluated.sendMessage("hello, bob").runToFuture
-
+      bob.server().connect()
       handshakeF.futureValue.to shouldBe alice.processAddress
     }
 

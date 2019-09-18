@@ -51,29 +51,8 @@ class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
       }
 
       aliceClient.sendMessage(aliceMessage).runToFuture
-
+      bob.server().connect()
       bobServer.futureValue.to shouldBe alice.processAddress
-    }
-
-  ignore should "not receive a channel that started before the subscription to the server() stream" in
-    peerUtils.withTwoRandomPeerGroups { (alice, bob) =>
-      val aliceMessage1 = Random.alphanumeric.take(1024).mkString
-      val aliceMessage2 = aliceMessage1 + "1"
-
-      val aliceClient1 = alice.client(bob.processAddress).evaluated
-      aliceClient1.sendMessage(aliceMessage1).runToFuture
-
-      val bobServer = bob.server().collectChannelCreated.headL.runToFuture
-
-      intercept[Exception] {
-        bobServer.futureValue.to shouldBe alice.processAddress
-      }
-
-      val aliceClient2 = alice.client(bob.processAddress).evaluated
-      aliceClient2.sendMessage(aliceMessage2).runToFuture
-
-      bobServer.futureValue.to shouldBe alice.processAddress
-      bobServer.futureValue.in.headL.evaluated shouldBe aliceMessage2
     }
 
   it should "send and receive a message" in
@@ -89,7 +68,9 @@ class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
       val aliceReceived = aliceClient.in.headL.runToFuture
 
       aliceClient.sendMessage(alicesMessage).evaluated
-
+      aliceClient.in.connect()
+      bob.server().collectChannelCreated.foreach(_.in.connect())
+      bob.server().connect()
       bobReceived.futureValue shouldBe alicesMessage
       aliceReceived.futureValue shouldBe bobsMessage
     }
@@ -114,7 +95,7 @@ class InMemoryPeerGroupSpec extends FlatSpec with BeforeAndAfter {
 
       aliceClient1.sendMessage(aliceMessage).runToFuture
       aliceClient2.sendMessage(aliceMessage).runToFuture
-
+      bob.server().connect()
       firstInbound.futureValue.to shouldBe alice.processAddress
       secondInbound.futureValue.to shouldBe alice.processAddress
     }

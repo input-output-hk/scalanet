@@ -114,7 +114,6 @@ object KRouterSpec {
     val knetwork = new KNetworkScalanetImpl(underlyingPeerGroup)
 
     val config = Config(nodeRecord, knownPeers, alpha, k)
-
     new KRouter(config, knetwork)
   }
 }
