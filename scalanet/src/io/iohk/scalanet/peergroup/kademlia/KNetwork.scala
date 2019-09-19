@@ -12,12 +12,15 @@ import monix.reactive.Observable
 trait KNetwork[A] {
 
   /**
-    * Server side FIND_NODES handler.
-    * @return An Observable for receiving FIND_NODES requests.
-    *         Each element contains a tuple consisting of a FIND_NODES request
-    *         with a function for accepting the required NODES response.
+    * Server side requests stream.
+    * @return An Observable for receiving FIND_NODES and PING requests.
+    *         Each element contains a tuple consisting of a request
+    *         with a function for accepting the required response.
+    *         With current conventions, it is mandatory to provide
+    *         Some(response) or None for all request types, in order that the
+    *         implementation can close the channel.
     */
-  def findNodes: Observable[(FindNodes[A], Nodes[A] => Task[Unit])]
+  def kRequests: Observable[(KRequest[A], Option[KResponse[A]] => Task[Unit])]
 
   /**
     * Send a FIND_NODES message to another peer.
@@ -26,14 +29,6 @@ trait KNetwork[A] {
     * @return the future response
     */
   def findNodes(to: NodeRecord[A], request: FindNodes[A]): Task[Nodes[A]]
-
-  /**
-    * Server side PING handler.
-    * @return An Observable for receiving PING requests.
-    *         Each element contains a tuple consisting of a PING request
-    *         with a function for accepting the require PONG response.
-    */
-  def ping: Observable[(Ping[A], Pong[A] => Task[Unit])]
 
   /**
     * Send a PING message to another peer.
@@ -54,12 +49,19 @@ object KNetwork {
   )(implicit scheduler: Scheduler)
       extends KNetwork[A] {
 
-    override def findNodes: Observable[(FindNodes[A], Nodes[A] => Task[Unit])] = serverTemplate {
-      case f @ FindNodes(_, _, _) => f
-    }
-
-    override def ping: Observable[(Ping[A], Pong[A] => Task[Unit])] = serverTemplate {
-      case p @ Ping(_, _) => p
+    override def kRequests: Observable[(KRequest[A], Option[KResponse[A]] => Task[Unit])] = {
+      peerGroup
+        .server()
+        .collectChannelCreated
+        .mapEval { channel: Channel[A, KMessage[A]] =>
+          channel.in
+            .collect { case r: KRequest[A] => r }
+            .map(request => (request, sendOptionalResponse(channel)))
+            .headL
+            .timeout(requestTimeout)
+            .onErrorHandle(closeTheChannel(channel))
+        }
+        .filterNot(_ == null)
     }
 
     override def findNodes(to: NodeRecord[A], request: FindNodes[A]): Task[Nodes[A]] = {
@@ -101,7 +103,7 @@ object KNetwork {
 
     private def closeTheChannel[Request <: KRequest[A]](
         channel: Channel[A, KMessage[A]]
-    )(error: Throwable): (Request, KMessage[A] => Task[Unit]) = {
+    )(error: Throwable): (Request, Option[KMessage[A]] => Task[Unit]) = {
       channel.close()
       null
     }
@@ -115,21 +117,10 @@ object KNetwork {
         .doOnFinish(_ => channel.close())
     }
 
-    private def serverTemplate[Request <: KRequest[A], Response <: KResponse[A]](
-        pf: PartialFunction[KMessage[A], Request]
-    ): Observable[(Request, KMessage[A] => Task[Unit])] = {
-      peerGroup
-        .server()
-        .collectChannelCreated
-        .mapEval { channel: Channel[A, KMessage[A]] =>
-          channel.in
-            .collect(pf)
-            .map(request => (request, sendResponse(channel)))
-            .headL
-            .timeout(requestTimeout)
-            .onErrorHandle(closeTheChannel(channel))
-        }
-        .filterNot(_ == null)
+    private def sendOptionalResponse(
+        channel: Channel[A, KMessage[A]]
+    ): Option[KMessage[A]] => Task[Unit] = { maybeMessage =>
+      maybeMessage.fold(channel.close())(sendResponse(channel))
     }
   }
 }

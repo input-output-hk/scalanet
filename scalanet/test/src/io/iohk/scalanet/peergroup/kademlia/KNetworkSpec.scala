@@ -25,14 +25,17 @@ import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
 import org.scalatest.prop.TableDrivenPropertyChecks._
 
 class KNetworkSpec extends FlatSpec {
+  import KNetworkRequestProcessing._
 
   implicit val patienceConfig = PatienceConfig(1 second)
 
-  private val getFindNodesRequest: KNetwork[String] => Task[KRequest[String]] = getActualRequest(_.findNodes)
-  private val getPingRequest: KNetwork[String] => Task[KRequest[String]] = getActualRequest(_.ping)
+  private val getFindNodesRequest: KNetwork[String] => Task[KRequest[String]] = getActualRequest(_.findNodesRequests())
+  private val getPingRequest: KNetwork[String] => Task[KRequest[String]] = getActualRequest(_.pingRequests())
 
-  private val sendFindNodesResponse: Nodes[String] => KNetwork[String] => Task[Unit] = sendResponse(_.findNodes)
-  private val sendPingResponse: Pong[String] => KNetwork[String] => Task[Unit] = sendResponse(_.ping)
+  private val sendFindNodesResponse: Option[Nodes[String]] => KNetwork[String] => Task[Unit] = sendResponse(
+    _.findNodesRequests()
+  )
+  private val sendPingResponse: Option[Pong[String]] => KNetwork[String] => Task[Unit] = sendResponse(_.pingRequests())
 
   private val sendFindNodesRequest: (NodeRecord[String], FindNodes[String]) => KNetwork[String] => Task[Nodes[String]] =
     (to, request) => network => network.findNodes(to, request)
@@ -47,10 +50,10 @@ class KNetworkSpec extends FlatSpec {
       findNodes,
       nodes,
       getFindNodesRequest,
-      sendFindNodesResponse(nodes),
+      sendFindNodesResponse(Some(nodes)),
       sendFindNodesRequest(targetRecord, findNodes)
     ),
-    ("PING", ping, pong, getPingRequest, sendPingResponse(pong), sendPingRequest(targetRecord, ping))
+    ("PING", ping, pong, getPingRequest, sendPingResponse(Some(pong)), sendPingRequest(targetRecord, ping))
   )
 
   forAll(rpcs) { (label, request, response, requestExtractor, responseApplication, clientRpc) =>
@@ -186,6 +189,31 @@ class KNetworkSpec extends FlatSpec {
       verify(client).close()
     }
   }
+
+  s"In consuming only PING" should "channels should be closed for unhandled FIND_NODES requests" in {
+    val (network: KNetwork[String], peerGroup) = createKNetwork
+    val channel1 = mock[Channel[String, KMessage[String]]]
+    val channel2 = mock[Channel[String, KMessage[String]]]
+    when(peerGroup.server())
+      .thenReturn(Observable(ChannelCreated(channel1), ChannelCreated(channel2)))
+
+    when(channel1.in).thenReturn(Observable.eval(findNodes))
+    when(channel2.in).thenReturn(Observable.eval(ping))
+
+    when(channel2.sendMessage(pong)).thenReturn(Task.unit)
+
+    when(channel1.close()).thenReturn(Task.unit)
+    when(channel2.close()).thenReturn(Task.unit)
+
+    val (actualRequest, handler) = network.pingRequests().headL.runToFuture.futureValue
+
+    actualRequest shouldBe ping
+    verify(channel1).close()
+    verify(channel2, never()).close()
+
+    handler(Some(pong)).runToFuture.futureValue
+    verify(channel2).close()
+  }
 }
 
 object KNetworkSpec {
@@ -211,8 +239,8 @@ object KNetworkSpec {
   }
 
   private def sendResponse[Request <: KRequest[String], Response <: KResponse[String]](
-      rpc: KNetwork[String] => Observable[(Request, Response => Task[Unit])]
-  )(response: Response)(network: KNetwork[String]): Task[Unit] = {
+      rpc: KNetwork[String] => Observable[(Request, Option[Response] => Task[Unit])]
+  )(response: Option[Response])(network: KNetwork[String]): Task[Unit] = {
     val (_, handler) = rpc(network).headL.runToFuture.futureValue
     handler(response)
   }

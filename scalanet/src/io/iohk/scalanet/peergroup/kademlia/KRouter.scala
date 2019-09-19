@@ -40,8 +40,9 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
       )
   }
 
+  import KNetworkRequestProcessing._
   // Handle findNodes requests...
-  network.findNodes.foreach {
+  network.findNodesRequests().foreach {
     case (findNodesRequest, responseHandler) =>
       val FindNodes(uuid, nodeRecord, targetNodeId) = findNodesRequest
 
@@ -50,7 +51,7 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
       )
       add(nodeRecord)
       val result = embellish(kBuckets.closestNodes(targetNodeId, config.k))
-      responseHandler(Nodes(uuid, config.nodeRecord, result)).runToFuture
+      responseHandler(Some(Nodes(uuid, config.nodeRecord, result))).runToFuture
         .onComplete {
           case Failure(t) =>
             log.info(
