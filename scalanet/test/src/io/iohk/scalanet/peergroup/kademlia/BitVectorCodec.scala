@@ -1,11 +1,14 @@
 package io.iohk.scalanet.peergroup.kademlia
 
-import io.iohk.decco.Codec
+import io.iohk.decco.CodecContract
 import io.iohk.decco.auto.instances.NativeInstances.ByteArrayCodec
 import scodec.bits.BitVector
 
 object BitVectorCodec {
 
-  implicit def bitVectorInstance(implicit iCodec: Codec[Int], bCodec: Codec[Boolean]): Codec[BitVector] =
+  implicit def bitVectorInstance(
+      implicit iCodec: CodecContract[Int],
+      bCodec: CodecContract[Boolean]
+  ): CodecContract[BitVector] =
     ByteArrayCodec.map(array => BitVector(array), bitVector => bitVector.toByteArray)
 }
