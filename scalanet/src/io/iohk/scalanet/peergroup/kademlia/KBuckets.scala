@@ -1,10 +1,6 @@
 package io.iohk.scalanet.peergroup.kademlia
 
-import java.util.concurrent.ConcurrentSkipListSet
-
 import scodec.bits.BitVector
-
-import scala.collection.JavaConverters._
 
 /**
   * Skeletal kbucket implementation.
@@ -12,8 +8,7 @@ import scala.collection.JavaConverters._
   */
 class KBuckets(val baseId: BitVector) {
 
-  private val nodeIds =
-    new ConcurrentSkipListSet[BitVector](new XorOrdering(baseId)).asScala
+  private val buckets = (0 to baseId.length.toInt).map(_ => TimeSet[BitVector]()).toList
 
   add(baseId)
 
@@ -23,8 +18,7 @@ class KBuckets(val baseId: BitVector) {
     * The indices into the kBuckets are defined by their distance from referenceNodeId.
     */
   def closestNodes(nodeId: BitVector, n: Int): List[BitVector] = {
-    // replace with routing tree described in kademlia paper...
-    nodeIds.toList.sorted(new XorOrdering(nodeId)).take(n)
+    iterator.toList.sorted(new XorOrdering(nodeId)).take(n)
   }
 
   /**
@@ -38,7 +32,7 @@ class KBuckets(val baseId: BitVector) {
         s"Illegal attempt to add node id with a length different than the this node id."
       )
 
-    nodeIds.add(nodeId)
+    bucket(nodeId).add(nodeId)
 
     this
   }
@@ -49,7 +43,7 @@ class KBuckets(val baseId: BitVector) {
     * @return true if present
     */
   def contains(nodeId: BitVector): Boolean = {
-    nodeIds.contains(nodeId)
+    bucket(nodeId).contains(nodeId)
   }
 
   /**
@@ -58,7 +52,7 @@ class KBuckets(val baseId: BitVector) {
     * @return an iterator
     */
   def iterator: Iterator[BitVector] = {
-    nodeIds.iterator
+    buckets.flatten.iterator
   }
 
   /**
@@ -68,10 +62,23 @@ class KBuckets(val baseId: BitVector) {
     * @return
     */
   def remove(nodeId: BitVector): Boolean = {
-    nodeIds.remove(nodeId)
+    bucket(nodeId).remove(nodeId)
   }
 
   override def toString: String = {
-    s"KBuckets(baseId = ${baseId.toHex}): ${nodeIds.toList.map(id => s"(id=${id.toHex}, d=${Xor.d(id, baseId)})").mkString(", ")}"
+    s"KBuckets(baseId = ${baseId.toHex}): ${this.iterator.map(id => s"(id=${id.toHex}, d=${Xor.d(id, baseId)})").mkString(", ")}"
+  }
+
+  private def iBucket(b: BitVector): Int = {
+    iBucket(Xor.d(b, baseId))
+  }
+
+  private def iBucket(b: BigInt): Int = {
+    import BigIntExtentions._
+    (b + 1).log2.toInt
+  }
+
+  private def bucket(b: BitVector): TimeSet[BitVector] = {
+    buckets(iBucket(b))
   }
 }
