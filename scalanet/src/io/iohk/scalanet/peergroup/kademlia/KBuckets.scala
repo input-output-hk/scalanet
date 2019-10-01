@@ -1,16 +1,16 @@
 package io.iohk.scalanet.peergroup.kademlia
 
+import java.time.Clock
+
 import scodec.bits.BitVector
 
 /**
   * Skeletal kbucket implementation.
   * @param baseId the nodes own id.
   */
-class KBuckets(val baseId: BitVector) {
+class KBuckets(val baseId: BitVector, val clock: Clock) {
 
-  private val buckets = (0 to baseId.length.toInt).map(_ => TimeSet[BitVector]()).toList
-
-  add(baseId)
+  private val buckets = (0 to baseId.length.toInt).map(_ => TimeSet[BitVector](clock)).toList
 
   /**
     * Find the n nodes closest to nodeId in kBuckets.
@@ -22,7 +22,7 @@ class KBuckets(val baseId: BitVector) {
   }
 
   /**
-    * Add a node record into the KBuckets (TODO if there is capacity).
+    * Add a node record into the KBuckets.
     *
     * @return this KBuckets instance.
     */
@@ -65,6 +65,10 @@ class KBuckets(val baseId: BitVector) {
     bucket(nodeId).remove(nodeId)
   }
 
+  def bucket(b: BitVector): TimeSet[BitVector] = {
+    buckets(iBucket(b))
+  }
+
   override def toString: String = {
     s"KBuckets(baseId = ${baseId.toHex}): ${this.iterator.map(id => s"(id=${id.toHex}, d=${Xor.d(id, baseId)})").mkString(", ")}"
   }
@@ -76,9 +80,5 @@ class KBuckets(val baseId: BitVector) {
   private def iBucket(b: BigInt): Int = {
     import BigIntExtentions._
     (b + 1).log2.toInt
-  }
-
-  private def bucket(b: BitVector): TimeSet[BitVector] = {
-    buckets(iBucket(b))
   }
 }

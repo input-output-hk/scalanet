@@ -1,11 +1,14 @@
 package io.iohk.scalanet.peergroup.kademlia
 
+import java.time.Clock
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.FindNodes
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.Nodes
+import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
+import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse
+import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
 import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
+import monix.eval.Task
 import monix.execution.Scheduler
 import org.slf4j.LoggerFactory
 import scodec.bits.BitVector
@@ -16,12 +19,12 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success, Try}
 
-class KRouter[A](val config: Config[A], val network: KNetwork[A])(
+class KRouter[A](val config: Config[A], val network: KNetwork[A], val clock: Clock, val uuidSource: () => UUID)(
     implicit scheduler: Scheduler
 ) {
 
   private val log = LoggerFactory.getLogger(getClass)
-  val kBuckets = new KBuckets(config.nodeRecord.id)
+  val kBuckets = new KBuckets(config.nodeRecord.id, clock)
   val nodeRecords = new ConcurrentHashMap[BitVector, NodeRecord[A]].asScala
 
   add(config.nodeRecord)
@@ -32,6 +35,7 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
   Try(Await.result(lookup(config.nodeRecord.id), 2 seconds)).toEither match {
     case Left(t) =>
       info(s"Enrolment lookup failed with exception: $t")
+      debug(s"Enrolment failure stacktrace: ${t.getStackTrace.mkString("\n")}")
     case Right(nodes) =>
       debug(s"Enrolment looked completed with network nodes ${nodes.mkString(",")}")
       info(
@@ -40,25 +44,33 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
       )
   }
 
-  import KNetworkRequestProcessing._
-  // Handle findNodes requests...
-  network.findNodesRequests().foreach {
-    case (findNodesRequest, responseHandler) =>
-      val FindNodes(uuid, nodeRecord, targetNodeId) = findNodesRequest
-
+  network.kRequests.foreach {
+    case (FindNodes(uuid, nodeRecord, targetNodeId), responseHandler) =>
       debug(
         s"Received request FindNodes(${nodeRecord.id.toHex}, $nodeRecord, ${targetNodeId.toHex})"
       )
       add(nodeRecord)
-      val result = embellish(kBuckets.closestNodes(targetNodeId, config.k))
-      responseHandler(Some(Nodes(uuid, config.nodeRecord, result))).runToFuture
-        .onComplete {
-          case Failure(t) =>
-            log.info(
-              s"Nodes response $uuid to ${nodeRecord.routingAddress} failed with exception: $t"
-            )
-          case _ =>
-        }
+
+      val result = Nodes(uuid, config.nodeRecord, embellish(kBuckets.closestNodes(targetNodeId, config.k)))
+
+      sendResponse(result, responseHandler, nodeRecord.routingAddress)
+    case (Ping(uuid, nodeRecord), responseHandler) =>
+      debug(
+        s"Received request Ping(${nodeRecord.id.toHex}, $nodeRecord)"
+      )
+      add(nodeRecord)
+      sendResponse(Pong(uuid, config.nodeRecord), responseHandler, nodeRecord.routingAddress)
+  }
+
+  private def sendResponse(response: KResponse[A], responseHandler: Option[KResponse[A]] => Task[Unit], to: A): Unit = {
+    responseHandler(Some(response)).runToFuture
+      .onComplete {
+        case Failure(t) =>
+          log.info(
+            s"Pong response ${response.requestId} to $to failed with exception: $t"
+          )
+        case _ =>
+      }
   }
 
   def get(key: BitVector): Future[NodeRecord[A]] = {
@@ -66,9 +78,28 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
     getLocally(key).recoverWith { case _ => getRemotely(key) }.recoverWith { case t => giveUp(key, t) }
   }
 
-  def add(nodeRecord: NodeRecord[A]): Unit = {
-    kBuckets.add(nodeRecord.id)
-    nodeRecords.put(nodeRecord.id, nodeRecord)
+  def add(nodeRecord: NodeRecord[A]): Unit = this.synchronized {
+
+    val bucket = kBuckets.bucket(nodeRecord.id)
+    if (bucket.size < config.k) {
+      bucket.add(nodeRecord.id)
+      nodeRecords.put(nodeRecord.id, nodeRecord)
+    } else {
+      // ping the bucket's least recently seen node (i.e. the one at the head) to see what to do
+      val recordToPing = nodeRecords(bucket.head)
+      network.ping(recordToPing, Ping(uuidSource(), config.nodeRecord)).runToFuture.onComplete {
+        case Success(_) =>
+          // if it does respond, it is moved to the tail and the other node record discarded.
+          bucket.touch(recordToPing.id)
+        case Failure(_) =>
+          // if that node fails to respond, it is evicted from the bucket and the other node inserted (at the tail)
+          bucket.remove(recordToPing.id)
+          nodeRecords.remove(recordToPing.id)
+
+          bucket.add(nodeRecord.id)
+          nodeRecords.put(nodeRecord.id, nodeRecord)
+      }
+    }
     debug(s"Added record (${nodeRecord.id.toHex}, $nodeRecord) to the routing table.")
   }
 
@@ -106,7 +137,7 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
 
     def query(knownNode: BitVector): Future[Seq[NodeRecord[A]]] = {
 
-      val requestId = UUID.randomUUID()
+      val requestId = uuidSource()
 
       val findNodesRequest = FindNodes(
         requestId = requestId,
@@ -170,7 +201,9 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
       .filterNot(myself)
       .take(config.k)
 
-    debug(s"Starting lookup for target node ${targetNodeId} with starting nodes ${closestKnownNodes.mkString(", ")}")
+    debug(
+      s"Starting lookup for target node ${targetNodeId.toHex} with starting nodes {${closestKnownNodes.map(_.toHex).mkString(", ")}}"
+    )
 
     val nodeResult: Future[Seq[NodeRecord[A]]] = loop(closestKnownNodes)
 
@@ -186,7 +219,7 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A])(
   private def lookupReport(targetNodeId: BitVector, nodeRecords: Seq[KRouter.NodeRecord[A]]): String = {
 
     if (nodeRecords.isEmpty) {
-      s"Lookup to $targetNodeId returned no results."
+      s"Lookup to ${targetNodeId.toHex} returned no results."
     } else {
       val ids = nodeRecords.map(_.id).sorted(new XorOrdering(targetNodeId)).reverse
 

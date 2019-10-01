@@ -1,17 +1,28 @@
 package io.iohk.scalanet.peergroup.kademlia
 
-import io.iohk.scalanet.peergroup
-import io.iohk.scalanet.peergroup.kademlia.Generators.aRandomBitVector
-import io.iohk.scalanet.peergroup.kademlia.KNetwork.KNetworkScalanetImpl
+import java.time.Clock
+import java.util.UUID
+
 import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
-import io.iohk.scalanet.peergroup.kademlia.KRouterSpec._
-import io.iohk.scalanet.peergroup.{InMemoryPeerGroup, PeerGroup}
 import monix.execution.Scheduler
 import org.scalatest.FreeSpec
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures._
+import KRouterSpec._
+import io.iohk.scalanet.peergroup.kademlia.Generators.{aRandomBitVector, aRandomNodeRecord}
+import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.FindNodes
+import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.Nodes
+import monix.eval.Task
+import monix.reactive.Observable
+import org.mockito.Mockito.when
+import org.mockito.invocation.InvocationOnMock
+
+import scala.concurrent.duration._
 
 class KRouterSpec extends FreeSpec {
+
+  implicit val patienceConfig: PatienceConfig =
+    PatienceConfig(1 second, 100 millis)
 
   import monix.execution.Scheduler.Implicits.global
 
@@ -25,14 +36,15 @@ class KRouterSpec extends FreeSpec {
     }
 
     "should locate any bootstrap nodes" in {
-      val (n0, n1) = a2NodeNetwork()
+      val bootstrapRecord = aRandomNodeRecord()
+      val krouter = aKRouter(knownPeers = Set(bootstrapRecord))
 
-      n1.get(n0.config.nodeRecord.id).futureValue shouldBe n0.config.nodeRecord
+      krouter.get(bootstrapRecord.id).futureValue shouldBe bootstrapRecord
     }
 
-    "should not locate any other node" in {
+    "should not locate an unknown node - no bootstrap" in {
       val krouter = aKRouter()
-      val someNodeId = aRandomBitVector(krouter.config.nodeRecord.id.length.toInt)
+      val someNodeId = aRandomBitVector()
 
       whenReady(krouter.get(someNodeId).failed) { e =>
         e shouldBe an[Exception]
@@ -42,79 +54,77 @@ class KRouterSpec extends FreeSpec {
       }
     }
 
+    "should not locate an unknown node - with bootstrap" in {
+      val bootstrapRecord = aRandomNodeRecord()
+      val selfRecord = aRandomNodeRecord()
+      val krouter = aKRouter(nodeRecord = selfRecord, knownPeers = Set(bootstrapRecord))
+      val someNodeId = aRandomBitVector()
+
+      when(knetwork.findNodes(to = bootstrapRecord, request = FindNodes(uuid, selfRecord, someNodeId)))
+        .thenReturn(Task.now(Nodes(uuid, bootstrapRecord, Seq.empty)))
+
+      whenReady(krouter.get(someNodeId).failed) { e =>
+        e shouldBe an[Exception]
+        e.getMessage should startWith(
+          s"Lookup failed for get(${someNodeId.toHex}). Got an exception: java.lang.Exception: Target node id ${someNodeId.toHex} not loaded into kBuckets"
+        )
+      }
+    }
+
     "should perform a network lookup for nodes it does not know about" in {
-      val (_, n1, n2) = a3NodeNetwork(k = 1)
+      val selfRecord = aRandomNodeRecord()
+      val bootstrapRecord = aRandomNodeRecord()
+      val otherNode = aRandomNodeRecord()
 
-      n1.get(n2.config.nodeRecord.id).futureValue shouldBe n2.config.nodeRecord
-    }
-  }
+      val krouter = aKRouter(selfRecord, Set(bootstrapRecord))
+      val nodesResponse = Nodes(uuid, bootstrapRecord, Seq(otherNode))
+      when(knetwork.findNodes(to = bootstrapRecord, request = FindNodes(uuid, selfRecord, otherNode.id)))
+        .thenReturn(Task.now(nodesResponse))
 
-  "A bootstrap node" - {
-    "should locate a new node that contacts it" in {
-      // n0, the bootstrap node, knows no nodes initially.
-      val (n0, n1) = a2NodeNetwork()
-
-      // assert the bootstrap knows about n1 after n1 contacted it
-      n0.get(n1.config.nodeRecord.id).futureValue shouldBe n1.config.nodeRecord
-    }
-
-    "should inform the new node of its neighbourhood" in {
-      val (_, n1, n2) = a3NodeNetwork()
-      // n1 will not know about n2
-      // because it starts up before n2 (has enrolled)
-
-      // assert that n1 can discover n2 after n2 has started.
-      n1.get(n2.config.nodeRecord.id).futureValue shouldBe n2.config.nodeRecord
-      // and vice versa as a sanity check.
-      n2.get(n1.config.nodeRecord.id).futureValue shouldBe n1.config.nodeRecord
+      krouter.get(otherNode.id).futureValue shouldBe otherNode
     }
   }
 }
 
 object KRouterSpec {
 
+  import org.scalatest.mockito.MockitoSugar._
   type SRouter = KRouter[String]
-
-  val keySizeBits = 160
-
-  val networkSim =
-    new peergroup.InMemoryPeerGroup.Network[String, KMessage[String]]()
-
+  val knetwork = mock[KNetwork[String]]
+  val clock = mock[Clock]
+  val uuid = UUID.randomUUID()
   val alpha = 1
   val k = 1
 
-  def a2NodeNetwork(alpha: Int = alpha, k: Int = k)(
-      implicit scheduler: Scheduler
-  ): (SRouter, SRouter) = {
-    val k1 = aKRouter(Set.empty, alpha, k)
-    val k2 = aKRouter(Set(k1.config.nodeRecord), alpha, k)
-    (k1, k2)
+  when(knetwork.kRequests).thenReturn(Observable.empty)
+
+  def aKRouter(
+      nodeRecord: NodeRecord[String] = aRandomNodeRecord(),
+      knownPeers: Set[NodeRecord[String]] = Set.empty,
+      alpha: Int = alpha,
+      k: Int = k
+  )(implicit scheduler: Scheduler): SRouter = {
+
+    mockEnrollment(nodeRecord, knownPeers, Seq.empty)
+    new KRouter(Config(nodeRecord, knownPeers, alpha, k), knetwork, clock, () => uuid)
   }
 
-  def a3NodeNetwork(alpha: Int = alpha, k: Int = k)(
-      implicit scheduler: Scheduler
-  ): (SRouter, SRouter, SRouter) = {
-    val k1 = aKRouter(Set.empty, alpha, k)
-    val k2 = aKRouter(Set(k1.config.nodeRecord), alpha, k)
-    val k3 = aKRouter(Set(k1.config.nodeRecord), alpha, k)
-    (k1, k2, k3)
+  private def mockEnrollment(
+      nodeRecord: NodeRecord[String],
+      knownPeers: Set[NodeRecord[String]],
+      otherNodes: Seq[NodeRecord[String]]
+  ): Unit = {
+    import org.mockito.ArgumentMatchers.{eq => meq}
+
+    when(knetwork.findNodes(anyOf(knownPeers), meq(FindNodes(uuid, nodeRecord, nodeRecord.id))))
+      .thenAnswer((invocation: InvocationOnMock) => {
+        val to = invocation.getArgument(0).asInstanceOf[NodeRecord[String]]
+        Task.now(Nodes(uuid, to, otherNodes))
+      })
   }
 
-  def aKRouter(knownPeers: Set[NodeRecord[String]] = Set.empty, alpha: Int = alpha, k: Int = k)(
-      implicit scheduler: Scheduler
-  ): SRouter = {
-
-    val nodeRecord = Generators.aRandomNodeRecord()
-
-    val underlyingPeerGroup = PeerGroup.createOrThrow(
-      new InMemoryPeerGroup[String, KMessage[String]](nodeRecord.routingAddress)(networkSim),
-      nodeRecord
-    )
-
-    val knetwork = new KNetworkScalanetImpl(underlyingPeerGroup)
-
-    val config = Config(nodeRecord, knownPeers, alpha, k)
-
-    new KRouter(config, knetwork)
+  private def anyOf[T](s: Set[T]): T = {
+    import org.mockito.ArgumentMatchers.argThat
+    argThat(s.contains)
   }
 }
