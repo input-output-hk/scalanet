@@ -55,7 +55,7 @@ class KBuckets(val baseId: BitVector, val clock: Clock) {
     *
     * @return an iterator
     */
-  def iterator: Iterator[BitVector] = {
+  private def iterator: Iterator[BitVector] = {
     (baseId :: buckets.flatten).iterator
   }
 

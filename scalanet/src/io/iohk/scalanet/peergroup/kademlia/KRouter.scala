@@ -19,7 +19,12 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success, Try}
 
-class KRouter[A](val config: Config[A], val network: KNetwork[A], val clock: Clock, val uuidSource: () => UUID)(
+class KRouter[A](
+    val config: Config[A],
+    val network: KNetwork[A],
+    val clock: Clock = Clock.systemUTC(),
+    val uuidSource: () => UUID = () => UUID.randomUUID()
+)(
     implicit scheduler: Scheduler
 ) {
 
