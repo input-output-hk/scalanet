@@ -27,7 +27,7 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A], val clock: Clo
   val kBuckets = new KBuckets(config.nodeRecord.id, clock)
   val nodeRecords = new ConcurrentHashMap[BitVector, NodeRecord[A]].asScala
 
-  add(config.nodeRecord)
+  nodeRecords.put(config.nodeRecord.id, config.nodeRecord)
 
   config.knownPeers.foreach(add)
 
@@ -80,7 +80,10 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A], val clock: Clo
 
   def add(nodeRecord: NodeRecord[A]): Unit = this.synchronized {
 
-    val bucket = kBuckets.bucket(nodeRecord.id)
+    val iBucket = kBuckets.iBucket(nodeRecord.id)
+    val bucket = kBuckets.bucket(iBucket)
+    debug(s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord) to ibucket $iBucket.")
+    debug(s"iBucket($iBucket) = $bucket")
     if (bucket.size < config.k) {
       bucket.add(nodeRecord.id)
       nodeRecords.put(nodeRecord.id, nodeRecord)
@@ -91,6 +94,12 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A], val clock: Clo
         case Success(_) =>
           // if it does respond, it is moved to the tail and the other node record discarded.
           bucket.touch(recordToPing.id)
+          debug(s"Ping to ${recordToPing.id.toHex} in bucket $iBucket successful.")
+          info(
+            s"Moving ${recordToPing.id} to head of bucket $iBucket. Discarding (${nodeRecord.id.toHex}, $nodeRecord) as routing table candidate."
+          )
+          debug(s"iBucket($iBucket) = $bucket")
+
         case Failure(_) =>
           // if that node fails to respond, it is evicted from the bucket and the other node inserted (at the tail)
           bucket.remove(recordToPing.id)
@@ -98,9 +107,11 @@ class KRouter[A](val config: Config[A], val network: KNetwork[A], val clock: Clo
 
           bucket.add(nodeRecord.id)
           nodeRecords.put(nodeRecord.id, nodeRecord)
+
+          debug(s"Ping to ${recordToPing.id.toHex} in bucket $iBucket failed.")
+          info(s"Replacing ${recordToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord).")
       }
     }
-    debug(s"Added record (${nodeRecord.id.toHex}, $nodeRecord) to the routing table.")
   }
 
   private def getRemotely(key: BitVector): Future[NodeRecord[A]] = {

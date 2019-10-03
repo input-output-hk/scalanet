@@ -3,6 +3,7 @@ package io.iohk.scalanet.peergroup.kademlia
 import java.time.Clock
 
 import io.iohk.scalanet.peergroup.kademlia.Generators._
+import io.iohk.scalanet.peergroup.kademlia.KBucketsSpec._
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.prop.GeneratorDrivenPropertyChecks._
@@ -10,17 +11,16 @@ import scodec.bits.BitVector
 
 import scala.util.Random
 
-import KBucketsSpec._
-
 class KBucketsSpec extends FlatSpec {
 
   behavior of "KBuckets"
-  they should "not retrieve the base node id" in {
+
+  they should "retrieve the base node id" in {
     val id = aRandomBitVector()
     val kBuckets = new KBuckets(id, clock)
 
-    kBuckets.contains(id) shouldBe false
-    kBuckets.closestNodes(id, Int.MaxValue) shouldBe Nil
+    kBuckets.contains(id) shouldBe true
+    kBuckets.closestNodes(id, Int.MaxValue) shouldBe List(id)
   }
 
   they should "retrieve any node added via put" in forAll(genBitVector()) { v =>
@@ -72,7 +72,7 @@ class KBucketsSpec extends FlatSpec {
 }
 
 object KBucketsSpec {
-  private val clock = Clock.systemUTC() //mock[Clock]
+  private val clock = Clock.systemUTC()
 
   private val kb = new KBuckets(aRandomBitVector(), clock)
 
