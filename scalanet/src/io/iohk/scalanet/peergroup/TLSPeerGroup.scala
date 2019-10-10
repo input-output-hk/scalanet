@@ -9,6 +9,7 @@ import java.security.cert.{Certificate, X509Certificate}
 
 import io.iohk.decco._
 import io.iohk.scalanet.codec.StreamCodec
+import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
@@ -21,10 +22,10 @@ import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.ssl.{SslContext, SslContextBuilder, SslHandshakeCompletionEvent}
-import javax.net.ssl.SSLKeyException
+import javax.net.ssl.{SSLHandshakeException, SSLKeyException}
 import monix.eval.Task
-import monix.reactive.Observable
-import monix.reactive.subjects.{PublishSubject, ReplaySubject, Subject}
+import monix.execution.Scheduler
+import monix.reactive.observables.ConnectableObservable
 import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
@@ -44,7 +45,8 @@ import scala.util.control.NonFatal
   */
 class TLSPeerGroup[M](val config: Config)(
     implicit codec: StreamCodec[M],
-    bi: BufferInstantiator[ByteBuffer]
+    bi: BufferInstantiator[ByteBuffer],
+    scheduler: Scheduler
 ) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
@@ -59,8 +61,7 @@ class TLSPeerGroup[M](val config: Config)(
     .ciphers(TLSPeerGroup.supportedCipherSuites.asJava)
     .build()
 
-  private val serverSubject = PublishSubject[ServerEvent[InetMultiAddress, M]]()
-
+  private val serverSubject = ConnectableSubject[ServerEvent[InetMultiAddress, M]]()
   private val workerGroup = new NioEventLoopGroup()
 
   private val clientBootstrap = new Bootstrap()
@@ -97,7 +98,7 @@ class TLSPeerGroup[M](val config: Config)(
     new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, sslClientCtx, codec, bi).initialize
   }
 
-  override def server(): Observable[ServerEvent[InetMultiAddress, M]] = serverSubject
+  override def server(): ConnectableObservable[ServerEvent[InetMultiAddress, M]] = serverSubject
 
   override def shutdown(): Task[Unit] = {
     serverSubject.onComplete()
@@ -165,7 +166,7 @@ object TLSPeerGroup {
   )
 
   private class MessageNotifier[M](
-      val messageSubject: Subject[M, M],
+      val messageSubject: ConnectableSubject[M],
       codec: StreamCodec[M],
       bi: BufferInstantiator[ByteBuffer]
   ) extends ChannelInboundHandlerAdapter {
@@ -201,7 +202,8 @@ object TLSPeerGroup {
       sslClientCtx: SslContext,
       codec: StreamCodec[M],
       bi: BufferInstantiator[ByteBuffer]
-  ) extends Channel[InetMultiAddress, M] {
+  )(implicit scheduler: Scheduler)
+      extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
 
@@ -213,7 +215,7 @@ object TLSPeerGroup {
     private val deactivation = Promise[Unit]()
     private val deactivationF = deactivation.future
 
-    private val messageSubject = ReplaySubject[M]()
+    private val messageSubject = ConnectableSubject[M]()
 
     private val bootstrap: Bootstrap = clientBootstrap
       .clone()
@@ -260,6 +262,8 @@ object TLSPeerGroup {
         new PeerGroup.ChannelSetupException(to, t)
       case _: SSLKeyException =>
         new PeerGroup.HandshakeException(to, t)
+      case _: SSLHandshakeException =>
+        new PeerGroup.HandshakeException(to, t)
       case _ =>
         t
     }
@@ -292,7 +296,7 @@ object TLSPeerGroup {
         .map(_ => ())
     }
 
-    override def in: Observable[M] = messageSubject
+    override def in: ConnectableObservable[M] = messageSubject
 
     override def close(): Task[Unit] = {
       messageSubject.onComplete()
@@ -304,15 +308,16 @@ object TLSPeerGroup {
   }
 
   private[scalanet] class ServerChannelImpl[M](
-      serverSubject: PublishSubject[ServerEvent[InetMultiAddress, M]],
+      serverSubject: ConnectableSubject[ServerEvent[InetMultiAddress, M]],
       val nettyChannel: SocketChannel,
       sslServerCtx: SslContext,
       codec: StreamCodec[M],
       bi: BufferInstantiator[ByteBuffer]
-  ) extends Channel[InetMultiAddress, M] {
+  )(implicit scheduler: Scheduler)
+      extends Channel[InetMultiAddress, M] {
 
     private val log = LoggerFactory.getLogger(getClass)
-    private val messageSubject = ReplaySubject[M]()
+    val messageSubject = ConnectableSubject[M]()
 
     log.debug(
       s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
@@ -349,7 +354,7 @@ object TLSPeerGroup {
         }
     }
 
-    override def in: Observable[M] = messageSubject
+    override def in: ConnectableObservable[M] = messageSubject
 
     override def close(): Task[Unit] = {
       messageSubject.onComplete()

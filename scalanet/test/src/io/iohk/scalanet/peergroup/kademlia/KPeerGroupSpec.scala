@@ -11,7 +11,6 @@ import io.iohk.scalanet.peergroup.kademlia.Generators.aRandomNodeRecord
 import io.iohk.scalanet.peergroup.kademlia.KPeerGroupSpec.withTwoPeerGroups
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import monix.execution.Scheduler
-import monix.reactive.subjects.PublishSubject
 import org.mockito.Mockito.when
 import org.scalatest.FlatSpec
 import org.scalatest.concurrent.ScalaFutures
@@ -73,11 +72,11 @@ object KPeerGroupSpec {
     val kRouter2 = mockKRouter(b, Seq(a))
 
     val kPeerGroup1 = createOrThrow(
-      new KPeerGroup[String, String](kRouter1, PublishSubject(), underlying1),
+      new KPeerGroup[String, String](kRouter1, underlying1),
       a
     )
     val kPeerGroup2 = createOrThrow(
-      new KPeerGroup[String, String](kRouter2, PublishSubject(), underlying2),
+      new KPeerGroup[String, String](kRouter2, underlying2),
       b
     )
 

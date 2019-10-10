@@ -49,12 +49,13 @@ object KNetwork {
   )(implicit scheduler: Scheduler)
       extends KNetwork[A] {
 
-    override def kRequests: Observable[(KRequest[A], Option[KResponse[A]] => Task[Unit])] = {
+    override lazy val kRequests: Observable[(KRequest[A], Option[KResponse[A]] => Task[Unit])] = {
       peerGroup
         .server()
+        .refCount
         .collectChannelCreated
         .mapEval { channel: Channel[A, KMessage[A]] =>
-          channel.in
+          channel.in.refCount
             .collect { case r: KRequest[A] => r }
             .map(request => (request, sendOptionalResponse(channel)))
             .headL
@@ -84,7 +85,6 @@ object KNetwork {
         } { clientChannel =>
           clientChannel.close()
         }
-
     }
 
     private def sendRequest[Request <: KRequest[A], Response <: KResponse[A]](
@@ -94,7 +94,7 @@ object KNetwork {
     ): Task[Response] = {
       for {
         _ <- clientChannel.sendMessage(message).timeout(requestTimeout)
-        response <- clientChannel.in
+        response <- clientChannel.in.refCount
           .collect(pf)
           .headL
           .timeout(requestTimeout)

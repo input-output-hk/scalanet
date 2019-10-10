@@ -1,5 +1,6 @@
 package io.iohk.scalanet.peergroup.kademlia
 
+import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelSetupException, HandshakeException, ServerEvent}
 import io.iohk.scalanet.peergroup.kademlia.KPeerGroup.{ChannelImpl, UnderlyingChannel}
@@ -7,23 +8,25 @@ import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import io.iohk.scalanet.peergroup.{Channel, PeerGroup}
 import monix.eval.Task
 import monix.execution.Scheduler
-import monix.reactive.Observable
-import monix.reactive.subjects.Subject
+import monix.reactive.observables.ConnectableObservable
 import org.slf4j.{Logger, LoggerFactory}
 import scodec.bits.BitVector
+
+import scala.concurrent.Promise
 
 // PeerGroup using kademlia routing.
 class KPeerGroup[A, M](
     val kRouter: KRouter[A],
-    val server: Subject[ServerEvent[BitVector, M], ServerEvent[BitVector, M]],
     underlyingPeerGroup: PeerGroup[A, Either[NodeRecord[A], M]]
 )(implicit scheduler: Scheduler)
     extends PeerGroup[BitVector, M] {
 
   private val log = LoggerFactory.getLogger(getClass)
 
+  private val serverSubject = ConnectableSubject[ServerEvent[BitVector, M]]()
   override def processAddress: BitVector = kRouter.config.nodeRecord.id
 
+  override def server(): ConnectableObservable[ServerEvent[BitVector, M]] = serverSubject
   override def initialize(): Task[Unit] = Task {
     // The protocol defined here requires that a peer
     // connects then sends it node record as the first message
@@ -32,10 +35,11 @@ class KPeerGroup[A, M](
     // own node record.
     underlyingPeerGroup
       .server()
+      .refCount
       .collect(ChannelCreated.collector)
       .mergeMap(
         channel =>
-          channel.in.collect {
+          channel.in.refCount.collect {
             case Left(nodeRecord) =>
               acceptNodeRecord(channel, nodeRecord)
           }
@@ -43,7 +47,11 @@ class KPeerGroup[A, M](
       .subscribe()
   }
 
-  override def client(to: BitVector): Task[Channel[BitVector, M]] = {
+  def client(to: BitVector): Task[Channel[BitVector, M]] = {
+
+    val p = Promise[Unit]()
+    val pF = p.future
+
     val underlyingChannelTask = Task
       .fromFuture(kRouter.get(to)) // make the underlying kademlia lookup
       .flatMap { record => // use the lookup's address info to obtain an underlying channel...
@@ -56,34 +64,56 @@ class KPeerGroup[A, M](
           Task.raiseError(new ChannelSetupException[BitVector](to, t))
       }
 
+    def getChannel(underlyingChannel: Channel[A, Either[NodeRecord[A], M]]): Task[ChannelImpl[A, M]] = {
+
+      val taskChannel = Task.fromFuture(pF).map { _ =>
+        new ChannelImpl[A, M](
+          to,
+          kRouter.config.nodeRecord.id,
+          log,
+          underlyingChannel
+        )
+      }
+
+      underlyingChannel.in
+        .map {
+          case Left(nodeRecord) =>
+            // Once the peer's node record is received, create a new channel and return it to the caller.
+            debug(s"Ack received from peer $nodeRecord")
+            // should probably check that the node record received here matches the to parameter.
+            // TODO what other checks make sense?
+            p.success(())
+            new ChannelImpl[A, M](
+              to,
+              kRouter.config.nodeRecord.id,
+              log,
+              underlyingChannel
+            )
+          case Right(_) =>
+            // messages received without an ack. This is a protocol violation.
+            throw new HandshakeException(
+              to,
+              new Exception("messages received without an ack. This is a protocol violation.")
+            )
+        }
+        .headL
+        .runToFuture
+
+      underlyingChannel.in.connect()
+      taskChannel
+    }
+
     for {
       // after creating the underlying channel attempt to synchronize node records with the peer
       underlyingChannel <- underlyingChannelTask
       syn <- underlyingChannel.sendMessage(Left(kRouter.config.nodeRecord))
       _ <- Task(debug(s"Syn sent to peer ${to.toHex}"))
-      ack <- underlyingChannel.in.headL
-    } yield {
-      ack match {
-        case Left(nodeRecord) =>
-          // Once the peer's node record is received, create a new channel and return it to the caller.
-          debug(s"Ack received from peer $nodeRecord")
-          // should probably check that the node record received here matches the to parameter.
-          // TODO what other checks make sense?
-          new ChannelImpl[A, M](
-            to,
-            kRouter.config.nodeRecord.id,
-            log,
-            underlyingChannel
-          )
-        case Right(_) =>
-          // messages received without an ack. This is a protocol violation.
-          throw new HandshakeException(
-            to,
-            new Exception("messages received without an ack. This is a protocol violation.")
-          )
+      ack <- getChannel(underlyingChannel)
 
-      }
+    } yield {
+      ack
     }
+
   }
 
   // TODO any open channels will remain operational.
@@ -112,8 +142,8 @@ class KPeerGroup[A, M](
         log,
         channel
       )
-      server.onNext(ChannelCreated(newChannel))
-      debug(s"Handshake complete for $nodeRecord. Notifying $server with ${server.size} subscribers.")
+      serverSubject.onNext(ChannelCreated(newChannel))
+      debug(s"Handshake complete for $nodeRecord. Notifying $server with subscribers.")
     }
   }
 }
@@ -127,7 +157,8 @@ object KPeerGroup {
       val from: BitVector,
       val log: Logger,
       underlyingChannel: UnderlyingChannel[A, M]
-  ) extends Channel[BitVector, M] {
+  )(implicit scheduler: Scheduler)
+      extends Channel[BitVector, M] {
 
     override def toString: String =
       s"${from.toHex} Channel(${from.toHex}, ${to.toHex})"
@@ -141,6 +172,13 @@ object KPeerGroup {
       underlyingChannel.close()
     }
 
-    override def in: Observable[M] = underlyingChannel.in.collect { case Right(message) => message }
+    private val messageObservable = underlyingChannel.in.collect { case Right(message) => message }
+
+    private val connectableObservable = ConnectableSubject[M](messageObservable)
+    underlyingChannel.in.connect()
+
+    override def in: ConnectableObservable[M] = connectableObservable
+
   }
+
 }

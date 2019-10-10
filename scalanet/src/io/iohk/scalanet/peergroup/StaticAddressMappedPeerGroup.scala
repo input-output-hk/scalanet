@@ -1,10 +1,12 @@
 package io.iohk.scalanet.peergroup
 
-import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, ServerEvent}
+import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
+import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, ServerEvent}
 import io.iohk.scalanet.peergroup.StaticAddressMappedPeerGroup.Config
 import monix.eval.Task
-import monix.reactive.Observable
+import monix.execution.Scheduler
+import monix.reactive.observables.ConnectableObservable
 
 /**
   * Higher-level peer group representing a simple, static overlay network
@@ -18,10 +20,10 @@ import monix.reactive.Observable
 class StaticAddressMappedPeerGroup[A, AA, M](
     val config: Config[A, AA],
     underLyingPeerGroup: PeerGroup[AA, M]
-) extends PeerGroup[A, M] {
+)(implicit scheduler: Scheduler)
+    extends PeerGroup[A, M] {
 
   private val reverseLookup = config.knownPeers.map(_.swap)
-
   override def processAddress: A = config.processAddress
 
   override def client(to: A): Task[Channel[A, M]] =
@@ -29,15 +31,19 @@ class StaticAddressMappedPeerGroup[A, AA, M](
       new ChannelImpl(to, underlyingChannel)
     }
 
-  override def server(): Observable[ServerEvent[A, M]] = {
-    underLyingPeerGroup.server().map {
-      case ChannelCreated(underlyingChannel) =>
-        val a = reverseLookup(underlyingChannel.to)
-        ChannelCreated(new ChannelImpl(a, underlyingChannel))
-      case HandshakeFailed(failure) =>
-        HandshakeFailed[A, M](new HandshakeException[A](reverseLookup(failure.to), failure.cause))
-    }
+  private val observable = underLyingPeerGroup.server().map {
+    case ChannelCreated(underlyingChannel) =>
+      val a = reverseLookup(underlyingChannel.to)
+      ChannelCreated[A, M](new ChannelImpl(a, underlyingChannel))
+    case HandshakeFailed(failure) =>
+      HandshakeFailed[A, M](new HandshakeException[A](reverseLookup(failure.to), failure.cause))
   }
+  private val connectableObservable =
+    ConnectableSubject[ServerEvent[A, M]](observable)
+
+  underLyingPeerGroup.server().connect()
+
+  override def server(): ConnectableObservable[ServerEvent[A, M]] = connectableObservable
 
   override def shutdown(): Task[Unit] =
     underLyingPeerGroup.shutdown()
@@ -50,7 +56,7 @@ class StaticAddressMappedPeerGroup[A, AA, M](
     override def sendMessage(message: M): Task[Unit] =
       underlyingChannel.sendMessage(message)
 
-    override def in: Observable[M] = underlyingChannel.in
+    override def in: ConnectableObservable[M] = underlyingChannel.in
 
     override def close(): Task[Unit] =
       underlyingChannel.close()

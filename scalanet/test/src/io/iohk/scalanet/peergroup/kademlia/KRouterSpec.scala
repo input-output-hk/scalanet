@@ -10,7 +10,6 @@ import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
 import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
 import io.iohk.scalanet.peergroup.kademlia.KRouterSpec._
 import monix.eval.Task
-import monix.execution.Scheduler
 import monix.reactive.Observable
 import org.mockito.Mockito.{reset, when}
 import org.mockito.invocation.InvocationOnMock
@@ -19,14 +18,14 @@ import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.mockito.MockitoSugar._
 import scodec.bits._
+import monix.execution.Scheduler.Implicits.global
+
 import scala.concurrent.duration._
 
 class KRouterSpec extends FreeSpec {
 
   implicit val patienceConfig: PatienceConfig =
     PatienceConfig(1 second, 100 millis)
-
-  import monix.execution.Scheduler.Implicits.global
 
   "A node" - {
     "should locate this node's own id" in {
@@ -226,7 +225,7 @@ object KRouterSpec {
       knownPeers: Set[NodeRecord[String]] = Set.empty,
       alpha: Int = alpha,
       k: Int = k
-  )(implicit scheduler: Scheduler): SRouter = {
+  ): SRouter = {
 
     mockEnrollment(nodeRecord, knownPeers, Seq.empty)
     new KRouter(Config(nodeRecord, knownPeers, alpha, k), knetwork, clock, () => uuid)

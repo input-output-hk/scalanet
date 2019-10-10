@@ -39,6 +39,7 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   it should "report an error for messaging on a closed channel -- server closes" in
     withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
       val alicesMessage = Random.alphanumeric.take(1024).mkString
+      bob.server().connect()
       bob.server().collectChannelCreated.foreachL(channel => channel.close().runToFuture).runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
@@ -52,11 +53,15 @@ class TCPPeerGroupSpec extends FlatSpec with BeforeAndAfterAll {
   it should "report an error for messaging on a closed channel -- client closes" in
     withTwoRandomTCPPeerGroups[String] { (alice, bob) =>
       val bobsMessage = Random.alphanumeric.take(1024).mkString
+
       bob.server().collectChannelCreated.foreachL(channel => channel.sendMessage(bobsMessage).runToFuture).runToFuture
       val bobChannel: CancelableFuture[Channel[InetMultiAddress, String]] =
         bob.server().collectChannelCreated.headL.runToFuture
 
       val aliceClient = alice.client(bob.processAddress).evaluated
+      bob.server().collectChannelCreated.foreach(_.in.connect())
+      bob.server().connect()
+
       aliceClient.close().evaluated
       val bobError = recoverToExceptionIf[ChannelBrokenException[InetMultiAddress]] {
         bobChannel.futureValue.sendMessage(bobsMessage).runToFuture
