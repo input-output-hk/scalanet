@@ -21,39 +21,27 @@ object KNetworkRequestProcessing {
     type FindNodesT = (FindNodes[A], Option[Nodes[A]] => Task[Unit])
     type PingT = (Ping[A], Option[Pong[A]] => Task[Unit])
 
-    def findNodesRequests(): Observable[FindNodesT] = ignoringPing(kNetwork.kRequests).collect {
-      case (f @ FindNodes(_, _, _), h) => (f, h)
-    }
+    def findNodesRequests(): Observable[FindNodesT] =
+      kNetwork.kRequests
+        .map {
+          case (f @ FindNodes(_, _, _), h) =>
+            Some((f, h))
+          case (_, h) =>
+            ignore(h)
+            None
+        }
+        .collect { case Some(v) => v }
 
     def pingRequests(): Observable[PingT] =
-      ignoringFindNodes(kNetwork.kRequests).collect {
-        case (p @ Ping(_, _), h) => (p, h)
-      }
-
-    private def ignoringPing(
-        kRequests: Observable[KRequestT]
-    ): Observable[KRequestT] = kRequests.map {
-      case (request, handler) =>
-        kRequestCatamorph[KRequestT](
-          (_, handler),
-          (_, ignore(handler))
-        )(request)
-    }
-
-    private def ignoringFindNodes(
-        kRequests: Observable[KRequestT]
-    ): Observable[KRequestT] = kRequests.map {
-      case (request, handler) =>
-        kRequestCatamorph[KRequestT](
-          (_, ignore(handler)),
-          (_, handler)
-        )(request)
-    }
-
-    private def kRequestCatamorph[T](fFindNodes: FindNodes[A] => T, fPing: Ping[A] => T): KRequest[A] => T = {
-      case f @ FindNodes(_, _, _) => fFindNodes(f)
-      case p @ Ping(_, _) => fPing(p)
-    }
+      kNetwork.kRequests
+        .map {
+          case (p @ Ping(_, _), h) =>
+            Some((p, h))
+          case (_, h) =>
+            ignore(h)
+            None
+        }
+        .collect { case Some(v) => v }
 
     private def ignore(
         handler: Option[KResponse[A]] => Task[Unit]

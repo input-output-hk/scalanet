@@ -10,7 +10,7 @@ import scodec.bits.BitVector
   */
 class KBuckets(val baseId: BitVector, val clock: Clock) {
 
-  private val buckets = (0 until baseId.length.toInt).map(_ => TimeSet[BitVector](clock)).toList
+  private val buckets = List.fill(baseId.length.toInt)(TimeSet[BitVector](clock))
 
   /**
     * Find the n nodes closest to nodeId in kBuckets.
@@ -44,10 +44,7 @@ class KBuckets(val baseId: BitVector, val clock: Clock) {
     * @return true if present
     */
   def contains(nodeId: BitVector): Boolean = {
-    if (nodeId == baseId)
-      true
-    else
-      bucket(nodeId).contains(nodeId)
+    nodeId == baseId || bucket(nodeId).contains(nodeId)
   }
 
   /**
@@ -92,7 +89,6 @@ class KBuckets(val baseId: BitVector, val clock: Clock) {
   }
 
   def iBucket(b: BigInt): Int = {
-    import BigIntExtentions._
-    b.log2.toInt
+    b.bitLength - 1
   }
 }
