@@ -1,60 +1,61 @@
 package io.iohk.scalanet.peergroup.kademlia
 
 import java.time.Clock
+import java.time.Clock.systemUTC
 
-import scala.collection.mutable
+import scala.collection.AbstractSet
+import scala.collection.immutable.{HashMap, ListSet}
 
-class TimeSet[T] private (clock: Clock, elems: Seq[T]) extends mutable.AbstractSet[T] {
+class TimeSet[T] private (val clock: Clock, val timestamps: HashMap[T, Long], val underlying: ListSet[T])
+    extends AbstractSet[T] {
 
-  private val timestamps = mutable.HashMap[T, Long]()
-  private val underlying = mutable.LinkedHashSet[T]()
+  private def this(clock: Clock) = this(clock, HashMap[T, Long](), ListSet[T]())
 
-  addAll(elems: _*)
+  private def this() = this(systemUTC())
 
-  override def toString(): String = {
+  override def toString(): String =
     underlying.map(elem => s"($elem, ${timestamps(elem)})").mkString(", ")
-  }
 
-  override def +=(elem: T): TimeSet.this.type = {
-    addAll(elem)
-    this
-  }
-
-  override def -=(elem: T): TimeSet.this.type = {
-    underlying -= elem
-    timestamps.remove(elem)
-    this
-  }
-
-  override def contains(elem: T): Boolean = {
+  override def contains(elem: T): Boolean =
     underlying.contains(elem)
-  }
 
-  override def iterator: Iterator[T] = {
+  override def +(elem: T): TimeSet[T] =
+    addAll(elem)
+
+  override def -(elem: T): TimeSet[T] =
+    remove(elem)
+
+  override def iterator: Iterator[T] =
     underlying.iterator
-  }
 
-  def touch(elem: T): TimeSet.this.type = {
-    +=(elem)
-  }
+  def touch(elem: T): TimeSet[T] =
+    this + elem
 
-  private def addAll(elems: T*): Unit = {
+  private def addAll(elems: T*): TimeSet[T] = {
     val t = clock.millis()
-    elems.foreach { elem =>
-      timestamps.put(elem, t)
-      underlying.remove(elem)
-      underlying.add(elem)
+    elems.foldLeft(this) { (acc, next) =>
+      new TimeSet[T](clock, acc.timestamps + (next -> t), (acc.underlying - next) + next)
     }
+  }
+
+  private def remove(elem: T): TimeSet[T] = {
+    new TimeSet[T](clock, timestamps - elem, underlying - elem)
   }
 }
 
 object TimeSet {
-
   def apply[T](elems: T*): TimeSet[T] = {
-    TimeSet(Clock.systemUTC(), elems: _*)
+    addAll(new TimeSet[T](), elems: _*)
   }
 
   def apply[T](clock: Clock, elems: T*): TimeSet[T] = {
-    new TimeSet[T](clock, elems)
+    addAll(new TimeSet[T](clock), elems: _*)
+  }
+
+  private def addAll[T](ts: TimeSet[T], elems: T*): TimeSet[T] = {
+    val t = ts.clock.millis()
+    elems.foldLeft(ts) { (acc, next) =>
+      new TimeSet[T](ts.clock, acc.timestamps + (next -> t), (acc.underlying - next) + next)
+    }
   }
 }

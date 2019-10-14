@@ -24,16 +24,11 @@ class KBucketsSpec extends FlatSpec {
   }
 
   they should "retrieve any node added via put" in forAll(genBitVector()) { v =>
-    kb.add(v)
-    kb.contains(v) shouldBe true
+    kb.add(v).contains(v) shouldBe true
   }
 
   they should "not retrieve any node removed via remove" in forAll(genBitVector()) { v =>
-    kb.add(v)
-
-    kb.remove(v)
-
-    kb.contains(v) shouldBe false
+    kb.add(v).remove(v).contains(v) shouldBe false
   }
 
   they should "reject addition of nodeIds with inconsistent length" in {
@@ -51,8 +46,8 @@ class KBucketsSpec extends FlatSpec {
     val exptectedRecords =
       ids.sortBy(nodeId => Xor.d(nodeId, arbitraryId))
 
-    ids.foreach(nodeId => kBuckets.add(nodeId))
-    val closestNodes = kBuckets.closestNodes(arbitraryId, ids.length)
+    val kBuckets2 = ids.foldLeft(kBuckets)((acc, next) => acc.add(next))
+    val closestNodes = kBuckets2.closestNodes(arbitraryId, ids.length)
 
     closestNodes shouldBe exptectedRecords
   }
@@ -63,10 +58,10 @@ class KBucketsSpec extends FlatSpec {
     val arbitraryId: BitVector = ids(Random.nextInt(ids.length))
     val kBuckets = new KBuckets(arbitraryId, clock)
 
-    ids.foreach(nodeId => kBuckets.add(nodeId))
+    val kBuckets2 = ids.foldLeft(kBuckets)((acc, next) => acc.add(next))
 
     ids.foreach { nodeId =>
-      kBuckets.closestNodes(nodeId, 1) shouldBe List(nodeId)
+      kBuckets2.closestNodes(nodeId, 1) shouldBe List(nodeId)
     }
   }
 }
@@ -75,5 +70,4 @@ object KBucketsSpec {
   private val clock = Clock.systemUTC()
 
   private val kb = new KBuckets(aRandomBitVector(), clock)
-
 }

@@ -6,11 +6,13 @@ import scodec.bits.BitVector
 
 /**
   * Skeletal kbucket implementation.
+  *
   * @param baseId the nodes own id.
   */
-class KBuckets(val baseId: BitVector, val clock: Clock) {
+class KBuckets private (val baseId: BitVector, val clock: Clock, val buckets: List[TimeSet[BitVector]]) {
 
-  private val buckets = List.fill(baseId.length.toInt)(TimeSet[BitVector](clock))
+  def this(baseId: BitVector, clock: Clock) =
+    this(baseId, clock, List.fill(baseId.length.toInt)(TimeSet[BitVector](clock)))
 
   /**
     * Find the n nodes closest to nodeId in kBuckets.
@@ -32,10 +34,13 @@ class KBuckets(val baseId: BitVector, val clock: Clock) {
         throw new IllegalArgumentException(
           s"Illegal attempt to add node id with a length different than the this node id."
         )
-
-      bucket(nodeId).add(nodeId)
+      else {
+        val (iBucket, bucket) = getBucket(nodeId)
+        new KBuckets(baseId, clock, buckets.patch(iBucket, List(bucket + nodeId), 1))
+      }
+    } else {
+      this
     }
-    this
   }
 
   /**
@@ -44,7 +49,7 @@ class KBuckets(val baseId: BitVector, val clock: Clock) {
     * @return true if present
     */
   def contains(nodeId: BitVector): Boolean = {
-    nodeId == baseId || bucket(nodeId).contains(nodeId)
+    nodeId == baseId || buckets(iBucket(nodeId)).contains(nodeId)
   }
 
   /**
@@ -62,33 +67,35 @@ class KBuckets(val baseId: BitVector, val clock: Clock) {
     * @param nodeId the nodeId to remove
     * @return
     */
-  def remove(nodeId: BitVector): Boolean = {
+  def remove(nodeId: BitVector): KBuckets = {
     if (nodeId == baseId)
       throw new UnsupportedOperationException("Cannot remove the baseId")
-    bucket(nodeId).remove(nodeId)
-  }
-
-  def iBucket(b: BitVector): Int = {
-    iBucket(Xor.d(b, baseId))
-  }
-
-  def bucket(iBucket: Int): TimeSet[BitVector] = {
-    buckets(iBucket)
-  }
-
-  private def bucket(b: BitVector): TimeSet[BitVector] = {
-    buckets(iBucket(b))
+    else if (!contains(nodeId)) {
+      this
+    } else {
+      val (iBucket, bucket) = getBucket(nodeId)
+      new KBuckets(baseId, clock, buckets.patch(iBucket, List(bucket - nodeId), 1))
+    }
   }
 
   override def toString: String = {
     s"KBuckets(baseId = ${baseId.toHex}):\n\t${buckets.indices.map(i => s"$i: ${bucketToString(buckets(i))}").mkString("\n\t")}"
   }
 
-  private def bucketToString(bucket: TimeSet[BitVector]): String = {
-    s"${bucket.iterator.map(id => s"(id=${id.toBin}, d=${Xor.d(id, baseId)})").mkString(", ")}"
+  def getBucket(b: BitVector): (Int, TimeSet[BitVector]) = {
+    val i = iBucket(b)
+    (i, buckets(i))
   }
 
-  def iBucket(b: BigInt): Int = {
+  private def iBucket(b: BitVector): Int = {
+    iBucket(Xor.d(b, baseId))
+  }
+
+  private def iBucket(b: BigInt): Int = {
     b.bitLength - 1
+  }
+
+  private def bucketToString(bucket: TimeSet[BitVector]): String = {
+    s"${bucket.iterator.map(id => s"(id=${id.toBin}, d=${Xor.d(id, baseId)})").mkString(", ")}"
   }
 }

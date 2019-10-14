@@ -2,13 +2,13 @@ package io.iohk.scalanet.peergroup.kademlia
 
 import java.time.Clock
 
+import org.mockito.Mockito.when
 import org.scalatest.FlatSpec
-
-import scala.util.Random
 import org.scalatest.Matchers._
 import org.scalatest.mockito.MockitoSugar._
-import org.mockito.Mockito.when
 import org.scalatest.prop.GeneratorDrivenPropertyChecks._
+
+import scala.util.Random
 
 class TimeSetSpec extends FlatSpec {
 
@@ -22,13 +22,13 @@ class TimeSetSpec extends FlatSpec {
       val ts = TimeSet(clock, ss: _*)
       val ssShuffled = random.shuffle(ss)
 
-      ssShuffled.foreach(s => {
+      val ts2 = ssShuffled.foldLeft(ts) { (acc, next) =>
         val millis = clock.millis()
         when(clock.millis()).thenReturn(millis + 1)
-        ts.touch(s)
-      })
+        acc.touch(next)
+      }
 
-      ts.zip(ssShuffled).foreach {
+      ts2.zip(ssShuffled).foreach {
         case (l, r) =>
           l shouldBe r
       }

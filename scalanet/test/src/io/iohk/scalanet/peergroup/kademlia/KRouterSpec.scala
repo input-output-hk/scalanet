@@ -158,10 +158,10 @@ class KRouterSpec extends FreeSpec {
         val krouter: SRouter = aKRouter(selfRecord, Set.empty, k = 8)
 
         knetwork.kRequests.doOnComplete(Task {
-          krouter.kBuckets.bucket(0) shouldBe TimeSet(bin"0001")
-          krouter.kBuckets.bucket(1) shouldBe TimeSet(bin"0010", bin"0011")
-          krouter.kBuckets.bucket(2) shouldBe TimeSet(bin"0100", bin"0101", bin"0110", bin"0111")
-          krouter.kBuckets.bucket(3) shouldBe TimeSet(
+          krouter.kBuckets.buckets(0) shouldBe TimeSet(bin"0001")
+          krouter.kBuckets.buckets(1) shouldBe TimeSet(bin"0010", bin"0011")
+          krouter.kBuckets.buckets(2) shouldBe TimeSet(bin"0100", bin"0101", bin"0110", bin"0111")
+          krouter.kBuckets.buckets(3) shouldBe TimeSet(
             bin"1000",
             bin"1001",
             bin"1010",
@@ -185,10 +185,10 @@ class KRouterSpec extends FreeSpec {
         val krouter: SRouter = aKRouter(selfRecord, Set.empty, k = 3)
 
         knetwork.kRequests.doOnComplete(Task {
-          krouter.kBuckets.bucket(0) shouldBe TimeSet(bin"0001")
-          krouter.kBuckets.bucket(1) shouldBe TimeSet(bin"0010", bin"0011")
-          krouter.kBuckets.bucket(2) shouldBe TimeSet(bin"0101", bin"0110", bin"0111")
-          krouter.kBuckets.bucket(3) shouldBe TimeSet(bin"1101", bin"1110", bin"1111")
+          krouter.kBuckets.buckets(0) shouldBe TimeSet(bin"0001")
+          krouter.kBuckets.buckets(1) shouldBe TimeSet(bin"0010", bin"0011")
+          krouter.kBuckets.buckets(2) shouldBe TimeSet(bin"0101", bin"0110", bin"0111")
+          krouter.kBuckets.buckets(3) shouldBe TimeSet(bin"1101", bin"1110", bin"1111")
         })
       }
 
@@ -199,10 +199,10 @@ class KRouterSpec extends FreeSpec {
         val krouter: SRouter = aKRouter(selfRecord, Set.empty, k = 3)
 
         knetwork.kRequests.doOnComplete(Task {
-          krouter.kBuckets.bucket(0) shouldBe TimeSet(bin"0001")
-          krouter.kBuckets.bucket(1) shouldBe TimeSet(bin"0010", bin"0011")
-          krouter.kBuckets.bucket(2) shouldBe TimeSet(bin"0101", bin"0110", bin"0100")
-          krouter.kBuckets.bucket(3) shouldBe TimeSet(bin"1010", bin"1000", bin"1001")
+          krouter.kBuckets.buckets(0) shouldBe TimeSet(bin"0001")
+          krouter.kBuckets.buckets(1) shouldBe TimeSet(bin"0010", bin"0011")
+          krouter.kBuckets.buckets(2) shouldBe TimeSet(bin"0101", bin"0110", bin"0100")
+          krouter.kBuckets.buckets(3) shouldBe TimeSet(bin"1010", bin"1000", bin"1001")
         })
       }
     }

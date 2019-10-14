@@ -2,12 +2,12 @@ package io.iohk.scalanet.peergroup.kademlia
 
 import java.time.Clock
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
-import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
+import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord, NodeRecordIndex}
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.slf4j.LoggerFactory
@@ -29,10 +29,10 @@ class KRouter[A](
 ) {
 
   private val log = LoggerFactory.getLogger(getClass)
-  val kBuckets = new KBuckets(config.nodeRecord.id, clock)
-  val nodeRecords = new ConcurrentHashMap[BitVector, NodeRecord[A]].asScala
 
-  nodeRecords.put(config.nodeRecord.id, config.nodeRecord)
+  private val nodeRecordIndex = new AtomicReference(
+    NodeRecordIndex(new KBuckets(config.nodeRecord.id, clock), Map(config.nodeRecord.id -> config.nodeRecord))
+  )
 
   config.knownPeers.foreach(add)
 
@@ -83,15 +83,13 @@ class KRouter[A](
     getLocally(key).recoverWith { case _ => getRemotely(key) }.recoverWith { case t => giveUp(key, t) }
   }
 
-  def add(nodeRecord: NodeRecord[A]): Unit = this.synchronized {
+  def add(nodeRecord: NodeRecord[A]): Unit = {
 
-    val iBucket = kBuckets.iBucket(nodeRecord.id)
-    val bucket = kBuckets.bucket(iBucket)
+    val (iBucket, bucket) = kBuckets.getBucket(nodeRecord.id)
     debug(s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord) to ibucket $iBucket.")
     debug(s"iBucket($iBucket) = $bucket")
     if (bucket.size < config.k) {
-      bucket.add(nodeRecord.id)
-      nodeRecords.put(nodeRecord.id, nodeRecord)
+      addNodeRecord(nodeRecord)
     } else {
       // ping the bucket's least recently seen node (i.e. the one at the head) to see what to do
       val recordToPing = nodeRecords(bucket.head)
@@ -107,16 +105,22 @@ class KRouter[A](
 
         case Failure(_) =>
           // if that node fails to respond, it is evicted from the bucket and the other node inserted (at the tail)
-          bucket.remove(recordToPing.id)
-          nodeRecords.remove(recordToPing.id)
-
-          bucket.add(nodeRecord.id)
-          nodeRecords.put(nodeRecord.id, nodeRecord)
-
-          debug(s"Ping to ${recordToPing.id.toHex} in bucket $iBucket failed.")
-          info(s"Replacing ${recordToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord).")
+          this.synchronized {
+            removeNodeRecord(recordToPing)
+            addNodeRecord(nodeRecord)
+            debug(s"Ping to ${recordToPing.id.toHex} in bucket $iBucket failed.")
+            info(s"Replacing ${recordToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord).")
+          }
       }
     }
+  }
+
+  private def addNodeRecord(nodeRecord: NodeRecord[A]): Unit = {
+    nodeRecordIndex.set(NodeRecordIndex(kBuckets.add(nodeRecord.id), nodeRecords + (nodeRecord.id -> nodeRecord)))
+  }
+
+  private def removeNodeRecord(nodeRecord: NodeRecord[A]): Unit = {
+    nodeRecordIndex.set(NodeRecordIndex(kBuckets.remove(nodeRecord.id), nodeRecords - nodeRecord.id))
   }
 
   private def getRemotely(key: BitVector): Future[NodeRecord[A]] = {
@@ -272,6 +276,14 @@ class KRouter[A](
   private def info(msg: String): Unit = {
     log.info(s"${config.nodeRecord.id.toHex} $msg")
   }
+
+  private[kademlia] def kBuckets: KBuckets = {
+    nodeRecordIndex.get().kBuckets
+  }
+
+  private[kademlia] def nodeRecords: Map[BitVector, NodeRecord[A]] = {
+    nodeRecordIndex.get().nodeRecords
+  }
 }
 
 object KRouter {
@@ -287,4 +299,6 @@ object KRouter {
     override def toString: String =
       s"NodeRecord(id = ${id.toHex}, routingAddress = $routingAddress, messagingAddress = $messagingAddress)"
   }
+
+  case class NodeRecordIndex[A](kBuckets: KBuckets, nodeRecords: Map[BitVector, NodeRecord[A]])
 }
