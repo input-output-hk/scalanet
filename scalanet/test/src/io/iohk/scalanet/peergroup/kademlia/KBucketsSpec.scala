@@ -38,7 +38,6 @@ class KBucketsSpec extends FlatSpec {
   }
 
   they should "return the n closest nodes when N are available" in {
-
     val ids: Seq[BitVector] = genBitVectorExhaustive(4)
     val arbitraryId: BitVector = ids(Random.nextInt(ids.length))
     val kBuckets = new KBuckets(arbitraryId, clock)

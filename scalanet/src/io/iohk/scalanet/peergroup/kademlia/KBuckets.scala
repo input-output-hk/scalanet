@@ -20,7 +20,27 @@ class KBuckets private (val baseId: BitVector, val clock: Clock, val buckets: Li
     * The indices into the kBuckets are defined by their distance from referenceNodeId.
     */
   def closestNodes(nodeId: BitVector, n: Int): List[BitVector] = {
-    iterator.toList.sorted(new XorOrdering(nodeId)).take(n)
+    val ordering = new XorOrdering(nodeId)
+
+    def loop(nodes: List[BitVector], iLeft: Int, iRight: Int): List[BitVector] = {
+      if (nodes.size < n && (iLeft > -1 || iRight < buckets.size)) {
+
+        val nodesNext = if (iLeft != iRight) {
+          val lBucket = if (iLeft > -1) buckets(iLeft) else TimeSet.empty
+          val rBucket = if (iRight < buckets.size) buckets(iRight) else TimeSet.empty
+          lBucket ++ nodes ++ rBucket
+        } else {
+          buckets(iLeft) ++ nodes
+        }
+
+        loop(nodesNext.toList.sorted(ordering).take(n), iLeft - 1, iRight + 1)
+      } else {
+        nodes
+      }
+    }
+
+    val i = if (nodeId == baseId) 0 else iBucket(nodeId)
+    (baseId :: loop(Nil, i, i)).sorted(ordering).take(n)
   }
 
   /**

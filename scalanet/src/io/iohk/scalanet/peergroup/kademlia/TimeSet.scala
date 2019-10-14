@@ -44,6 +44,11 @@ class TimeSet[T] private (val clock: Clock, val timestamps: HashMap[T, Long], va
 }
 
 object TimeSet {
+
+  private val emptyInstance = new TimeSet[Any]()
+
+  def empty[T]: TimeSet[T] = emptyInstance.asInstanceOf[TimeSet[T]]
+
   def apply[T](elems: T*): TimeSet[T] = {
     addAll(new TimeSet[T](), elems: _*)
   }
