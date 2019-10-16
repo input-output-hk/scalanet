@@ -31,15 +31,15 @@ class TimeSet[T] private (val clock: Clock, val timestamps: HashMap[T, Long], va
   def touch(elem: T): TimeSet[T] =
     this + elem
 
+  private def remove(elem: T): TimeSet[T] = {
+    new TimeSet[T](clock, timestamps - elem, underlying - elem)
+  }
+
   private def addAll(elems: T*): TimeSet[T] = {
     val t = clock.millis()
     elems.foldLeft(this) { (acc, next) =>
       new TimeSet[T](clock, acc.timestamps + (next -> t), (acc.underlying - next) + next)
     }
-  }
-
-  private def remove(elem: T): TimeSet[T] = {
-    new TimeSet[T](clock, timestamps - elem, underlying - elem)
   }
 }
 
@@ -50,17 +50,10 @@ object TimeSet {
   def empty[T]: TimeSet[T] = emptyInstance.asInstanceOf[TimeSet[T]]
 
   def apply[T](elems: T*): TimeSet[T] = {
-    addAll(new TimeSet[T](), elems: _*)
+    new TimeSet[T]().addAll(elems: _*)
   }
 
   def apply[T](clock: Clock, elems: T*): TimeSet[T] = {
-    addAll(new TimeSet[T](clock), elems: _*)
-  }
-
-  private def addAll[T](ts: TimeSet[T], elems: T*): TimeSet[T] = {
-    val t = ts.clock.millis()
-    elems.foldLeft(ts) { (acc, next) =>
-      new TimeSet[T](ts.clock, acc.timestamps + (next -> t), (acc.underlying - next) + next)
-    }
+    new TimeSet[T](clock).addAll(elems: _*)
   }
 }

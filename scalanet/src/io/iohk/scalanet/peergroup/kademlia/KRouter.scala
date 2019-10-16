@@ -96,20 +96,24 @@ class KRouter[A](
       network.ping(recordToPing, Ping(uuidSource(), config.nodeRecord)).runToFuture.onComplete {
         case Success(_) =>
           // if it does respond, it is moved to the tail and the other node record discarded.
-          bucket.touch(recordToPing.id)
-          debug(s"Ping to ${recordToPing.id.toHex} in bucket $iBucket successful.")
-          info(
-            s"Moving ${recordToPing.id} to head of bucket $iBucket. Discarding (${nodeRecord.id.toHex}, $nodeRecord) as routing table candidate."
-          )
-          debug(s"iBucket($iBucket) = $bucket")
+          if (bucket.size >= config.k) {
+            bucket.touch(recordToPing.id)
+            debug(s"Ping to ${recordToPing.id.toHex} in bucket $iBucket successful.")
+            info(
+              s"Moving ${recordToPing.id} to head of bucket $iBucket. Discarding (${nodeRecord.id.toHex}, $nodeRecord) as routing table candidate."
+            )
+            debug(s"iBucket($iBucket) = $bucket")
+          }
 
         case Failure(_) =>
           // if that node fails to respond, it is evicted from the bucket and the other node inserted (at the tail)
-          this.synchronized {
-            removeNodeRecord(recordToPing)
-            addNodeRecord(nodeRecord)
-            debug(s"Ping to ${recordToPing.id.toHex} in bucket $iBucket failed.")
-            info(s"Replacing ${recordToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord).")
+          if (bucket.size >= config.k) {
+            this.synchronized {
+              removeNodeRecord(recordToPing)
+              addNodeRecord(nodeRecord)
+              debug(s"Ping to ${recordToPing.id.toHex} in bucket $iBucket failed.")
+              info(s"Replacing ${recordToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord).")
+            }
           }
       }
     }

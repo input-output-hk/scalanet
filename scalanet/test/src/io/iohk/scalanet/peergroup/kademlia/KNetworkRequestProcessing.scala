@@ -1,8 +1,8 @@
 package io.iohk.scalanet.peergroup.kademlia
 
-import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
+import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
@@ -10,8 +10,9 @@ import monix.reactive.Observable
 /**
   * If a user of KNetwork wanted to consume only one kind of request,
   * it is not sufficient to collect or filter the request stream, since it is
-  * still necessary to close channels for excluded request types.
+  * still necessary to invoke response handers to close channels for excluded request types.
   * The code to do this is demonstrated here.
+  * Note that findNodesRequests and pingRequests are mutually exclusive.
   */
 object KNetworkRequestProcessing {
 
@@ -23,12 +24,11 @@ object KNetworkRequestProcessing {
 
     def findNodesRequests(): Observable[FindNodesT] =
       kNetwork.kRequests
-        .map {
+        .collect {
           case (f @ FindNodes(_, _, _), h) =>
             Some((f, h))
           case (_, h) =>
             ignore(h)
-            None
         }
         .collect { case Some(v) => v }
 
@@ -45,9 +45,9 @@ object KNetworkRequestProcessing {
 
     private def ignore(
         handler: Option[KResponse[A]] => Task[Unit]
-    ): Option[KResponse[A]] => Task[Unit] = {
+    ): None.type = {
       handler(None).runToFuture
-      _ => Task.unit
+      None
     }
   }
 }
