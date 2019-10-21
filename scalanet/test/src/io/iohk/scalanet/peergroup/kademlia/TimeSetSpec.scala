@@ -32,6 +32,7 @@ class TimeSetSpec extends FlatSpec {
         case (l, r) =>
           l shouldBe r
       }
+      ts2.size shouldBe ss.size
     }
   }
 }

@@ -202,10 +202,7 @@ class KRouter[A](
 
     def loop(closestNodes: Seq[BitVector]): Future[Seq[NodeRecord[A]]] = {
 
-      val alphaClosestToQuery: Seq[BitVector] = closestNodes
-        .filterNot(querySet.contains)
-        .filterNot(myself)
-        .take(config.alpha)
+      val alphaClosestToQuery: Seq[BitVector] = getAlphaClosestNodes(querySet, closestNodes)
 
       val treeResults: Future[Seq[Seq[NodeRecord[A]]]] = Future.traverse(alphaClosestToQuery) { knownNode: BitVector =>
         val queryResult: Future[Seq[NodeRecord[A]]] = query(knownNode)
@@ -234,6 +231,15 @@ class KRouter[A](
     nodeResult.foreach(nodeRecords => debug(lookupReport(targetNodeId, nodeRecords)))
 
     nodeResult.transform(_ => Success(kBucketsLookup(targetNodeId)))
+  }
+
+  private def getAlphaClosestNodes(querySet: mutable.Set[BitVector], closestNodes: Seq[BitVector]): Seq[BitVector] = {
+    val (firstK, rest) = closestNodes.filterNot(myself).splitAt(config.k)
+    val notQueriedYet = firstK.filterNot(querySet.contains)
+    if (notQueriedYet.isEmpty)
+      notQueriedYet
+    else
+      (notQueriedYet ++ rest.filterNot(querySet.contains)).take(config.alpha)
   }
 
   private def myself: BitVector => Boolean = {
