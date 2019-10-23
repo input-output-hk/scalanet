@@ -57,12 +57,12 @@ object KNetwork {
         .mapEval { channel: Channel[A, KMessage[A]] =>
           channel.in.refCount
             .collect { case r: KRequest[A] => r }
-            .map(request => (request, sendOptionalResponse(channel)))
+            .map(request => Some((request, sendOptionalResponse(channel))))
             .headL
             .timeout(requestTimeout)
             .onErrorHandle(closeTheChannel(channel))
         }
-        .filterNot(_ == null)
+        .collect { case Some(thing) => thing }
     }
 
     override def findNodes(to: NodeRecord[A], request: FindNodes[A]): Task[Nodes[A]] = {
@@ -103,9 +103,9 @@ object KNetwork {
 
     private def closeTheChannel[Request <: KRequest[A]](
         channel: Channel[A, KMessage[A]]
-    )(error: Throwable): (Request, Option[KMessage[A]] => Task[Unit]) = {
+    )(error: Throwable): Option[(Request, Option[KMessage[A]] => Task[Unit])] = {
       channel.close()
-      null
+      None
     }
 
     private def sendResponse(

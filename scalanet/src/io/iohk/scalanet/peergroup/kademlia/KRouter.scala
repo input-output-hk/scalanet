@@ -9,7 +9,9 @@ import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
 import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord, NodeRecordIndex}
 import monix.eval.Task
-import monix.execution.Scheduler
+import monix.execution.Ack.Continue
+import monix.execution.{Ack, Scheduler}
+import monix.reactive.subjects.ConcurrentSubject
 import org.slf4j.LoggerFactory
 import scodec.bits.BitVector
 
@@ -34,7 +36,11 @@ class KRouter[A](
     NodeRecordIndex(new KBuckets(config.nodeRecord.id, clock), Map(config.nodeRecord.id -> config.nodeRecord))
   )
 
-  config.knownPeers.foreach(add)
+  private val additions = ConcurrentSubject.publish[NodeRecord[A]]
+
+  additions.subscribe(doAdd)
+
+  addAll(config.knownPeers)
 
   info("Executing initial enrolment process to join the network...")
   Try(Await.result(lookup(config.nodeRecord.id), 2 seconds)).toEither match {
@@ -67,6 +73,15 @@ class KRouter[A](
       sendResponse(Pong(uuid, config.nodeRecord), responseHandler, nodeRecord.routingAddress)
   }
 
+  def get(key: BitVector): Future[NodeRecord[A]] = {
+    debug(s"get(${key.toHex})")
+    getLocally(key).recoverWith { case _ => getRemotely(key) }.recoverWith { case t => giveUp(key, t) }
+  }
+
+  def add(nodeRecord: NodeRecord[A]): Ack = {
+    additions.onNext(nodeRecord)
+  }
+
   private def sendResponse(response: KResponse[A], responseHandler: Option[KResponse[A]] => Task[Unit], to: A): Unit = {
     responseHandler(Some(response)).runToFuture
       .onComplete {
@@ -77,45 +92,52 @@ class KRouter[A](
         case _ =>
       }
   }
-
-  def get(key: BitVector): Future[NodeRecord[A]] = {
-    debug(s"get(${key.toHex})")
-    getLocally(key).recoverWith { case _ => getRemotely(key) }.recoverWith { case t => giveUp(key, t) }
+  
+  private def addAll(nodeRecords: Set[NodeRecord[A]]): Future[Ack] = {
+    def loop(records: List[NodeRecord[A]]): Future[Ack] = records match {
+      case Nil =>
+        Continue
+      case h :: t =>
+        add(h).flatMap { _ =>
+          loop(t)
+        }
+    }
+    loop(nodeRecords.toList)
   }
 
-  def add(nodeRecord: NodeRecord[A]): Unit = {
-
+  private def doAdd: NodeRecord[A] => Future[Ack] = { nodeRecord =>
     val (iBucket, bucket) = kBuckets.getBucket(nodeRecord.id)
     debug(s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord) to ibucket $iBucket.")
     debug(s"iBucket($iBucket) = $bucket")
     if (bucket.size < config.k) {
       addNodeRecord(nodeRecord)
-    } else {
+      Continue
+    } else { // the bucket is full
       // ping the bucket's least recently seen node (i.e. the one at the head) to see what to do
       val recordToPing = nodeRecords(bucket.head)
-      network.ping(recordToPing, Ping(uuidSource(), config.nodeRecord)).runToFuture.onComplete {
-        case Success(_) =>
+      network
+        .ping(recordToPing, Ping(uuidSource(), config.nodeRecord))
+        .runToFuture
+        .flatMap { _ =>
           // if it does respond, it is moved to the tail and the other node record discarded.
-          if (bucket.size >= config.k) {
-            bucket.touch(recordToPing.id)
-            debug(s"Ping to ${recordToPing.id.toHex} in bucket $iBucket successful.")
-            info(
-              s"Moving ${recordToPing.id} to head of bucket $iBucket. Discarding (${nodeRecord.id.toHex}, $nodeRecord) as routing table candidate."
-            )
-            debug(s"iBucket($iBucket) = $bucket")
-          }
-
-        case Failure(_) =>
-          // if that node fails to respond, it is evicted from the bucket and the other node inserted (at the tail)
-          if (bucket.size >= config.k) {
-            this.synchronized {
-              removeNodeRecord(recordToPing)
-              addNodeRecord(nodeRecord)
-              debug(s"Ping to ${recordToPing.id.toHex} in bucket $iBucket failed.")
-              info(s"Replacing ${recordToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord).")
-            }
-          }
-      }
+          touchNodeRecord(recordToPing)
+          debug(s"Ping to ${recordToPing.id.toHex} in bucket $iBucket successful.")
+          info(
+            s"Moving ${recordToPing.id} to head of bucket $iBucket. Discarding (${nodeRecord.id.toHex}, $nodeRecord) as routing table candidate."
+          )
+          debug(s"iBucket($iBucket) = $bucket")
+          Continue
+        }
+        .recover {
+          case _ =>
+            // if that node fails to respond, it is evicted from the bucket and the other node inserted (at the tail)
+            assert(bucket.size < config.k)
+            removeNodeRecord(recordToPing)
+            addNodeRecord(nodeRecord)
+            debug(s"Ping to ${recordToPing.id.toHex} in bucket $iBucket failed.")
+            info(s"Replacing ${recordToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord).")
+            Continue
+        }
     }
   }
 
@@ -125,6 +147,10 @@ class KRouter[A](
 
   private def removeNodeRecord(nodeRecord: NodeRecord[A]): Unit = {
     nodeRecordIndex.set(NodeRecordIndex(kBuckets.remove(nodeRecord.id), nodeRecords - nodeRecord.id))
+  }
+
+  private def touchNodeRecord(nodeRecord: NodeRecord[A]): Unit = {
+    nodeRecordIndex.set(NodeRecordIndex(kBuckets.touch(nodeRecord.id), nodeRecords))
   }
 
   private def getRemotely(key: BitVector): Future[NodeRecord[A]] = {

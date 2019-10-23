@@ -49,17 +49,17 @@ class KBuckets private (val baseId: BitVector, val clock: Clock, val buckets: Li
     * @return this KBuckets instance.
     */
   def add(nodeId: BitVector): KBuckets = {
-    if (nodeId != baseId) {
-      if (nodeId.length != this.baseId.length)
-        throw new IllegalArgumentException(
-          s"Illegal attempt to add node id with a length different than the this node id."
-        )
-      else {
-        val (iBucket, bucket) = getBucket(nodeId)
-        new KBuckets(baseId, clock, buckets.patch(iBucket, List(bucket + nodeId), 1))
-      }
-    } else {
-      this
+    bucketOp(nodeId)((iBucket, bucket) => new KBuckets(baseId, clock, buckets.patch(iBucket, List(bucket + nodeId), 1)))
+  }
+
+  /**
+    * Move a given nodeId to the tail of its respective bucket.
+    * @param nodeId the nodeId to touch
+    * @return
+    */
+  def touch(nodeId: BitVector): KBuckets = {
+    bucketOp(nodeId) { (iBucket, bucket) =>
+      new KBuckets(baseId, clock, buckets.patch(iBucket, List(bucket.touch(nodeId)), 1))
     }
   }
 
@@ -70,15 +70,6 @@ class KBuckets private (val baseId: BitVector, val clock: Clock, val buckets: Li
     */
   def contains(nodeId: BitVector): Boolean = {
     nodeId == baseId || buckets(iBucket(nodeId)).contains(nodeId)
-  }
-
-  /**
-    * Iterate over all elements in the KBuckets.
-    *
-    * @return an iterator
-    */
-  private def iterator: Iterator[BitVector] = {
-    (baseId :: buckets.flatten).iterator
   }
 
   /**
@@ -117,5 +108,20 @@ class KBuckets private (val baseId: BitVector, val clock: Clock, val buckets: Li
 
   private def bucketToString(bucket: TimeSet[BitVector]): String = {
     s"${bucket.iterator.map(id => s"(id=${id.toBin}, d=${Xor.d(id, baseId)})").mkString(", ")}"
+  }
+
+  private def bucketOp(nodeId: BitVector)(op: (Int, TimeSet[BitVector]) => KBuckets): KBuckets = {
+    if (nodeId != baseId) {
+      if (nodeId.length != this.baseId.length)
+        throw new IllegalArgumentException(
+          s"Illegal node id '${nodeId.toHex}' has bit length ${nodeId.size} but requires length ${baseId.size}."
+        )
+      else {
+        val (iBucket, bucket) = getBucket(nodeId)
+        op(iBucket, bucket)
+      }
+    } else {
+      this
+    }
   }
 }
