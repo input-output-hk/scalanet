@@ -22,25 +22,72 @@ class KBuckets private (val baseId: BitVector, val clock: Clock, val buckets: Li
   def closestNodes(nodeId: BitVector, n: Int): List[BitVector] = {
     val ordering = new XorOrdering(nodeId)
 
-    def loop(nodes: List[BitVector], iLeft: Int, iRight: Int): List[BitVector] = {
-      if (nodes.size < n && (iLeft > -1 || iRight < buckets.size)) {
+    // returns ordered buckets: if bucket comes first in the result
+    // then all of its elements are closer to nodeId that any element
+    // from buckets further in the stream
+    // virtual one-element bucket with baseId is added
+    def orderedBucketsStream: Stream[Seq[BitVector]] = {
+      // That part is simple in implementation but complex conceptually. It bases on observation that buckets can
+      // be ordered by closeness to nodeId, i.e. for buckets A and B either all elements its elements are closer
+      // to nodeId than any element of B or all elements from A are farther from nodeId than any element from B.
+      //
+      // To people with maths background: it means that when we treat all know nodes as an ordered set, then
+      // we can treat function assigning each node a bucket as totally ordered set homomorphism - with induced
+      // order on buckets, i.e. if x <= y then b(x) <= b(y).
+      //
+      // There is a sequence of observations leading to this algorithm. Let m be the bit length of stored values
+      // (or equivalently the number of buckets). When we say i-th bucket we mean 0-based indexing, with i-th bucket
+      // containing values with XOR metrics distance from baseId in range [2^i, 2^(i + 1)), while speaking about
+      // i-th bit we mean 1-based indexing of m-length bit vector.
+      //
+      // 1. Values in i-th bucket share (m - i - 1)-bit prefix with baseId and differ on (m - i)-th position
+      // 2. Values from i-th bucket and j-th bucket with j < i share (m - i - 1)-bit prefix with baseId ones
+      //    from the i-th bucket differ with baseId on (m - i)-th position, while elements from the j-th bucket agree
+      //    with baseId on (m - i)-th position
+      // 3. Values from i-th bucket xorred with nodeId have common (m - i - 1)-bit prefix with (nodeId xor baseId);
+      //    so do values from j-th bucket for j < i. On (m - i)-th position i-th bucket values xorred with nodeId
+      //    have different bit than (nodeId xor baseId) while values from j-th bucket have the same
+      // 4. Because of that the XOR metric distance of any value in i-th bucket and any value in j-th bucket
+      //    for j < i are in relation determined by (m - i)-th position of (nodeId xor baseId).
+      //    This is because both XOR metric distances have (m - i - 1)-bit common prefix and differ on (m - i)-th bit;
+      //    if (m - i)-th bit of (nodeId xor baseId) is 1 then the element from i-th bucket is closer to nodeId,
+      //    otherwise the element from j-th bucket is
+      // 5. To obtain correct bucket order, we should start with empty queue and iterate over all buckets.
+      //    If for i-th bucket the corresponding bit of (nodeId xor baseId) - (m - i)-th one - is 1, we should push
+      //    the bucket to the front (as its elements are closer to nodeId than any element from j-th bucket for j < i)
+      //    and push it to the back if it is 0 (as its elements are farther from nodeId).
+      // 6. When we analyse what the resulting queue is going to look like, we'll notice, that first we'll get buckets
+      //    corresponding to bits where (nodeId xor baseId) is 1, in reverse order and then buckets corresponding to
+      //    bits where (nodeId xor baseId) is 0 is normal order
+      // 7. Moving to 0-based indexing: bit corresponding to buckets(i), the i-th bucket, is (m - i)-th bit,
+      //    so (nodeId xor baseId)(m - i - 1); it is 1 if and only if nodeId(m - i - 1) != baseId(m - i - 1)
+      // 8. There is still baseId which isn't stored it buckets; we can think of if as residing in one element
+      //    virtual bucket before all real buckets. We can just push such artificial bucket to the queue before
+      //    starting our iteration
 
-        val nodesNext = if (iLeft != iRight) {
-          val lBucket = if (iLeft > -1) buckets(iLeft) else TimeSet.empty
-          val rBucket = if (iRight < buckets.size) buckets(iRight) else TimeSet.empty
-          lBucket ++ nodes ++ rBucket
-        } else {
-          buckets(iLeft) ++ nodes
-        }
+      // buckets with elements closer to nodeId that baseId, sorted appropriately
+      def closerBuckets: Stream[Seq[BitVector]] =
+        Stream
+          .range(buckets.size - 1, -1, -1)
+          .filter(i => nodeId(buckets.size - i - 1) != baseId(buckets.size - i - 1))
+          .map(i => buckets(i).toSeq)
 
-        loop(nodesNext.toList.sorted(ordering).take(n), iLeft - 1, iRight + 1)
-      } else {
-        nodes
-      }
+      // buckets with elements farther from nodeId than baseId, sorted appropriately
+      def furtherBuckets: Stream[Seq[BitVector]] =
+        Stream
+          .range(0, buckets.size, 1)
+          .filter(i => nodeId(buckets.size - i - 1) == baseId(buckets.size - i - 1))
+          .map(i => buckets(i).toSeq)
+
+      closerBuckets ++ (Seq(baseId) #:: furtherBuckets)
     }
 
-    val i = if (nodeId == baseId) 0 else iBucket(nodeId)
-    (baseId :: loop(Nil, i, i)).sorted(ordering).take(n)
+    if (n == 1) {
+      // special case to avoid sorting the bucket
+      orderedBucketsStream.find(_.nonEmpty).map(_.min(ordering)).toList
+    } else {
+      orderedBucketsStream.flatMap(_.sorted(ordering)).take(n).toList
+    }
   }
 
   /**

@@ -42,13 +42,15 @@ class KBucketsSpec extends FlatSpec {
     val arbitraryId: BitVector = ids(Random.nextInt(ids.length))
     val kBuckets = new KBuckets(arbitraryId, clock)
 
-    val exptectedRecords =
+    val sortedRecords =
       ids.sortBy(nodeId => Xor.d(nodeId, arbitraryId))
 
     val kBuckets2 = ids.foldLeft(kBuckets)((acc, next) => acc.add(next))
-    val closestNodes = kBuckets2.closestNodes(arbitraryId, ids.length)
 
-    closestNodes shouldBe exptectedRecords
+    for (n <- 1 to ids.length) {
+      val closestNodes = kBuckets2.closestNodes(arbitraryId, n)
+      closestNodes shouldBe sortedRecords.take(n)
+    }
   }
 
   they should "require the closest single node is the node itself" in {
