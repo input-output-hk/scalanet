@@ -9,10 +9,10 @@ import scodec.bits.BitVector
   *
   * @param baseId the nodes own id.
   */
-class KBuckets private (val baseId: BitVector, val clock: Clock, val buckets: List[TimeSet[BitVector]]) {
+class KBuckets private (val baseId: BitVector, val clock: Clock, val buckets: IndexedSeq[TimeSet[BitVector]]) {
 
   def this(baseId: BitVector, clock: Clock) =
-    this(baseId, clock, List.fill(baseId.length.toInt)(TimeSet[BitVector](clock)))
+    this(baseId, clock, IndexedSeq.fill(baseId.length.toInt)(TimeSet[BitVector](clock)))
 
   /**
     * Find the n nodes closest to nodeId in kBuckets.
