@@ -35,15 +35,14 @@ trait CommandParser extends RegexParsers {
     case class AddCommand(nodeRecord: NodeRecord[InetMultiAddress]) extends Command {
       val dumpCommand = DumpCommand()
       override def applyTo(kRouter: KRouter[InetMultiAddress]): String = {
-        kRouter.nodeRecords.put(nodeRecord.id, nodeRecord)
-        kRouter.kBuckets.add(nodeRecord.id)
+        kRouter.add(nodeRecord)
         dumpCommand.applyTo(kRouter)
       }
     }
 
     case class RemoveCommand(nodeId: BitVector) extends Command {
       override def applyTo(kRouter: KRouter[InetMultiAddress]): String = {
-        kRouter.kBuckets.remove(nodeId)
+        kRouter.remove(nodeId)
         s"Node id ${nodeId.toHex} removed from local kBuckets"
       }
     }
