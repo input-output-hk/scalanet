@@ -2,7 +2,6 @@ package io.iohk.scalanet.peergroup.kademlia
 
 import java.time.Clock
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicReference
 
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse
@@ -32,9 +31,8 @@ class KRouter[A](
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  private val nodeRecordIndex = new AtomicReference(
+  private var nodeRecordIndex =
     NodeRecordIndex(new KBuckets(config.nodeRecord.id, clock), Map(config.nodeRecord.id -> config.nodeRecord))
-  )
 
   private val additions = ConcurrentSubject.publish[NodeRecord[A]]
 
@@ -92,7 +90,7 @@ class KRouter[A](
         case _ =>
       }
   }
-  
+
   private def addAll(nodeRecords: Set[NodeRecord[A]]): Future[Ack] = {
     def loop(records: List[NodeRecord[A]]): Future[Ack] = records match {
       case Nil =>
@@ -131,7 +129,7 @@ class KRouter[A](
         .recover {
           case _ =>
             // if that node fails to respond, it is evicted from the bucket and the other node inserted (at the tail)
-            assert(bucket.size < config.k)
+            assert(bucket.size <= config.k)
             removeNodeRecord(recordToPing)
             addNodeRecord(nodeRecord)
             debug(s"Ping to ${recordToPing.id.toHex} in bucket $iBucket failed.")
@@ -142,15 +140,15 @@ class KRouter[A](
   }
 
   private def addNodeRecord(nodeRecord: NodeRecord[A]): Unit = {
-    nodeRecordIndex.set(NodeRecordIndex(kBuckets.add(nodeRecord.id), nodeRecords + (nodeRecord.id -> nodeRecord)))
+    nodeRecordIndex = NodeRecordIndex(kBuckets.add(nodeRecord.id), nodeRecords + (nodeRecord.id -> nodeRecord))
   }
 
   private def removeNodeRecord(nodeRecord: NodeRecord[A]): Unit = {
-    nodeRecordIndex.set(NodeRecordIndex(kBuckets.remove(nodeRecord.id), nodeRecords - nodeRecord.id))
+    nodeRecordIndex = NodeRecordIndex(kBuckets.remove(nodeRecord.id), nodeRecords - nodeRecord.id)
   }
 
   private def touchNodeRecord(nodeRecord: NodeRecord[A]): Unit = {
-    nodeRecordIndex.set(NodeRecordIndex(kBuckets.touch(nodeRecord.id), nodeRecords))
+    nodeRecordIndex = NodeRecordIndex(kBuckets.touch(nodeRecord.id), nodeRecords)
   }
 
   private def getRemotely(key: BitVector): Future[NodeRecord[A]] = {
@@ -314,11 +312,11 @@ class KRouter[A](
   }
 
   private[kademlia] def kBuckets: KBuckets = {
-    nodeRecordIndex.get().kBuckets
+    nodeRecordIndex.kBuckets
   }
 
   private[kademlia] def nodeRecords: Map[BitVector, NodeRecord[A]] = {
-    nodeRecordIndex.get().nodeRecords
+    nodeRecordIndex.nodeRecords
   }
 }
 
