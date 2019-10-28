@@ -11,7 +11,6 @@ import io.iohk.scalanet.peergroup.kademlia.Generators.aRandomNodeRecord
 import io.iohk.scalanet.peergroup.kademlia.KPeerGroupSpec.withTwoPeerGroups
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import monix.execution.Scheduler
-//import monix.reactive.subjects.PublishSubject
 import org.mockito.Mockito.when
 import org.scalatest.FlatSpec
 import org.scalatest.concurrent.ScalaFutures

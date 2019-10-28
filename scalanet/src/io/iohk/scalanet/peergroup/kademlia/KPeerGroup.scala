@@ -35,23 +35,16 @@ class KPeerGroup[A, M](
     // own node record.
     underlyingPeerGroup
       .server()
+      .refCount
       .collect(ChannelCreated.collector)
       .mergeMap(
         channel =>
-          channel.in.collect {
+          channel.in.refCount.collect {
             case Left(nodeRecord) =>
               acceptNodeRecord(channel, nodeRecord)
           }
       )
       .subscribe()
-
-    underlyingPeerGroup
-      .server()
-      .collect(ChannelCreated.collector)
-      .foreach(_.in.connect())
-    underlyingPeerGroup
-      .server()
-      .connect()
   }
 
   def client(to: BitVector): Task[Channel[BitVector, M]] = {
@@ -71,8 +64,7 @@ class KPeerGroup[A, M](
           Task.raiseError(new ChannelSetupException[BitVector](to, t))
       }
 
-    def getChannel(underlyingChannel: Channel[A, Either[NodeRecord[A], M]]) = {
-      val channel = underlyingChannel.in
+    def getChannel(underlyingChannel: Channel[A, Either[NodeRecord[A], M]]): Task[ChannelImpl[A, M]] = {
 
       val taskChannel = Task.fromFuture(pF).map { _ =>
         new ChannelImpl[A, M](
@@ -107,7 +99,7 @@ class KPeerGroup[A, M](
         .headL
         .runToFuture
 
-      channel.connect()
+      underlyingChannel.in.connect()
       taskChannel
     }
 
@@ -179,10 +171,12 @@ object KPeerGroup {
     override def close(): Task[Unit] = {
       underlyingChannel.close()
     }
-    val messageObservable = underlyingChannel.in.collect { case Right(message) => message }
 
-    val connectableObservable = ConnectableSubject[M](messageObservable)
+    private val messageObservable = underlyingChannel.in.collect { case Right(message) => message }
+
+    private val connectableObservable = ConnectableSubject[M](messageObservable)
     underlyingChannel.in.connect()
+
     override def in: ConnectableObservable[M] = connectableObservable
 
   }

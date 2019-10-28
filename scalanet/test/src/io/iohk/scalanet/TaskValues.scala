@@ -10,5 +10,8 @@ object TaskValues {
     def evaluated(implicit scheduler: Scheduler, patienceConfig: PatienceConfig): T = {
       task.runToFuture.futureValue
     }
+    def evaluatedFailure(implicit scheduler: Scheduler, patienceConfig: PatienceConfig): Throwable = {
+      task.runToFuture.failed.futureValue
+    }
   }
 }

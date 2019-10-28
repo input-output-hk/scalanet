@@ -16,11 +16,15 @@ object KMessage {
 
   object KRequest {
     case class FindNodes[A](requestId: UUID, nodeRecord: NodeRecord[A], targetNodeId: BitVector) extends KRequest[A]
+
+    case class Ping[A](requestId: UUID, nodeRecord: NodeRecord[A]) extends KRequest[A]
   }
 
   sealed trait KResponse[A] extends KMessage[A]
 
   object KResponse {
     case class Nodes[A](requestId: UUID, nodeRecord: NodeRecord[A], nodes: Seq[NodeRecord[A]]) extends KResponse[A]
+
+    case class Pong[A](requestId: UUID, nodeRecord: NodeRecord[A]) extends KResponse[A]
   }
 }

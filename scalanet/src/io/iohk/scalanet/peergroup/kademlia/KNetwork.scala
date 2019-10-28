@@ -1,24 +1,26 @@
 package io.iohk.scalanet.peergroup.kademlia
 
-import io.iohk.scalanet.monix_subject.ConnectableSubject
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.FindNodes
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.Nodes
+import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
+import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
+import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import io.iohk.scalanet.peergroup.{Channel, PeerGroup}
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
-import monix.reactive.observables.ConnectableObservable
 
 trait KNetwork[A] {
 
   /**
-    * Server side FIND_NODES handler.
-    * @return An Observable for receiving FIND_NODES requests.
-    *         Each element contains a tuple consisting of a FIND_NODES request
-    *         with a function for accepting the required NODES response.
+    * Server side requests stream.
+    * @return An Observable for receiving FIND_NODES and PING requests.
+    *         Each element contains a tuple consisting of a request
+    *         with a function for accepting the required response.
+    *         With current conventions, it is mandatory to provide
+    *         Some(response) or None for all request types, in order that the
+    *         implementation can close the channel.
     */
-  def findNodes: ConnectableObservable[(FindNodes[A], Nodes[A] => Task[Unit])]
+  def kRequests: Observable[(KRequest[A], Option[KResponse[A]] => Task[Unit])]
 
   /**
     * Send a FIND_NODES message to another peer.
@@ -27,6 +29,14 @@ trait KNetwork[A] {
     * @return the future response
     */
   def findNodes(to: NodeRecord[A], request: FindNodes[A]): Task[Nodes[A]]
+
+  /**
+    * Send a PING message to another peer.
+    * @param to the peer to send the message to
+    * @param request the PING request
+    * @return the future response
+    */
+  def ping(to: NodeRecord[A], request: Ping[A]): Task[Pong[A]]
 }
 
 object KNetwork {
@@ -39,60 +49,78 @@ object KNetwork {
   )(implicit scheduler: Scheduler)
       extends KNetwork[A] {
 
-    override def findNodes(to: NodeRecord[A], message: FindNodes[A]): Task[Nodes[A]] = {
+    override lazy val kRequests: Observable[(KRequest[A], Option[KResponse[A]] => Task[Unit])] = {
+      peerGroup
+        .server()
+        .refCount
+        .collectChannelCreated
+        .mapEval { channel: Channel[A, KMessage[A]] =>
+          channel.in.refCount
+            .collect { case r: KRequest[A] => r }
+            .map(request => Some((request, sendOptionalResponse(channel))))
+            .headL
+            .timeout(requestTimeout)
+            .onErrorHandle(closeTheChannel(channel))
+        }
+        .collect { case Some(thing) => thing }
+    }
 
+    override def findNodes(to: NodeRecord[A], request: FindNodes[A]): Task[Nodes[A]] = {
+      requestTemplate(to, request, { case n @ Nodes(_, _, _) => n })
+    }
+
+    override def ping(to: NodeRecord[A], request: Ping[A]): Task[Pong[A]] = {
+      requestTemplate(to, request, { case p @ Pong(_, _) => p })
+    }
+
+    private def requestTemplate[Request <: KRequest[A], Response <: KResponse[A]](
+        to: NodeRecord[A],
+        message: Request,
+        pf: PartialFunction[KMessage[A], Response]
+    ): Task[Response] = {
       peerGroup
         .client(to.routingAddress)
         .bracket { clientChannel =>
-          makeFindNodesRequest(message, clientChannel)
+          sendRequest(message, clientChannel, pf)
         } { clientChannel =>
           clientChannel.close()
         }
     }
 
-    override def findNodes: ConnectableObservable[(FindNodes[A], Nodes[A] => Task[Unit])] = {
-      val serverChannels: Observable[Channel[A, KMessage[A]]] = peerGroup.server().collectChannelCreated
-      try {
-        val collectedChannels = serverChannels.mergeMap { channel: Channel[A, KMessage[A]] =>
-          channel.in
-            .collect {
-              case f @ FindNodes(_, _, _) =>
-                (f, nodesTask(channel))
-            }
-        }
-        val connectableNodes = ConnectableSubject[(FindNodes[A], Nodes[A] => Task[Unit])](collectedChannels)
-        peerGroup.server().collectChannelCreated.foreach(_.in.connect())
-        peerGroup.server().connect()
-        connectableNodes
-      } finally {
-        serverChannels.map(closeIfAnError)
-      }
-    }
-    private def makeFindNodesRequest(message: FindNodes[A], clientChannel: Channel[A, KMessage[A]]): Task[Nodes[A]] = {
-      clientChannel.sendMessage(message).timeout(requestTimeout).flatMap { _ =>
-        {
-          val observable = clientChannel.in.collect { case n @ Nodes(_, _, _) => n }
-          val nodesF = observable.headL.runToFuture
-          clientChannel.in.connect()
-          Task.fromFuture(nodesF).timeout(requestTimeout)
-        }
-      }
+    private def sendRequest[Request <: KRequest[A], Response <: KResponse[A]](
+        message: Request,
+        clientChannel: Channel[A, KMessage[A]],
+        pf: PartialFunction[KMessage[A], Response]
+    ): Task[Response] = {
+      for {
+        _ <- clientChannel.sendMessage(message).timeout(requestTimeout)
+        response <- clientChannel.in.refCount
+          .collect(pf)
+          .headL
+          .timeout(requestTimeout)
+      } yield response
     }
 
-    private def closeIfAnError(
+    private def closeTheChannel[Request <: KRequest[A]](
         channel: Channel[A, KMessage[A]]
-    )(maybeError: Option[Throwable]): Task[Unit] = {
-      maybeError.fold(Task.unit)(_ => channel.close())
+    )(error: Throwable): Option[(Request, Option[KMessage[A]] => Task[Unit])] = {
+      channel.close()
+      None
     }
 
-    private def nodesTask(
+    private def sendResponse(
         channel: Channel[A, KMessage[A]]
-    ): Nodes[A] => Task[Unit] = { nodes =>
+    ): KMessage[A] => Task[Unit] = { message =>
       channel
-        .sendMessage(nodes)
+        .sendMessage(message)
         .timeout(requestTimeout)
         .doOnFinish(_ => channel.close())
     }
 
+    private def sendOptionalResponse(
+        channel: Channel[A, KMessage[A]]
+    ): Option[KMessage[A]] => Task[Unit] = { maybeMessage =>
+      maybeMessage.fold(channel.close())(sendResponse(channel))
+    }
   }
 }
