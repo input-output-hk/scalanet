@@ -84,6 +84,14 @@ class KRouter[A](
     removeNodeRecord(nodeRecords(nodeId))
   }
 
+  def kBuckets: KBuckets = {
+    nodeRecordIndex.kBuckets
+  }
+
+  def nodeRecords: Map[BitVector, NodeRecord[A]] = {
+    nodeRecordIndex.nodeRecords
+  }
+
   private def sendResponse(response: KResponse[A], responseHandler: Option[KResponse[A]] => Task[Unit], to: A): Unit = {
     responseHandler(Some(response)).runToFuture
       .onComplete {
@@ -313,14 +321,6 @@ class KRouter[A](
 
   private def info(msg: String): Unit = {
     log.info(s"${config.nodeRecord.id.toHex} $msg")
-  }
-
-  private[kademlia] def kBuckets: KBuckets = {
-    nodeRecordIndex.kBuckets
-  }
-
-  private[scalanet] def nodeRecords: Map[BitVector, NodeRecord[A]] = {
-    nodeRecordIndex.nodeRecords
   }
 }
 
