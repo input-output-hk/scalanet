@@ -48,8 +48,8 @@ object scalanet extends ScalaModule with PublishModule {
     ivy"org.eclipse.californium:scandium:2.0.0-M15",
     ivy"org.eclipse.californium:element-connector:2.0.0-M15",
     ivy"org.scodec::scodec-bits:1.1.6",
-    ivy"io.iohk::decco:1.0-SNAPSHOT",
-    ivy"io.iohk::decco-auto:1.0-SNAPSHOT",
+    ivy"io.iohk::decco:0.2",
+    ivy"io.iohk::decco-auto:0.2",
     ivy"org.scala-lang.modules::scala-parser-combinators:1.1.2"
   )
 
