@@ -38,10 +38,9 @@ class KRouter[A](
 
   additions.subscribe(doAdd)
 
-  addAll(config.knownPeers)
-
+  //FIXME [PM-838] Make the constructor unblocking.
   info("Executing initial enrolment process to join the network...")
-  Try(Await.result(lookup(config.nodeRecord.id), 2 seconds)).toEither match {
+  Try(Await.result(loadKnownPeers(config.knownPeers).flatMap(_ => lookup(config.nodeRecord.id)), 2 seconds)).toEither match {
     case Left(t) =>
       info(s"Enrolment lookup failed with exception: $t")
       debug(s"Enrolment failure stacktrace: ${t.getStackTrace.mkString("\n")}")
@@ -103,16 +102,8 @@ class KRouter[A](
       }
   }
 
-  private def addAll(nodeRecords: Set[NodeRecord[A]]): Future[Ack] = {
-    def loop(records: List[NodeRecord[A]]): Future[Ack] = records match {
-      case Nil =>
-        Continue
-      case h :: t =>
-        add(h).flatMap { _ =>
-          loop(t)
-        }
-    }
-    loop(nodeRecords.toList)
+  private def loadKnownPeers(nodeRecords: Set[NodeRecord[A]]): Future[Set[Ack]] = {
+    Future.traverse(nodeRecords)(doAdd)
   }
 
   private def doAdd: NodeRecord[A] => Future[Ack] = { nodeRecord =>
