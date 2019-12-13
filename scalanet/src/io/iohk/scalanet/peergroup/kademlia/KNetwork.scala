@@ -6,7 +6,6 @@ import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import io.iohk.scalanet.peergroup.{Channel, PeerGroup}
 import monix.eval.Task
-import monix.execution.Scheduler
 import monix.reactive.Observable
 
 trait KNetwork[A] {
@@ -46,8 +45,7 @@ object KNetwork {
   class KNetworkScalanetImpl[A](
       val peerGroup: PeerGroup[A, KMessage[A]],
       val requestTimeout: FiniteDuration = 3 seconds
-  )(implicit scheduler: Scheduler)
-      extends KNetwork[A] {
+  ) extends KNetwork[A] {
 
     override lazy val kRequests: Observable[(KRequest[A], Option[KResponse[A]] => Task[Unit])] = {
       peerGroup
