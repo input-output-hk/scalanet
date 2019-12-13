@@ -3,13 +3,19 @@ package io.iohk.scalanet.peergroup.kademlia
 import java.time.Clock
 import java.util.UUID
 
+import cats.effect.concurrent.Ref
 import io.iohk.scalanet.peergroup.kademlia.Generators.{aRandomBitVector, aRandomNodeRecord}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse
+import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
 import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
+import io.iohk.scalanet.peergroup.kademlia.KRouterSpec.KNetworkScalanetInternalTestImpl.{
+  KNetworkScalanetInternalTestImpl,
+  NodeData
+}
 import io.iohk.scalanet.peergroup.kademlia.KRouterSpec._
 import monix.eval.Task
+import monix.execution.Scheduler
 import monix.reactive.Observable
 import org.mockito.Mockito.{reset, when}
 import org.mockito.invocation.InvocationOnMock
@@ -18,11 +24,13 @@ import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.mockito.MockitoSugar._
 import scodec.bits._
-import monix.execution.Scheduler.Implicits.global
 
+import scala.concurrent.TimeoutException
 import scala.concurrent.duration._
 
 class KRouterSpec extends FreeSpec {
+
+  implicit val scheduler = Scheduler.fixedPool("test", 16)
 
   implicit val patienceConfig: PatienceConfig =
     PatienceConfig(1 second, 100 millis)
@@ -33,24 +41,24 @@ class KRouterSpec extends FreeSpec {
 
       krouter
         .get(krouter.config.nodeRecord.id)
-        .futureValue shouldBe krouter.config.nodeRecord
+        .runSyncUnsafe() shouldBe krouter.config.nodeRecord
     }
 
     "should locate any bootstrap nodes" in {
       val bootstrapRecord = aRandomNodeRecord()
       val krouter = aKRouter(knownPeers = Set(bootstrapRecord))
 
-      krouter.get(bootstrapRecord.id).futureValue shouldBe bootstrapRecord
+      krouter.get(bootstrapRecord.id).runSyncUnsafe() shouldBe bootstrapRecord
     }
 
     "should not locate an unknown node - no bootstrap" in {
       val krouter = aKRouter()
       val someNodeId = aRandomBitVector()
 
-      whenReady(krouter.get(someNodeId).failed) { e =>
+      whenReady(krouter.get(someNodeId).runToFuture.failed) { e =>
         e shouldBe an[Exception]
         e.getMessage should startWith(
-          s"Lookup failed for get(${someNodeId.toHex})"
+          s"Target node id ${someNodeId.toHex} not found"
         )
       }
     }
@@ -64,10 +72,10 @@ class KRouterSpec extends FreeSpec {
       when(knetwork.findNodes(to = bootstrapRecord, request = FindNodes(uuid, selfRecord, someNodeId)))
         .thenReturn(Task.now(Nodes(uuid, bootstrapRecord, Seq.empty)))
 
-      whenReady(krouter.get(someNodeId).failed) { e =>
+      whenReady(krouter.get(someNodeId).runToFuture.failed) { e =>
         e shouldBe an[Exception]
         e.getMessage should startWith(
-          s"Lookup failed for get(${someNodeId.toHex}). Got an exception: java.lang.Exception: Target node id ${someNodeId.toHex} not loaded into kBuckets"
+          s"Target node id ${someNodeId.toHex} not found"
         )
       }
     }
@@ -79,10 +87,15 @@ class KRouterSpec extends FreeSpec {
 
       val krouter = aKRouter(selfRecord, Set(bootstrapRecord))
       val nodesResponse = Nodes(uuid, bootstrapRecord, Seq(otherNode))
+
       when(knetwork.findNodes(to = bootstrapRecord, request = FindNodes(uuid, selfRecord, otherNode.id)))
         .thenReturn(Task.now(nodesResponse))
 
-      krouter.get(otherNode.id).futureValue shouldBe otherNode
+      // Nodes are only considered found if they are online, i.e they respond to query
+      when(knetwork.findNodes(to = otherNode, request = FindNodes(uuid, selfRecord, otherNode.id)))
+        .thenReturn(Task.now(Nodes(uuid, otherNode, Seq())))
+
+      krouter.get(otherNode.id).runSyncUnsafe() shouldBe otherNode
     }
 
     "should update kbuckets" - {
@@ -97,16 +110,16 @@ class KRouterSpec extends FreeSpec {
 
         val krouter = aKRouter(selfRecord, Set.empty)
 
-        krouter.get(otherRecord.id).futureValue shouldBe otherRecord
+        krouter.get(otherRecord.id).runSyncUnsafe() shouldBe otherRecord
       }
 
       "when receiving a FIND_NODES" in {
-        when(handler.apply(Some(Nodes(uuid, selfRecord, Seq())))).thenReturn(Task.unit)
+        when(handler.apply(Some(Nodes(uuid, selfRecord, Seq(selfRecord))))).thenReturn(Task.unit)
         when(knetwork.kRequests).thenReturn(Observable((FindNodes(uuid, otherRecord, otherRecord.id), handler)))
 
         val krouter = aKRouter(selfRecord, Set.empty)
 
-        krouter.get(otherRecord.id).futureValue shouldBe otherRecord
+        krouter.get(otherRecord.id).runSyncUnsafe() shouldBe otherRecord
       }
 
     }
@@ -206,10 +219,207 @@ class KRouterSpec extends FreeSpec {
         })
       }
     }
+
+    "should do proper initial lookup" - {
+      "when starting with one bootstrap node without neighbours" in {
+        val initialKnownNode = NodeData.getBootStrapNode(0)
+        val result =
+          createTestRouter(peerConfig = Map.empty + (initialKnownNode.myData.id -> initialKnownNode)).runSyncUnsafe()
+
+        result.nodeRecords.size shouldEqual 2
+        result.nodeRecords.get(initialKnownNode.id) shouldBe Some(initialKnownNode.myData)
+      }
+
+      "when starting with 4 bootstrap nodes without neighbours" in {
+        val initialKnownNode = NodeData.getBootStrapNode(0)
+        val initialKnownNode1 = NodeData.getBootStrapNode(0)
+        val initialKnownNode2 = NodeData.getBootStrapNode(0)
+        val initialKnownNode3 = NodeData.getBootStrapNode(0)
+        val initialNodes = Seq(initialKnownNode, initialKnownNode1, initialKnownNode2, initialKnownNode3)
+
+        val result =
+          createTestRouter(
+            peerConfig = Map.empty ++ Seq(
+              initialKnownNode.myData.id -> initialKnownNode,
+              initialKnownNode1.myData.id -> initialKnownNode1,
+              initialKnownNode2.myData.id -> initialKnownNode2,
+              initialKnownNode3.myData.id -> initialKnownNode3
+            )
+          ).runSyncUnsafe()
+
+        result.nodeRecords.size shouldEqual 5
+        initialNodes.foreach(nodeData => result.nodeRecords.get(nodeData.id) shouldBe Some(nodeData.myData))
+      }
+
+      "when starting with one bootstrap node with 6 online neighbours" in {
+        val initialKnownNode = NodeData.getBootStrapNode(6)
+        val onlineNeighbours = initialKnownNode.neigbours
+        val mapWithBootStrap = Map.empty + (initialKnownNode.id -> initialKnownNode)
+        val mapWithOnlineNeighbours =
+          onlineNeighbours.foldLeft(mapWithBootStrap)((map, node) => map + (node.id -> node))
+
+        val result =
+          createTestRouter(peerConfig = mapWithOnlineNeighbours).runSyncUnsafe()
+
+        // 1 bootstrap + myself + 6 new online nodes
+        result.nodeRecords.size shouldEqual 8
+        onlineNeighbours.foreach { node =>
+          result.nodeRecords.get(node.id) shouldBe Some(node.myData)
+        }
+      }
+
+      "when starting with three bootstraps, two with 3 online neighbours and one with 3 offline" in {
+        val initialKnownNode = NodeData.getBootStrapNode(3)
+        val initialKnownNode1 = NodeData.getBootStrapNode(3)
+        val initialKnownNode2 = NodeData.getBootStrapNode(3)
+
+        val onlineNeighbours = initialKnownNode.neigbours ++ initialKnownNode1.neigbours
+        val mapWithBootStrap = Map.empty ++ Seq(
+          (initialKnownNode.id -> initialKnownNode),
+          (initialKnownNode1.id -> initialKnownNode1),
+          (initialKnownNode2.id -> initialKnownNode2)
+        )
+        val mapWithOnlineNeighbours =
+          onlineNeighbours.foldLeft(mapWithBootStrap)((map, node) => map + (node.id -> node))
+
+        val result =
+          createTestRouter(peerConfig = mapWithOnlineNeighbours).runSyncUnsafe()
+
+        // 3 bootstrap + myself + 6 new online nodes
+        result.nodeRecords.size shouldEqual 10
+        onlineNeighbours.foreach { node =>
+          result.nodeRecords.get(node.id) shouldBe Some(node.myData)
+        }
+      }
+
+      "when starting with one bootstrap node with 3 online neighbours with one neighbours having closer available nodes" in {
+
+        /**
+          * Toplogy in test:
+          *                 Neighbour -> 5 Far Neighbours
+          *
+          * BootstapNode -> Neighbour -> 5 Far Neighbours
+          *
+          *                 Neighbour -> 10 Middle distance Neighbours -> 10 Closet Neighbours
+          *
+          * All Middle and closest neigbours should be identified. Not all far away neighbours will be idenfied as lookup
+          * fill finish after receiving responses from k closest nodes
+          */
+        val initiator = aRandomNodeRecord()
+        val xorOrder = new XorNodeOrdering[String](initiator.id)
+
+        // 30 notKnownNodes + 1 bootstrap + 3 bootstrap neighbours
+        val allNodes = (0 until 34)
+          .map(_ => NodeData(Seq(), aRandomNodeRecord(), bootstrap = false))
+          .sortBy(nodedata => nodedata.myData)(xorOrder)
+
+        val (onlineNodeToFind, initialSetup) = allNodes.splitAt(30)
+
+        val initialKnownNode = NodeData(initialSetup.take(3), initialSetup.last.myData, true)
+
+        val onlineNeighbours = initialKnownNode.neigbours
+
+        val (closestNodes, rest) = onlineNodeToFind.splitAt(10)
+
+        val (secondClosest, rest1) = rest.splitAt(10)
+
+        val updatedHead = secondClosest(0).copy(neigbours = closestNodes)
+
+        val neighbour0Neighbours = secondClosest.updated(0, updatedHead)
+
+        val (neighbour1Neighbours, neighbour2Neighbours) = rest1.splitAt(5)
+
+        val neigbour0 = onlineNeighbours(0).copy(neigbours = neighbour0Neighbours)
+        val neigbour1 = onlineNeighbours(1).copy(neigbours = neighbour1Neighbours)
+        val neigbour2 = onlineNeighbours(2).copy(neigbours = neighbour2Neighbours)
+
+        val onlineTopology = Seq(neigbour0, neigbour1, neigbour2) ++ neighbour0Neighbours ++ closestNodes ++ neighbour1Neighbours ++ neighbour2Neighbours
+
+        val mapWithBootStrap = Map.empty + (initialKnownNode.myData.id -> initialKnownNode)
+        val mapWithOnlineNeighbours =
+          onlineTopology.foldLeft(mapWithBootStrap)((map, node) => map + (node.id -> node))
+
+        val result =
+          createTestRouter(nodeRecord = initiator, peerConfig = mapWithOnlineNeighbours).runSyncUnsafe()
+
+        // all closest nodes should be identified and added to table after succesfull lookup
+        (closestNodes).foreach { node =>
+          result.nodeRecords.get(node.id) shouldBe Some(node.myData)
+        }
+
+        // all middle closest nodes should be identified and added to table after succesfull lookup
+        (secondClosest).foreach { node =>
+          result.nodeRecords.get(node.id) shouldBe Some(node.myData)
+        }
+      }
+    }
   }
 }
 
 object KRouterSpec {
+  object KNetworkScalanetInternalTestImpl {
+    case class NodeData[A](neigbours: Seq[NodeData[A]], myData: NodeRecord[A], bootstrap: Boolean) {
+      def id: BitVector = myData.id
+    }
+
+    object NodeData {
+      def getBootStrapNode(
+          numberOfNeighbours: Int,
+          bootStrapRecord: NodeRecord[String] = aRandomNodeRecord()
+      ): NodeData[String] = {
+        val neighbours =
+          (0 until numberOfNeighbours)
+            .map(_ => aRandomNodeRecord())
+            .map(record => NodeData(Seq(), record, bootstrap = false))
+        NodeData(neighbours, bootStrapRecord, bootstrap = true)
+      }
+    }
+
+    class KNetworkScalanetInternalTestImpl[A](val nodes: Ref[Task, Map[BitVector, NodeData[A]]]) extends KNetwork[A] {
+      override def findNodes(to: NodeRecord[A], request: FindNodes[A]): Task[Nodes[A]] = {
+        for {
+          currentState <- nodes.get
+          response <- currentState.get(to.id) match {
+            case Some(value) =>
+              Task.now(Nodes(request.requestId, value.myData, value.neigbours.map(_.myData)))
+            case None =>
+              Task.raiseError(new TimeoutException(s"Task timed-out after of inactivity"))
+          }
+        } yield response
+      }
+
+      override def ping(to: NodeRecord[A], request: Ping[A]): Task[Pong[A]] = {
+        for {
+          currentState <- nodes.get
+          response <- currentState.get(to.id) match {
+            case Some(value) =>
+              Task.now(Pong(request.requestId, value.myData))
+            case None =>
+              Task.raiseError(new TimeoutException(s"Task timed-out after of inactivity"))
+          }
+        } yield response
+      }
+
+      // No server request handling for now
+      override def kRequests: Observable[(KRequest[A], Option[KResponse[A]] => Task[Unit])] = Observable.empty
+    }
+  }
+
+  def createTestRouter(
+      nodeRecord: NodeRecord[String] = aRandomNodeRecord(),
+      peerConfig: Map[BitVector, NodeData[String]]
+  )(implicit scheduler: Scheduler): Task[KRouter[String]] = {
+
+    val knownPeers = peerConfig.collect {
+      case (_, data) if data.bootstrap => data.myData
+    }.toSet
+
+    for {
+      testState <- Ref.of[Task, Map[BitVector, NodeData[String]]](peerConfig)
+      network = new KNetworkScalanetInternalTestImpl(testState)
+      router <- KRouter.startRouterWithServerPar(Config(nodeRecord, knownPeers), network, clock, () => uuid)
+    } yield router
+  }
 
   type SRouter = KRouter[String]
   val knetwork = mock[KNetwork[String]]
@@ -225,10 +435,12 @@ object KRouterSpec {
       knownPeers: Set[NodeRecord[String]] = Set.empty,
       alpha: Int = alpha,
       k: Int = k
-  ): SRouter = {
+  )(implicit scheduler: Scheduler): SRouter = {
 
     mockEnrollment(nodeRecord, knownPeers, Seq.empty)
-    new KRouter(Config(nodeRecord, knownPeers, alpha, k), knetwork, clock, () => uuid)
+    KRouter
+      .startRouterWithServerSeq(Config(nodeRecord, knownPeers, alpha, k), knetwork, clock, () => uuid)
+      .runSyncUnsafe()
   }
 
   private def setupOrderedPings(
