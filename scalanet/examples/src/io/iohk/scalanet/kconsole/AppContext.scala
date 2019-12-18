@@ -25,8 +25,7 @@ class AppContext(nodeConfig: KRouter.Config[InetMultiAddress])(implicit schedule
       val kNetwork =
         new KNetworkScalanetImpl[InetMultiAddress](routingPeerGroup)
 
-      new KRouter[InetMultiAddress](nodeConfig, kNetwork)
-
+      KRouter.startRouterWithServerSeq(nodeConfig, kNetwork).runSyncUnsafe()
     } catch {
       case e: Exception =>
         System.err.println(

@@ -171,10 +171,10 @@ class KRouterSpec extends FreeSpec {
         val krouter: SRouter = aKRouter(selfRecord, Set.empty, k = 8)
 
         knetwork.kRequests.doOnComplete(Task {
-          krouter.kBuckets.buckets(0) shouldBe TimeSet(bin"0001")
-          krouter.kBuckets.buckets(1) shouldBe TimeSet(bin"0010", bin"0011")
-          krouter.kBuckets.buckets(2) shouldBe TimeSet(bin"0100", bin"0101", bin"0110", bin"0111")
-          krouter.kBuckets.buckets(3) shouldBe TimeSet(
+          krouter.kBuckets.runSyncUnsafe().buckets(0) shouldBe TimeSet(bin"0001")
+          krouter.kBuckets.runSyncUnsafe().buckets(1) shouldBe TimeSet(bin"0010", bin"0011")
+          krouter.kBuckets.runSyncUnsafe().buckets(2) shouldBe TimeSet(bin"0100", bin"0101", bin"0110", bin"0111")
+          krouter.kBuckets.runSyncUnsafe().buckets(3) shouldBe TimeSet(
             bin"1000",
             bin"1001",
             bin"1010",
@@ -198,10 +198,10 @@ class KRouterSpec extends FreeSpec {
         val krouter: SRouter = aKRouter(selfRecord, Set.empty, k = 3)
 
         knetwork.kRequests.doOnComplete(Task {
-          krouter.kBuckets.buckets(0) shouldBe TimeSet(bin"0001")
-          krouter.kBuckets.buckets(1) shouldBe TimeSet(bin"0010", bin"0011")
-          krouter.kBuckets.buckets(2) shouldBe TimeSet(bin"0101", bin"0110", bin"0111")
-          krouter.kBuckets.buckets(3) shouldBe TimeSet(bin"1101", bin"1110", bin"1111")
+          krouter.kBuckets.runSyncUnsafe().buckets(0) shouldBe TimeSet(bin"0001")
+          krouter.kBuckets.runSyncUnsafe().buckets(1) shouldBe TimeSet(bin"0010", bin"0011")
+          krouter.kBuckets.runSyncUnsafe().buckets(2) shouldBe TimeSet(bin"0101", bin"0110", bin"0111")
+          krouter.kBuckets.runSyncUnsafe().buckets(3) shouldBe TimeSet(bin"1101", bin"1110", bin"1111")
         })
       }
 
@@ -212,10 +212,10 @@ class KRouterSpec extends FreeSpec {
         val krouter: SRouter = aKRouter(selfRecord, Set.empty, k = 3)
 
         knetwork.kRequests.doOnComplete(Task {
-          krouter.kBuckets.buckets(0) shouldBe TimeSet(bin"0001")
-          krouter.kBuckets.buckets(1) shouldBe TimeSet(bin"0010", bin"0011")
-          krouter.kBuckets.buckets(2) shouldBe TimeSet(bin"0101", bin"0110", bin"0100")
-          krouter.kBuckets.buckets(3) shouldBe TimeSet(bin"1010", bin"1000", bin"1001")
+          krouter.kBuckets.runSyncUnsafe().buckets(0) shouldBe TimeSet(bin"0001")
+          krouter.kBuckets.runSyncUnsafe().buckets(1) shouldBe TimeSet(bin"0010", bin"0011")
+          krouter.kBuckets.runSyncUnsafe().buckets(2) shouldBe TimeSet(bin"0101", bin"0110", bin"0100")
+          krouter.kBuckets.runSyncUnsafe().buckets(3) shouldBe TimeSet(bin"1010", bin"1000", bin"1001")
         })
       }
     }
@@ -223,11 +223,11 @@ class KRouterSpec extends FreeSpec {
     "should do proper initial lookup" - {
       "when starting with one bootstrap node without neighbours" in {
         val initialKnownNode = NodeData.getBootStrapNode(0)
-        val result =
+        val testRouter =
           createTestRouter(peerConfig = Map.empty + (initialKnownNode.myData.id -> initialKnownNode)).runSyncUnsafe()
 
-        result.nodeRecords.size shouldEqual 2
-        result.nodeRecords.get(initialKnownNode.id) shouldBe Some(initialKnownNode.myData)
+        testRouter.nodeRecords.runSyncUnsafe().size shouldEqual 2
+        testRouter.get(initialKnownNode.id).runSyncUnsafe() shouldBe initialKnownNode.myData
       }
 
       "when starting with 4 bootstrap nodes without neighbours" in {
@@ -237,7 +237,7 @@ class KRouterSpec extends FreeSpec {
         val initialKnownNode3 = NodeData.getBootStrapNode(0)
         val initialNodes = Seq(initialKnownNode, initialKnownNode1, initialKnownNode2, initialKnownNode3)
 
-        val result =
+        val testRouter =
           createTestRouter(
             peerConfig = Map.empty ++ Seq(
               initialKnownNode.myData.id -> initialKnownNode,
@@ -247,8 +247,8 @@ class KRouterSpec extends FreeSpec {
             )
           ).runSyncUnsafe()
 
-        result.nodeRecords.size shouldEqual 5
-        initialNodes.foreach(nodeData => result.nodeRecords.get(nodeData.id) shouldBe Some(nodeData.myData))
+        testRouter.nodeRecords.runSyncUnsafe().size shouldEqual 5
+        initialNodes.foreach(nodeData => testRouter.get(nodeData.id).runSyncUnsafe() shouldBe nodeData.myData)
       }
 
       "when starting with one bootstrap node with 6 online neighbours" in {
@@ -258,13 +258,13 @@ class KRouterSpec extends FreeSpec {
         val mapWithOnlineNeighbours =
           onlineNeighbours.foldLeft(mapWithBootStrap)((map, node) => map + (node.id -> node))
 
-        val result =
+        val testRouter =
           createTestRouter(peerConfig = mapWithOnlineNeighbours).runSyncUnsafe()
 
         // 1 bootstrap + myself + 6 new online nodes
-        result.nodeRecords.size shouldEqual 8
+        testRouter.nodeRecords.runSyncUnsafe().size shouldEqual 8
         onlineNeighbours.foreach { node =>
-          result.nodeRecords.get(node.id) shouldBe Some(node.myData)
+          testRouter.get(node.id).runSyncUnsafe() shouldBe node.myData
         }
       }
 
@@ -282,13 +282,13 @@ class KRouterSpec extends FreeSpec {
         val mapWithOnlineNeighbours =
           onlineNeighbours.foldLeft(mapWithBootStrap)((map, node) => map + (node.id -> node))
 
-        val result =
+        val testRouter =
           createTestRouter(peerConfig = mapWithOnlineNeighbours).runSyncUnsafe()
 
         // 3 bootstrap + myself + 6 new online nodes
-        result.nodeRecords.size shouldEqual 10
+        testRouter.nodeRecords.runSyncUnsafe().size shouldEqual 10
         onlineNeighbours.foreach { node =>
-          result.nodeRecords.get(node.id) shouldBe Some(node.myData)
+          testRouter.get(node.id).runSyncUnsafe() shouldBe node.myData
         }
       }
 
@@ -302,8 +302,8 @@ class KRouterSpec extends FreeSpec {
           *
           *                 Neighbour -> 10 Middle distance Neighbours -> 10 Closet Neighbours
           *
-          * All Middle and closest neigbours should be identified. Not all far away neighbours will be idenfied as lookup
-          * fill finish after receiving responses from k closest nodes
+          * All Middle and closest neigbours should be identified. Not all far away neighbours will be identified as lookup
+          * will finish after receiving responses from k closest nodes
           */
         val initiator = aRandomNodeRecord()
         val xorOrder = new XorNodeOrdering[String](initiator.id)
@@ -339,17 +339,17 @@ class KRouterSpec extends FreeSpec {
         val mapWithOnlineNeighbours =
           onlineTopology.foldLeft(mapWithBootStrap)((map, node) => map + (node.id -> node))
 
-        val result =
+        val testRouter =
           createTestRouter(nodeRecord = initiator, peerConfig = mapWithOnlineNeighbours).runSyncUnsafe()
 
         // all closest nodes should be identified and added to table after succesfull lookup
         (closestNodes).foreach { node =>
-          result.nodeRecords.get(node.id) shouldBe Some(node.myData)
+          testRouter.get(node.id).runSyncUnsafe() shouldBe node.myData
         }
 
         // all middle closest nodes should be identified and added to table after succesfull lookup
         (secondClosest).foreach { node =>
-          result.nodeRecords.get(node.id) shouldBe Some(node.myData)
+          testRouter.get(node.id).runSyncUnsafe() shouldBe node.myData
         }
       }
     }
