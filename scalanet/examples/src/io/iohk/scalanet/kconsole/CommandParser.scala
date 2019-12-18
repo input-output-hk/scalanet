@@ -48,7 +48,7 @@ trait CommandParser extends RegexParsers {
 
     case class DumpCommand() extends Command {
       override def applyTo(kRouter: KRouter[InetMultiAddress]): String = {
-        kRouter.nodeRecords.map { case (_, record) => Utils.recordToStr(record) }.mkString("\n")
+        kRouter.nodeRecords.runSyncUnsafe().map { case (_, record) => Utils.recordToStr(record) }.mkString("\n")
       }
     }
 
