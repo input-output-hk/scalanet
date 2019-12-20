@@ -25,7 +25,7 @@ class KRouter[A](
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  // TODO: parallelism should be configured by library user
+  // TODO[PM-1035]: parallelism should be configured by library user
   private val responseTaskConsumer =
     Consumer.foreachParallelTask[(KRequest[A], Option[KResponse[A]] => Task[Unit])](parallelism = 4) {
       case (FindNodes(uuid, nodeRecord, targetNodeId), responseHandler) =>
@@ -127,10 +127,14 @@ class KRouter[A](
           (current, Some(nodeToPing))
         }
       }
-      result <- if (toPing.isEmpty) {
-        Task.now(())
-      } else {
-        val nodeToPing = toPing.get
+      result <- pingAndUpdateState(toPing, nodeRecord)
+    } yield result
+  }
+
+  private def pingAndUpdateState(recordToPing: Option[NodeRecord[A]], nodeRecord: NodeRecord[A]): Task[Unit] = {
+    recordToPing match {
+      case None => Task.now(())
+      case Some(nodeToPing) =>
         for {
           pingResult <- ping(nodeToPing)
           _ <- routerState.update { current =>
@@ -153,8 +157,7 @@ class KRouter[A](
             }
           }
         } yield ()
-      }
-    } yield result
+    }
   }
 
   private def getRemotely(key: BitVector): Task[NodeRecord[A]] = {
@@ -249,9 +252,9 @@ class KRouter[A](
     def getNodesToQuery(
         currentClosestNode: NodeRecord[A],
         receivedNodes: Seq[NodeRecord[A]],
-        nodesFounded: NonEmptyList[NodeRecord[A]],
+        nodesFound: NonEmptyList[NodeRecord[A]],
         lookupState: Ref[Task, Map[BitVector, RequestResult]]
-    ) = {
+    ): Task[Seq[NodeRecord[A]]] = {
 
       // All nodes which are closer to target, than the closest already found node
       val closestNodes = receivedNodes.filter(node => xorOrder.compare(node, currentClosestNode) < 0)
@@ -260,7 +263,7 @@ class KRouter[A](
       // k nodes from already found or
       // alpha nodes from closest nodes received
       val (nodesToQueryFrom, nodesToTake) =
-        if (closestNodes.isEmpty) (nodesFounded.toList, config.k) else (closestNodes, config.alpha)
+        if (closestNodes.isEmpty) (nodesFound.toList, config.k) else (closestNodes, config.alpha)
 
       for {
         nodesToQuery <- lookupState.modify { currentState =>
@@ -290,12 +293,12 @@ class KRouter[A](
     // Due to threading recursive function through flatmap and using Task, this is entirely stack safe
     def recLookUp(
         nodesToQuery: Seq[NodeRecord[A]],
-        nodesFounded: NonEmptyList[NodeRecord[A]],
+        nodesFound: NonEmptyList[NodeRecord[A]],
         lookupState: Ref[Task, Map[BitVector, RequestResult]]
     ): Task[NonEmptyList[NodeRecord[A]]] = {
-      shouldFinishLookup(nodesToQuery, nodesFounded, lookupState).flatMap {
+      shouldFinishLookup(nodesToQuery, nodesFound, lookupState).flatMap {
         case true =>
-          Task.now(nodesFounded)
+          Task.now(nodesFound)
         case false =>
           val (toQuery, rest) = nodesToQuery.splitAt(config.alpha)
           for {
@@ -313,9 +316,9 @@ class KRouter[A](
               .filterNot(node => myself(node.id))
               .toList
 
-            updatedFoundNodes = (nodesFounded ++ receivedNodes).distinct(xorOrder).sorted(xorOrder)
+            updatedFoundNodes = (nodesFound ++ receivedNodes).distinct(xorOrder).sorted(xorOrder)
 
-            newNodesToQuery <- getNodesToQuery(nodesFounded.head, receivedNodes, updatedFoundNodes, lookupState)
+            newNodesToQuery <- getNodesToQuery(nodesFound.head, receivedNodes, updatedFoundNodes, lookupState)
 
             result <- recLookUp(newNodesToQuery ++ rest, updatedFoundNodes, lookupState)
           } yield result
