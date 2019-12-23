@@ -205,6 +205,9 @@ object PeerGroup {
   class ChannelSetupException[A](val to: A, val cause: Throwable)
       extends RuntimeException(s"Error establishing channel to $to.", cause)
 
+  class ChannelAlreadyClosedException[A](val to: A, val from: A)
+      extends RuntimeException(s"Channel from $from, to $to has already been closed")
+
   class ChannelBrokenException[A](val to: A, val cause: Throwable)
       extends RuntimeException(s"Channel broken to $to.", cause)
 
