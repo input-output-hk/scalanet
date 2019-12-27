@@ -17,12 +17,11 @@ trait CommandParser extends RegexParsers {
   }
 
   object Command {
-    import scala.concurrent.ExecutionContext.Implicits.global
-
+    import monix.execution.Scheduler.Implicits.global
     case class GetCommand(nodeId: BitVector) extends Command {
       override def applyTo(kRouter: KRouter[InetMultiAddress]): String = {
         val p = Promise[String]()
-        kRouter.get(nodeId).onComplete {
+        kRouter.get(nodeId).runToFuture.onComplete {
           case util.Failure(exception) =>
             p.success(exception.getMessage)
           case util.Success(nodeRecord) =>
@@ -35,7 +34,7 @@ trait CommandParser extends RegexParsers {
     case class AddCommand(nodeRecord: NodeRecord[InetMultiAddress]) extends Command {
       val dumpCommand = DumpCommand()
       override def applyTo(kRouter: KRouter[InetMultiAddress]): String = {
-        kRouter.add(nodeRecord)
+        kRouter.add(nodeRecord).runToFuture
         dumpCommand.applyTo(kRouter)
       }
     }
@@ -49,7 +48,7 @@ trait CommandParser extends RegexParsers {
 
     case class DumpCommand() extends Command {
       override def applyTo(kRouter: KRouter[InetMultiAddress]): String = {
-        kRouter.nodeRecords.map { case (_, record) => Utils.recordToStr(record) }.mkString("\n")
+        kRouter.nodeRecords.runSyncUnsafe().map { case (_, record) => Utils.recordToStr(record) }.mkString("\n")
       }
     }
 

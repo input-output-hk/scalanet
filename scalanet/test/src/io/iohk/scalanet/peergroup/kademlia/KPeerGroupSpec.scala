@@ -10,6 +10,7 @@ import io.iohk.scalanet.peergroup.{InMemoryPeerGroup, PeerGroup}
 import io.iohk.scalanet.peergroup.kademlia.Generators.aRandomNodeRecord
 import io.iohk.scalanet.peergroup.kademlia.KPeerGroupSpec.withTwoPeerGroups
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
+import monix.eval.Task
 import monix.execution.Scheduler
 import org.mockito.Mockito.when
 import org.scalatest.FlatSpec
@@ -17,8 +18,7 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.mockito.MockitoSugar._
 import org.scalatest.concurrent.ScalaFutures._
 
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.{Await, Future}
+import scala.concurrent.Await
 import scala.concurrent.duration._
 
 class KPeerGroupSpec extends FlatSpec {
@@ -92,7 +92,7 @@ object KPeerGroupSpec {
     val kRouter = mock[KRouter[String]]
     val kRouterConfig = KRouter.Config[String](nodeRecord, Set.empty)
     peers.foreach(
-      peerRecord => when(kRouter.get(peerRecord.id)).thenReturn(Future(peerRecord))
+      peerRecord => when(kRouter.get(peerRecord.id)).thenReturn(Task(peerRecord))
     )
     when(kRouter.config).thenReturn(kRouterConfig)
     kRouter

@@ -1,5 +1,7 @@
 package io.iohk.scalanet.peergroup.kademlia
 
+import cats.Order
+import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import scodec.bits.BitVector
 
 class XorOrdering(val base: BitVector) extends Ordering[BitVector] {
@@ -18,4 +20,15 @@ class XorOrdering(val base: BitVector) extends Ordering[BitVector] {
     else
       0
   }
+}
+
+class XorNodeOrdering[A](val base: BitVector) extends Ordering[NodeRecord[A]] {
+  private val xorIdOrdering = new XorOrdering(base)
+
+  override def compare(lhs: NodeRecord[A], rhs: NodeRecord[A]): Int = xorIdOrdering.compare(lhs.id, rhs.id)
+}
+
+class XorOrder[A](val base: BitVector) extends Order[NodeRecord[A]] {
+  val xorNodeOrder = new XorNodeOrdering[A](base)
+  override def compare(lhs: NodeRecord[A], rhs: NodeRecord[A]): Int = xorNodeOrder.compare(lhs, rhs)
 }

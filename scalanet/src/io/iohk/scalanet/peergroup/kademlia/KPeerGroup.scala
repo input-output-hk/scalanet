@@ -52,8 +52,8 @@ class KPeerGroup[A, M](
     val p = Promise[Unit]()
     val pF = p.future
 
-    val underlyingChannelTask = Task
-      .fromFuture(kRouter.get(to)) // make the underlying kademlia lookup
+    val underlyingChannelTask = kRouter
+      .get(to) // make the underlying kademlia lookup
       .flatMap { record => // use the lookup's address info to obtain an underlying channel...
         debug(s"Routing table lookup returns peer $record. Creating new channel.")
         underlyingPeerGroup.client(record.messagingAddress)
