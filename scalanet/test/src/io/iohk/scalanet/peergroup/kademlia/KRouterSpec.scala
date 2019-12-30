@@ -21,6 +21,7 @@ import org.mockito.Mockito.{reset, when}
 import org.mockito.invocation.InvocationOnMock
 import org.scalatest.FreeSpec
 import org.scalatest.Matchers._
+import org.scalatest.concurrent.Eventually
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.mockito.MockitoSugar._
 import scodec.bits._
@@ -28,11 +29,11 @@ import scodec.bits._
 import scala.concurrent.TimeoutException
 import scala.concurrent.duration._
 
-class KRouterSpec extends FreeSpec {
+class KRouterSpec extends FreeSpec with Eventually {
 
   implicit val scheduler = Scheduler.fixedPool("test", 16)
 
-  implicit val patienceConfig: PatienceConfig =
+  implicit override val patienceConfig: PatienceConfig =
     PatienceConfig(1 second, 100 millis)
 
   "A node" - {
@@ -95,7 +96,10 @@ class KRouterSpec extends FreeSpec {
       when(knetwork.findNodes(to = otherNode, request = FindNodes(uuid, selfRecord, otherNode.id)))
         .thenReturn(Task.now(Nodes(uuid, otherNode, Seq())))
 
-      krouter.get(otherNode.id).runSyncUnsafe() shouldBe otherNode
+      // nodes are added in background, so to avoid flaky test eventually is needed
+      eventually {
+        krouter.get(otherNode.id).runSyncUnsafe() shouldBe otherNode
+      }
     }
 
     "should update kbuckets" - {
@@ -262,7 +266,9 @@ class KRouterSpec extends FreeSpec {
           createTestRouter(peerConfig = mapWithOnlineNeighbours).runSyncUnsafe()
 
         // 1 bootstrap + myself + 6 new online nodes
-        testRouter.nodeRecords.runSyncUnsafe().size shouldEqual 8
+        eventually {
+          testRouter.nodeRecords.runSyncUnsafe().size shouldEqual 8
+        }
         onlineNeighbours.foreach { node =>
           testRouter.get(node.id).runSyncUnsafe() shouldBe node.myData
         }
@@ -286,7 +292,9 @@ class KRouterSpec extends FreeSpec {
           createTestRouter(peerConfig = mapWithOnlineNeighbours).runSyncUnsafe()
 
         // 3 bootstrap + myself + 6 new online nodes
-        testRouter.nodeRecords.runSyncUnsafe().size shouldEqual 10
+        eventually {
+          testRouter.nodeRecords.runSyncUnsafe().size shouldEqual 10
+        }
         onlineNeighbours.foreach { node =>
           testRouter.get(node.id).runSyncUnsafe() shouldBe node.myData
         }

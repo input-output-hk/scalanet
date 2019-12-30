@@ -29,7 +29,6 @@ import io.netty.channel.socket.nio.NioDatagramChannel
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.execution.atomic.AtomicBoolean
-import monix.reactive.Observable
 import monix.reactive.observables.ConnectableObservable
 import org.slf4j.LoggerFactory
 
@@ -57,17 +56,14 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
 
   private[peergroup] val activeChannels = new ConcurrentHashMap[ChannelId, ChannelImpl]()
 
-  private def cleanupTask = {
-    Observable.intervalAtFixedRate(config.cleanUpInitialDelay, config.cleanUpPeriod).map { _ =>
-      activeChannels.forEach { (key, channel) =>
-        if (!channel.isOpen) {
-          activeChannels.remove(key)
-        }
+  // We keep up reference so it will be possible to cancel this infinite task during shutdown
+  private val cleanUp = cleanupScheduler.scheduleWithFixedDelay(config.cleanUpInitialDelay, config.cleanUpPeriod) {
+    activeChannels.forEach { (key, channel) =>
+      if (!channel.isOpen) {
+        activeChannels.remove(key)
       }
     }
   }
-  // We keep up reference so it will be possible to cancel this infinite task during shutdown
-  val cleanUp = cleanupTask.foreach(_ => ())(cleanupScheduler)
 
   /**
     * 64 kilobytes is the theoretical maximum size of a complete IP datagram
@@ -185,9 +181,10 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
                   serverSubject.onNext(ChannelCreated(channel))
                 }
 
-                //FIXME: There is still little possibility for misuse. If user decided to close re-used channel after
+                // There is still little possibility for misuse. If user decided to close re-used channel after
                 // taking it from map but before server pushes message on to it, `onNext` would be called after `onComplete`
                 // which is breach of observer contract.
+                // It is worth investigating if it is only theoretical possibility or additional synchronization is needed
                 messageE.foreach(m => channel.messageSubject.onNext(m))
               } finally {
                 datagram.content().release()
