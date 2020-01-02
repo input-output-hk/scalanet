@@ -15,7 +15,7 @@ object scalanet extends ScalaModule with PublishModule {
 
   def scalaVersion = "2.12.7"
 
-  def publishVersion = "0.1-SNAPSHOT"
+  def publishVersion = "0.1.1-SNAPSHOT"
 
   override def repositories =
     super.repositories ++ Seq(
