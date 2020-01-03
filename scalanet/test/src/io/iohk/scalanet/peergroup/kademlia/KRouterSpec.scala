@@ -114,7 +114,9 @@ class KRouterSpec extends FreeSpec with Eventually {
 
         val krouter = aKRouter(selfRecord, Set.empty)
 
-        krouter.get(otherRecord.id).runSyncUnsafe() shouldBe otherRecord
+        eventually {
+          krouter.get(otherRecord.id).runSyncUnsafe() shouldBe otherRecord
+        }
       }
 
       "when receiving a FIND_NODES" in {
@@ -123,9 +125,10 @@ class KRouterSpec extends FreeSpec with Eventually {
 
         val krouter = aKRouter(selfRecord, Set.empty)
 
-        krouter.get(otherRecord.id).runSyncUnsafe() shouldBe otherRecord
+        eventually {
+          krouter.get(otherRecord.id).runSyncUnsafe() shouldBe otherRecord
+        }
       }
-
     }
 
     "handling scenarios for eviction logic" - {
@@ -361,6 +364,41 @@ class KRouterSpec extends FreeSpec with Eventually {
         }
       }
     }
+
+    "should refresh buckets periodically" - {
+      "when known node have met new node" in {
+        val selfNode = aRandomNodeRecord()
+        val initialKnownNode = NodeData.getBootStrapNode(0)
+        val testRefreshRate = 3.seconds
+
+        val intialMap = Map(
+          initialKnownNode.id -> initialKnownNode
+        )
+
+        val newNode = NodeData(Seq(), aRandomNodeRecord(), bootstrap = false)
+
+        (for {
+          testState <- Ref.of[Task, Map[BitVector, NodeData[String]]](intialMap)
+          network = new KNetworkScalanetInternalTestImpl(testState)
+          router <- KRouter.startRouterWithServerPar(
+            Config(selfNode, Set(initialKnownNode.myData), refreshRate = testRefreshRate),
+            network,
+            clock,
+            () => uuid
+          )
+          // Just after enrollment there will be only one bootstrap node without neighbours
+          nodesAfterEnroll <- router.nodeRecords
+          // Simulate situation that initial known node learned about new node
+          _ <- KNetworkScalanetInternalTestImpl.addNeighbours(testState, Seq(newNode), initialKnownNode.id)
+        } yield {
+          nodesAfterEnroll.size shouldEqual 2
+
+          eventually {
+            router.nodeRecords.runToFuture.futureValue.get(newNode.id) shouldEqual Some(newNode.myData)
+          }(config = PatienceConfig(testRefreshRate + 1.second, 200 millis), org.scalactic.source.Position.here)
+        }).runSyncUnsafe()
+      }
+    }
   }
 }
 
@@ -411,8 +449,21 @@ object KRouterSpec {
       // No server request handling for now
       override def kRequests: Observable[(KRequest[A], Option[KResponse[A]] => Task[Unit])] = Observable.empty
     }
-  }
 
+    def addNeighbours[A](
+        currentState: Ref[Task, Map[BitVector, NodeData[A]]],
+        newNeighbours: Seq[NodeData[A]],
+        nodeToUpdate: BitVector
+    ): Task[Unit] = {
+      for {
+        _ <- currentState.update { s =>
+          val withNeighbours = newNeighbours.foldLeft(s)((state, neighbour) => state + (neighbour.id -> neighbour))
+          withNeighbours.updated(nodeToUpdate, withNeighbours(nodeToUpdate).copy(neigbours = newNeighbours))
+        }
+      } yield ()
+    }
+
+  }
   def createTestRouter(
       nodeRecord: NodeRecord[String] = aRandomNodeRecord(),
       peerConfig: Map[BitVector, NodeData[String]]

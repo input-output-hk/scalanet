@@ -1,7 +1,8 @@
 package io.iohk.scalanet.peergroup.kademlia
 
+import java.security.SecureRandom
 import java.time.Clock
-import java.util.UUID
+import java.util.{Random, UUID}
 
 import cats.data.NonEmptyList
 import cats.effect.concurrent.Ref
@@ -11,7 +12,7 @@ import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
 import io.iohk.scalanet.peergroup.kademlia.KRouter.KRouterInternals._
 import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
 import monix.eval.Task
-import monix.reactive.{Consumer, OverflowStrategy}
+import monix.reactive.{Consumer, Observable, OverflowStrategy}
 import org.slf4j.LoggerFactory
 import scodec.bits.BitVector
 
@@ -20,10 +21,32 @@ class KRouter[A](
     val network: KNetwork[A],
     private val routerState: Ref[Task, NodeRecordIndex[A]],
     val clock: Clock = Clock.systemUTC(),
-    val uuidSource: () => UUID = () => UUID.randomUUID()
+    val uuidSource: () => UUID = () => UUID.randomUUID(),
+    val rnd: Random = new SecureRandom()
 ) {
 
   private val log = LoggerFactory.getLogger(getClass)
+
+  /**
+    * Start refresh cycle i.e periodically performs lookup for random node id
+    *
+    * Differs from process described in paper which is described as:
+    * Refresh any bucket to which there were no nodes lookup in the past hour. Refreshing means picking
+    * a random ID in bucket range and performing a node search for that id
+    *
+    * Process described in paper would require generating random id which would fit in correct bucket i.e its xor distance from
+    * base id needs particular bit length, which is quite troublesome
+    *
+    * Due to technical complexities of this process most of kademlia implementations like:go-geth, nim-eth, decides to periodically perform lookups for
+    * random ids instead
+    */
+  private def startRefreshCycle(): Task[Unit] = {
+    Observable
+      .intervalWithFixedDelay(config.refreshRate, config.refreshRate)
+      .consumeWith(Consumer.foreachTask { _ =>
+        lookup(KBuckets.generateRandomId(config.nodeRecord.id.length, rnd)).map(_ => ())
+      })
+  }
 
   // TODO[PM-1035]: parallelism should be configured by library user
   private val responseTaskConsumer =
@@ -386,13 +409,19 @@ class KRouter[A](
 }
 
 object KRouter {
+  import scala.concurrent.duration._
   case class Config[A](
       nodeRecord: NodeRecord[A],
       knownPeers: Set[NodeRecord[A]],
       alpha: Int = 3,
       k: Int = 20,
-      serverBufferSize: Int = 2000
+      serverBufferSize: Int = 2000,
+      refreshRate: FiniteDuration = 15.minutes
   )
+
+  private[scalanet] def getIndex[A](config: Config[A], clock: Clock): NodeRecordIndex[A] = {
+    NodeRecordIndex(new KBuckets(config.nodeRecord.id, clock), Map(config.nodeRecord.id -> config.nodeRecord))
+  }
 
   /**
     * Enrolls to kademlia network from provided bootstrap nodes and then start handling incoming requests.
@@ -413,16 +442,17 @@ object KRouter {
   ): Task[KRouter[A]] = {
     for {
       state <- Ref.of[Task, NodeRecordIndex[A]](
-        NodeRecordIndex(new KBuckets(config.nodeRecord.id, clock), Map(config.nodeRecord.id -> config.nodeRecord))
+        getIndex(config, clock)
       )
       router <- Task.now(new KRouter(config, network, state, clock, uuidSource))
       _ <- router.enroll()
-      _ <- router.startServerHandling()
+      _ <- router.startServerHandling().startAndForget
+      _ <- router.startRefreshCycle().startAndForget
     } yield router
   }
 
   /**
-    * Enrolls to kademlia network and start handling incoming requests in parallel
+    * Enrolls to kademlia network and start handling incoming requests and refresh buckets cycle in parallel
     *
     *
     * @param config discovery config
@@ -432,6 +462,7 @@ object KRouter {
     * @tparam A type of addressing
     * @return initialised kademlia router which handles incoming requests
     */
+  //TODO consider adding possibility of having lookup process and server processing on different schedulers
   def startRouterWithServerPar[A](
       config: Config[A],
       network: KNetwork[A],
@@ -440,11 +471,15 @@ object KRouter {
   ): Task[KRouter[A]] = {
     Ref
       .of[Task, NodeRecordIndex[A]](
-        NodeRecordIndex(new KBuckets(config.nodeRecord.id, clock), Map(config.nodeRecord.id -> config.nodeRecord))
+        getIndex(config, clock)
       )
       .flatMap { state =>
         Task.now(new KRouter(config, network, state, clock, uuidSource)).flatMap { router =>
-          Task.parMap2(router.enroll(), router.startServerHandling().startAndForget)((_, _) => router)
+          Task.parMap3(
+            router.enroll(),
+            router.startServerHandling().startAndForget,
+            router.startRefreshCycle().startAndForget
+          )((_, _, _) => router)
         }
       }
   }
