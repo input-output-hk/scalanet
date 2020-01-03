@@ -1,6 +1,7 @@
 package io.iohk.scalanet.peergroup.kademlia
 
 import java.time.Clock
+import java.util.Random
 
 import scodec.bits.BitVector
 
@@ -9,7 +10,11 @@ import scodec.bits.BitVector
   *
   * @param baseId the nodes own id.
   */
-class KBuckets private (val baseId: BitVector, val clock: Clock, val buckets: IndexedSeq[TimeSet[BitVector]]) {
+class KBuckets private (
+    val baseId: BitVector,
+    val clock: Clock,
+    val buckets: IndexedSeq[TimeSet[BitVector]]
+) {
 
   def this(baseId: BitVector, clock: Clock) =
     this(baseId, clock, IndexedSeq.fill(baseId.length.toInt)(TimeSet[BitVector](clock)))
@@ -170,5 +175,11 @@ class KBuckets private (val baseId: BitVector, val clock: Clock, val buckets: In
     } else {
       this
     }
+  }
+}
+
+object KBuckets {
+  def generateRandomId(length: Long, rnd: Random): BitVector = {
+    BitVector.bits(Range.Long(0, length, 1).map(_ => rnd.nextBoolean()))
   }
 }

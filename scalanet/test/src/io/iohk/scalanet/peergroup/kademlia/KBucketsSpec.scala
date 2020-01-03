@@ -1,5 +1,6 @@
 package io.iohk.scalanet.peergroup.kademlia
 
+import java.security.SecureRandom
 import java.time.Clock
 
 import io.iohk.scalanet.peergroup.kademlia.Generators._
@@ -21,6 +22,14 @@ class KBucketsSpec extends FlatSpec {
 
     kBuckets.contains(id) shouldBe true
     kBuckets.closestNodes(id, Int.MaxValue) shouldBe List(id)
+  }
+
+  they should "generate random id of the same length as base id" in {
+    val baseId = aRandomBitVector()
+
+    val randomId = KBuckets.generateRandomId(baseId.length, new SecureRandom())
+
+    baseId.length shouldEqual randomId.length
   }
 
   they should "retrieve any node added via put" in forAll(genBitVector()) { v =>
