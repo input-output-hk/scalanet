@@ -410,6 +410,16 @@ class KRouter[A](
 
 object KRouter {
   import scala.concurrent.duration._
+
+  /**
+    * @param nodeRecord the node own data
+    * @param knownPeers node initial known peers i.e bootstrap nodes
+    * @param alpha kademlia concurrency parameter, determines how many FindNodes request will be sent concurrently to peers.
+    * @param k kademlia neighbours parameter, how many closest neighbours should be returned in response to FindNodes request
+    *          also bucket maximum size. In paper mentioned as replication parameter
+    * @param serverBufferSize maximum size of server messages buffer
+    * @param refreshRate frequency of kademlia refresh procedure
+    */
   case class Config[A](
       nodeRecord: NodeRecord[A],
       knownPeers: Set[NodeRecord[A]],

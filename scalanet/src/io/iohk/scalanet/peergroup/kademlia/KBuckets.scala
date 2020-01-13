@@ -6,9 +6,11 @@ import java.util.Random
 import scodec.bits.BitVector
 
 /**
-  * Skeletal kbucket implementation.
   *
   * @param baseId the nodes own id.
+  * @param clock clock required to keep track of last usage of id in particular bucket
+  * @param buckets list of buckets, each bucket is sorted form least recently seen node id at head and most recently seen
+  *                at the tail
   */
 class KBuckets private (
     val baseId: BitVector,
