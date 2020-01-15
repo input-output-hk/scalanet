@@ -29,6 +29,10 @@ jobs:
           command: mill scalanet.test
 
       - run:
+          name: kadmelia integration test
+          command: mill scalanet.integrationTest
+
+      - run:
           name: check that the code is formatted properly
           command: ./scalafmt --test
 
