@@ -14,7 +14,7 @@ object scalanet extends ScalaModule with PublishModule {
 
   def scalaVersion = "2.12.7"
 
-  def publishVersion = "0.1.2-SNAPSHOT"
+  def publishVersion = "0.1.3-SNAPSHOT"
 
   override def repositories =
     super.repositories ++ Seq(
@@ -64,9 +64,7 @@ object scalanet extends ScalaModule with PublishModule {
 
   def scoverageVersion = "1.3.1"
 
-  // Scoverage disabled
-  // object test extends ScoverageTests {
-  object test extends Tests {
+  trait TestModule extends Tests {
     override def ivyDeps = Agg(
       ivy"org.scalatest::scalatest:3.0.5",
       ivy"org.scalacheck::scalacheck:1.14.0",
@@ -83,6 +81,12 @@ object scalanet extends ScalaModule with PublishModule {
       super.runMain("org.scalatest.run", args: _*)
     }
   }
+
+  // Scoverage disabled
+  // object test extends ScoverageTests {
+  object test extends TestModule
+
+  object integrationTest extends TestModule
 
   object examples extends ScalaModule {
     override def scalaVersion = "2.12.7"
