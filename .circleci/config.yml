@@ -30,7 +30,7 @@ jobs:
 
       - run:
           name: kadmelia integration test
-          command: mill scalanet.integrationTest
+          command: mill scalanet.it
 
       - run:
           name: check that the code is formatted properly
