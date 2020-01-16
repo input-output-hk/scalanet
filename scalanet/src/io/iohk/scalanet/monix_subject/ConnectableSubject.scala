@@ -1,5 +1,6 @@
 package io.iohk.scalanet.monix_subject
 
+
 import monix.execution.{Ack, Cancelable, Scheduler}
 import monix.reactive.{Observable, Observer}
 import monix.reactive.observables.ConnectableObservable
@@ -11,7 +12,8 @@ import scala.concurrent.Future
 class ConnectableSubject[T](source: Subject[T, T], subject: Subject[T, T])(implicit s: Scheduler)
     extends ConnectableObservable[T]
     with Observer[T] {
-  private val in = ConnectableObservable.cacheUntilConnect(source, subject)
+  private val in = ConnectableSubject.cacheUntilConnect(source, subject)
+
 
   def connect(): Cancelable = in.connect()
 
@@ -19,7 +21,9 @@ class ConnectableSubject[T](source: Subject[T, T], subject: Subject[T, T])(impli
 
   override def onError(ex: Throwable): Unit = source.onError(ex)
 
-  override def onComplete(): Unit = source.onComplete()
+  override def onComplete(): Unit = {
+    source.onComplete()
+  }
 
   override def unsafeSubscribeFn(subscriber: Subscriber[T]): Cancelable = {
     in.unsafeSubscribeFn(subscriber)
