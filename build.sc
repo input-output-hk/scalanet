@@ -86,7 +86,7 @@ object scalanet extends ScalaModule with PublishModule {
   // object test extends ScoverageTests {
   object test extends TestModule
 
-  object integrationTest extends TestModule
+  object it extends TestModule
 
   object examples extends ScalaModule {
     override def scalaVersion = "2.12.7"
