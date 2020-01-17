@@ -11,7 +11,7 @@ import scala.concurrent.Future
 class ConnectableSubject[T](source: Subject[T, T], subject: Subject[T, T])(implicit s: Scheduler)
     extends ConnectableObservable[T]
     with Observer[T] {
-  private val in = ConnectableObservable.cacheUntilConnect(source, subject)
+  private val in = ConnectableSubject.cacheUntilConnect(source, subject)
 
   def connect(): Cancelable = in.connect()
 
