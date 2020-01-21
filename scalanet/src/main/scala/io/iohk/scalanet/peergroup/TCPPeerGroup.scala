@@ -3,6 +3,7 @@ package io.iohk.scalanet.peergroup
 import java.io.IOException
 import java.net.{ConnectException, InetAddress, InetSocketAddress}
 import java.nio.ByteBuffer
+import java.util.concurrent.Semaphore
 
 import io.iohk.decco._
 import io.iohk.scalanet.codec.StreamCodec
@@ -10,12 +11,7 @@ import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import io.iohk.scalanet.peergroup.PeerGroup.{
-  ChannelBrokenException,
-  ChannelSetupException,
-  ServerEvent,
-  TerminalPeerGroup
-}
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, ServerEvent, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.TCPPeerGroup._
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.{ByteBuf, Unpooled}
@@ -54,6 +50,8 @@ class TCPPeerGroup[M](val config: Config)(
 
   private val workerGroup = new NioEventLoopGroup()
 
+  private val lock = new Semaphore(1)
+
   private val clientBootstrap = new Bootstrap()
     .group(workerGroup)
     .channel(classOf[NioSocketChannel])
@@ -65,7 +63,9 @@ class TCPPeerGroup[M](val config: Config)(
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
         val newChannel = new ServerChannelImpl[M](ch, codec.cleanSlate, bi)
+        //lock.acquire()
         serverSubject.onNext(ChannelCreated(newChannel))
+        //lock.release()
         log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })
@@ -73,12 +73,17 @@ class TCPPeerGroup[M](val config: Config)(
     .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new DefaultMaxBytesRecvByteBufAllocator)
     .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
 
-  private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
+  private val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
 
-  override def initialize(): Task[Unit] =
+  private var alredyInitialized = false
+
+  override def initialize(): Task[Unit] = {
+    if(alredyInitialized) {System.out.println("ERROR MULTIPLE TIMES INITIALIZE");throw new Exception("ERROR MULTIPLE TIMES INITIALIZE")}
+    alredyInitialized = true
     toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}")).onErrorRecoverWith {
       case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
     }
+  }
 
   override def processAddress: InetMultiAddress = config.processAddress
 
@@ -131,6 +136,7 @@ object TCPPeerGroup {
     override def sendMessage(message: M): Task[Unit] = {
       toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
         .onErrorRecoverWith {
+          //case cl:java.nio.channels.ClosedChannelException => Task.eval(System.out.println("WRITE IN DISCARTED CHANNEL"))
           case e: IOException =>
             Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
         }
@@ -138,7 +144,11 @@ object TCPPeerGroup {
 
     override def in: ConnectableObservable[M] = messageSubject
 
+
+    @volatile private var alredyClosed = false
     override def close(): Task[Unit] = {
+      if(alredyClosed){System.out.println("CLOSED MULTIPLE TIMES");throw new RuntimeException("CLOSED MULTIPLE TIMES")}
+      alredyClosed = true
       messageSubject.onComplete()
       toTask(nettyChannel.close())
     }
@@ -212,12 +222,16 @@ object TCPPeerGroup {
 
     override def in: ConnectableObservable[M] = messageSubject
 
+    private var isAlredyClosed = false
     override def close(): Task[Unit] = {
-      messageSubject.onComplete()
-      Task
-        .fromFuture(activationF)
-        .flatMap(ctx => toTask(ctx.close()))
-        .flatMap(_ => Task.fromFuture(deactivationF))
+      if(!isAlredyClosed) {
+        isAlredyClosed = true
+        //messageSubject.onComplete() //TODO
+        Task
+          .fromFuture(activationF)
+          .flatMap(ctx => toTask(ctx.close()))
+          .flatMap(_ => Task.fromFuture(deactivationF))
+      }else {System.out.println("CLOSE CHANNELL ALREDY CLOSED");Task.eval()}
     }
   }
 

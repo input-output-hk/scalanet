@@ -6,26 +6,26 @@ import java.util.Random
 import scodec.bits.BitVector
 
 /**
-  *
-  * @param baseId the nodes own id.
-  * @param clock clock required to keep track of last usage of id in particular bucket
-  * @param buckets list of buckets, each bucket is sorted form least recently seen node id at head and most recently seen
-  *                at the tail
-  */
+ *
+ * @param baseId the nodes own id.
+ * @param clock clock required to keep track of last usage of id in particular bucket
+ * @param buckets list of buckets, each bucket is sorted form least recently seen node id at head and most recently seen
+ *                at the tail
+ */
 class KBuckets private (
-    val baseId: BitVector,
-    val clock: Clock,
-    val buckets: IndexedSeq[TimeSet[BitVector]]
-) {
+                         val baseId: BitVector,
+                         val clock: Clock,
+                         val buckets: IndexedSeq[TimeSet[BitVector]]
+                       ) {
 
   def this(baseId: BitVector, clock: Clock) =
     this(baseId, clock, IndexedSeq.fill(baseId.length.toInt)(TimeSet[BitVector](clock)))
 
   /**
-    * Find the n nodes closest to nodeId in kBuckets.
-    * Return the resulting node records sorted by distance from the nodeId.
-    * The indices into the kBuckets are defined by their distance from referenceNodeId.
-    */
+   * Find the n nodes closest to nodeId in kBuckets.
+   * Return the resulting node records sorted by distance from the nodeId.
+   * The indices into the kBuckets are defined by their distance from referenceNodeId.
+   */
   def closestNodes(nodeId: BitVector, n: Int): List[BitVector] = {
     val ordering = new XorOrdering(nodeId)
 
@@ -98,19 +98,19 @@ class KBuckets private (
   }
 
   /**
-    * Add a node record into the KBuckets.
-    *
-    * @return this KBuckets instance.
-    */
+   * Add a node record into the KBuckets.
+   *
+   * @return this KBuckets instance.
+   */
   def add(nodeId: BitVector): KBuckets = {
     bucketOp(nodeId)((iBucket, bucket) => new KBuckets(baseId, clock, buckets.patch(iBucket, List(bucket + nodeId), 1)))
   }
 
   /**
-    * Move a given nodeId to the tail of its respective bucket.
-    * @param nodeId the nodeId to touch
-    * @return
-    */
+   * Move a given nodeId to the tail of its respective bucket.
+   * @param nodeId the nodeId to touch
+   * @return
+   */
   def touch(nodeId: BitVector): KBuckets = {
     bucketOp(nodeId) { (iBucket, bucket) =>
       new KBuckets(baseId, clock, buckets.patch(iBucket, List(bucket.touch(nodeId)), 1))
@@ -118,20 +118,20 @@ class KBuckets private (
   }
 
   /**
-    * Query whether a given nodeId is present in the kbuckets.
-    *
-    * @return true if present
-    */
+   * Query whether a given nodeId is present in the kbuckets.
+   *
+   * @return true if present
+   */
   def contains(nodeId: BitVector): Boolean = {
     nodeId == baseId || buckets(iBucket(nodeId)).contains(nodeId)
   }
 
   /**
-    * Remove an element by id.
-    *
-    * @param nodeId the nodeId to remove
-    * @return
-    */
+   * Remove an element by id.
+   *
+   * @param nodeId the nodeId to remove
+   * @return
+   */
   def remove(nodeId: BitVector): KBuckets = {
     if (nodeId == baseId)
       throw new UnsupportedOperationException("Cannot remove the baseId")

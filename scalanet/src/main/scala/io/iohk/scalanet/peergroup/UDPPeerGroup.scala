@@ -3,20 +3,14 @@ package io.iohk.scalanet.peergroup
 import java.io.IOException
 import java.net.{InetSocketAddress, PortUnreachableException}
 import java.nio.ByteBuffer
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.{ConcurrentHashMap, Semaphore}
 
 import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{ChannelId, getChannelId, toTask}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import io.iohk.scalanet.peergroup.PeerGroup.{
-  ChannelAlreadyClosedException,
-  ChannelSetupException,
-  MessageMTUException,
-  ServerEvent,
-  TerminalPeerGroup
-}
+import io.iohk.scalanet.peergroup.PeerGroup.{ChannelAlreadyClosedException, ChannelSetupException, MessageMTUException, ServerEvent, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.UDPPeerGroup._
 import io.iohk.scalanet.peergroup.UDPPeerGroup.UDPPeerGroupInternals
 import io.netty.bootstrap.Bootstrap
@@ -118,6 +112,8 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
       }
     })
 
+  private val lock = new Semaphore(1)
+
   private val serverBootstrap = new Bootstrap()
     .group(workerGroup)
     .channel(classOf[NioDatagramChannel])
@@ -178,7 +174,9 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
 
                 if (newChannel) {
                   log.debug(s"Channel with id $channelId NOT found in active channels table. Creating a new one")
+                  lock.acquire()
                   serverSubject.onNext(ChannelCreated(channel))
+                  lock.release()
                 }
 
                 // There is still little possibility for misuse. If user decided to close re-used channel after

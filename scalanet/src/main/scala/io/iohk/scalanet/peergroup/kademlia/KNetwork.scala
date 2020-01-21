@@ -4,7 +4,8 @@ import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
-import io.iohk.scalanet.peergroup.{Channel, PeerGroup}
+import io.iohk.scalanet.peergroup.kademlia.KRouterBeta.BroadCastMessage
+import io.iohk.scalanet.peergroup.{Channel, InetMultiAddress, PeerGroup, TCPPeerGroup}
 import monix.eval.Task
 import monix.reactive.Observable
 
@@ -44,7 +45,7 @@ object KNetwork {
 
   class KNetworkScalanetImpl[A](
       val peerGroup: PeerGroup[A, KMessage[A]],
-      val requestTimeout: FiniteDuration = 3 seconds
+      val requestTimeout: FiniteDuration = 10 seconds
   ) extends KNetwork[A] {
 
     override lazy val kRequests: Observable[(KRequest[A], Option[KResponse[A]] => Task[Unit])] = {
@@ -121,4 +122,6 @@ object KNetwork {
       maybeMessage.fold(channel.close())(sendResponse(channel))
     }
   }
+
+
 }

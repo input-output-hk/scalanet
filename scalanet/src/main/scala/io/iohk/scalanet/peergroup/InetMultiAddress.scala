@@ -28,7 +28,7 @@ case class InetMultiAddress(inetSocketAddress: InetSocketAddress) {
   override def equals(other: Any): Boolean = other match {
     case that: InetMultiAddress =>
       (that canEqual this) &&
-        inetAddress == that.inetAddress
+        inetAddress == that.inetAddress && this.inetSocketAddress.getPort == that.inetSocketAddress.getPort
     case _ => false
   }
 

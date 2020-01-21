@@ -1,6 +1,8 @@
 package io.iohk.scalanet.monix_subject
 
 
+import java.util.concurrent.Semaphore
+
 import monix.execution.{Ack, Cancelable, Scheduler}
 import monix.reactive.{Observable, Observer}
 import monix.reactive.observables.ConnectableObservable
@@ -12,12 +14,18 @@ import scala.concurrent.Future
 class ConnectableSubject[T](source: Subject[T, T], subject: Subject[T, T])(implicit s: Scheduler)
     extends ConnectableObservable[T]
     with Observer[T] {
+  private val lock = new Semaphore(1)
   private val in = ConnectableSubject.cacheUntilConnect(source, subject)
 
 
   def connect(): Cancelable = in.connect()
 
-  override def onNext(elem: T): Future[Ack] = source.onNext(elem)
+  override def onNext(elem: T): Future[Ack] = {
+    lock.acquire()
+    val res = source.onNext(elem)
+    lock.release()
+    res
+  }
 
   override def onError(ex: Throwable): Unit = source.onError(ex)
 
