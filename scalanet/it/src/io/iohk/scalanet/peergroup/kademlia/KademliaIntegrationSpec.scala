@@ -199,7 +199,8 @@ object KademliaIntegrationSpec {
       alpha: Int = 3,
       k: Int = 20,
       serverBufferSize: Int = 2000,
-      refreshRate: FiniteDuration = 15.minutes
+      refreshRate: FiniteDuration = 15.minutes,
+      parallelism: Int = 4
   )
 
   val defaultConfig = TestNodeKademliaConfig()
@@ -224,7 +225,8 @@ object KademliaIntegrationSpec {
       alpha = testConfig.alpha,
       k = testConfig.k,
       serverBufferSize = testConfig.serverBufferSize,
-      refreshRate = testConfig.refreshRate
+      refreshRate = testConfig.refreshRate,
+      parallelism = testConfig.parallelism
     )
 
     for {

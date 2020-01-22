@@ -48,9 +48,8 @@ class KRouter[A](
       })
   }
 
-  // TODO[PM-1035]: parallelism should be configured by library user
   private val responseTaskConsumer =
-    Consumer.foreachParallelTask[(KRequest[A], Option[KResponse[A]] => Task[Unit])](parallelism = 4) {
+    Consumer.foreachParallelTask[(KRequest[A], Option[KResponse[A]] => Task[Unit])](config.parallelism) {
       case (FindNodes(uuid, nodeRecord, targetNodeId), responseHandler) =>
         debug(
           s"Received request FindNodes(${nodeRecord.id.toHex}, $nodeRecord, ${targetNodeId.toHex})"
@@ -419,6 +418,7 @@ object KRouter {
     *          also bucket maximum size. In paper mentioned as replication parameter
     * @param serverBufferSize maximum size of server messages buffer
     * @param refreshRate frequency of kademlia refresh procedure
+    * @param parallelism level of parallelism the request will be processed
     */
   case class Config[A](
       nodeRecord: NodeRecord[A],
@@ -426,7 +426,8 @@ object KRouter {
       alpha: Int = 3,
       k: Int = 20,
       serverBufferSize: Int = 2000,
-      refreshRate: FiniteDuration = 15.minutes
+      refreshRate: FiniteDuration = 15.minutes,
+      parallelism:Int = 4
   )
 
   private[scalanet] def getIndex[A](config: Config[A], clock: Clock): NodeRecordIndex[A] = {
