@@ -418,7 +418,7 @@ object KRouter {
     *          also bucket maximum size. In paper mentioned as replication parameter
     * @param serverBufferSize maximum size of server messages buffer
     * @param refreshRate frequency of kademlia refresh procedure
-    * @param parallelism level of parallelism the request will be processed
+    * @param maximum number of thread that will be created for handling incoming request
     */
   case class Config[A](
       nodeRecord: NodeRecord[A],
@@ -427,7 +427,7 @@ object KRouter {
       k: Int = 20,
       serverBufferSize: Int = 2000,
       refreshRate: FiniteDuration = 15.minutes,
-      parallelism:Int = 4
+      parallelism: Int = 4
   )
 
   private[scalanet] def getIndex[A](config: Config[A], clock: Clock): NodeRecordIndex[A] = {
