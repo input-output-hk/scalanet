@@ -101,6 +101,27 @@ class KRouterSpec extends FreeSpec with Eventually {
       }
     }
 
+    "should accept a key with a valid signed" - {
+      val nodeRecord = Generators.aRandomNodeRecord()
+      val krouter = aKRouter(knownPeers = Set(nodeRecord))
+      krouter.nodeRecords.runSyncUnsafe().contains(nodeRecord.id) shouldBe true
+    }
+
+    "should not accept a key with a invalid signed" - {
+      val nodeRecord =  NodeRecord[String](BitVector(Array.fill[Byte](Generators.defaultBitLength)(0)),"7643","7643",random.nextLong(),(new BigInteger(100000,random),new BigInteger(100000,random)))
+      val krouter = aKRouter(knownPeers = Set(nodeRecord))
+      krouter.nodeRecords.runSyncUnsafe().contains(nodeRecord.id) shouldBe false
+  }
+
+    "should store the node record with the highest sec number" - {
+      val keyPair = crypto.generateKeyPair(random)
+      val nodeRecord = Generators.aRandomNodeRecord(keyPair = Some(keyPair))
+      val otherRecord = Generators.aRandomNodeRecord(keyPair = Some(keyPair))
+      val maxSecNumber = if (nodeRecord.sec_number < otherRecord.sec_number) otherRecord.sec_number else nodeRecord.sec_number
+      val krouter = aKRouter(knownPeers = Set(nodeRecord,otherRecord))
+      krouter.nodeRecords.runSyncUnsafe().get(nodeRecord.id).get.sec_number shouldBe maxSecNumber
+  }
+
     "should update kbuckets" - {
 
       val selfRecord = aRandomNodeRecord()
