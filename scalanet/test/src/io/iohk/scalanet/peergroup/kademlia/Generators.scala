@@ -1,5 +1,9 @@
 package io.iohk.scalanet.peergroup.kademlia
 
+import java.security.SecureRandom
+import java.util.UUID
+
+import io.iohk.scalanet.codec.{StreamCodecFromContract, StringCodecContract}
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import org.scalacheck.Arbitrary.arbitrary
 import org.scalacheck.Gen
@@ -7,10 +11,13 @@ import scodec.bits.BitVector
 
 import scala.collection.mutable.ListBuffer
 import scala.util.Random
+import io.iohk.scalanet.{crypto}
 
 object Generators {
 
-  val defaultBitLength = 16
+  val random = new SecureRandom()
+
+  val defaultBitLength = 264
 
   def genBitVector(bitLength: Int = defaultBitLength): Gen[BitVector] =
     for {
@@ -67,10 +74,13 @@ object Generators {
   def aRandomNodeRecord(
       bitLength: Int = defaultBitLength
   ): NodeRecord[String] = {
-    NodeRecord(
-      id = aRandomBitVector(bitLength),
+    val pair = crypto.generateKeyPair(random)
+    NodeRecord.create[String](
+      id = BitVector(crypto.encodeKey(pair._2)),
       routingAddress = Random.alphanumeric.take(4).mkString,
-      messagingAddress = Random.alphanumeric.take(4).mkString
-    )
+      messagingAddress = Random.alphanumeric.take(4).mkString,
+      uuid = new UUID(random.nextLong(),random.nextLong()),
+      pair._1
+    )(new StreamCodecFromContract[String](StringCodecContract))
   }
 }

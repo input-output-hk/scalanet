@@ -4,15 +4,13 @@ import java.time.Clock
 import java.util.UUID
 
 import cats.effect.concurrent.Ref
+import io.iohk.scalanet.codec.{StreamCodecFromContract, StringCodecContract}
 import io.iohk.scalanet.peergroup.kademlia.Generators.{aRandomBitVector, aRandomNodeRecord}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
 import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
-import io.iohk.scalanet.peergroup.kademlia.KRouterSpec.KNetworkScalanetInternalTestImpl.{
-  KNetworkScalanetInternalTestImpl,
-  NodeData
-}
+import io.iohk.scalanet.peergroup.kademlia.KRouterSpec.KNetworkScalanetInternalTestImpl.{KNetworkScalanetInternalTestImpl, NodeData}
 import io.iohk.scalanet.peergroup.kademlia.KRouterSpec._
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -54,10 +52,12 @@ class KRouterSpec extends FreeSpec with Eventually {
 
     "should not locate an unknown node - no bootstrap" in {
       val krouter = aKRouter()
-      val someNodeId = aRandomBitVector()
+      val someNodeId = aRandomBitVector(264)
+      System.out.println("someNodeID: " + someNodeId)
 
       whenReady(krouter.get(someNodeId).runToFuture.failed) { e =>
         e shouldBe an[Exception]
+
         e.getMessage should startWith(
           s"Target node id ${someNodeId.toHex} not found"
         )
@@ -68,7 +68,7 @@ class KRouterSpec extends FreeSpec with Eventually {
       val bootstrapRecord = aRandomNodeRecord()
       val selfRecord = aRandomNodeRecord()
       val krouter = aKRouter(nodeRecord = selfRecord, knownPeers = Set(bootstrapRecord))
-      val someNodeId = aRandomBitVector()
+      val someNodeId = aRandomBitVector(264)
 
       when(knetwork.findNodes(to = bootstrapRecord, request = FindNodes(uuid, selfRecord, someNodeId)))
         .thenReturn(Task.now(Nodes(uuid, bootstrapRecord, Seq.empty)))
@@ -385,7 +385,7 @@ class KRouterSpec extends FreeSpec with Eventually {
             network,
             clock,
             () => uuid
-          )
+          )(new StreamCodecFromContract[String](StringCodecContract))
           // Just after enrollment there will be only one bootstrap node without neighbours
           nodesAfterEnroll <- router.nodeRecords
           // Simulate situation that initial known node learned about new node
@@ -476,7 +476,7 @@ object KRouterSpec {
     for {
       testState <- Ref.of[Task, Map[BitVector, NodeData[String]]](peerConfig)
       network = new KNetworkScalanetInternalTestImpl(testState)
-      router <- KRouter.startRouterWithServerPar(Config(nodeRecord, knownPeers), network, clock, () => uuid)
+      router <- KRouter.startRouterWithServerPar(Config(nodeRecord, knownPeers), network, clock, () => uuid)(new StreamCodecFromContract[String](StringCodecContract))
     } yield router
   }
 
@@ -498,7 +498,7 @@ object KRouterSpec {
 
     mockEnrollment(nodeRecord, knownPeers, Seq.empty)
     KRouter
-      .startRouterWithServerSeq(Config(nodeRecord, knownPeers, alpha, k), knetwork, clock, () => uuid)
+      .startRouterWithServerSeq(Config(nodeRecord, knownPeers, alpha, k), knetwork, clock, () => uuid)(new StreamCodecFromContract[String](StringCodecContract))
       .runSyncUnsafe()
   }
 

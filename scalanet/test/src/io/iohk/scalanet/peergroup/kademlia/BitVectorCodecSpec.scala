@@ -31,6 +31,8 @@ object BitVectorCodecSpec {
   private def encodeDecodeTest[T](implicit codec: Codec[T], a: Arbitrary[T], eq: Equivalence[T]): Unit = {
     forAll(arbitrary[T]) { t =>
       val e = codec.encode(t)
+      System.out.println(t)
+      System.out.println(codec.decode(e).right.get)
       codec.decode(e).right.value should equal(t)
     }
   }
