@@ -1,11 +1,16 @@
 package io.iohk.scalanet.peergroup.kademlia
 
+import java.math.BigInteger
+import java.nio.ByteBuffer
 import java.security.SecureRandom
 import java.time.Clock
 import java.util.{Random, UUID}
 
 import cats.data.NonEmptyList
 import cats.effect.concurrent.Ref
+import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+import io.iohk.decco.Codec
+import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
@@ -14,7 +19,9 @@ import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
 import monix.eval.Task
 import monix.reactive.{Consumer, Observable, OverflowStrategy}
 import org.slf4j.LoggerFactory
+import org.spongycastle.crypto.params.ECPrivateKeyParameters
 import scodec.bits.BitVector
+import io.iohk.scalanet.crypto
 
 class KRouter[A](
     val config: Config[A],
@@ -23,7 +30,7 @@ class KRouter[A](
     val clock: Clock = Clock.systemUTC(),
     val uuidSource: () => UUID = () => UUID.randomUUID(),
     val rnd: Random = new SecureRandom()
-) {
+)(implicit codec:Codec[A]) {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -139,6 +146,7 @@ class KRouter[A](
 
   def add(nodeRecord: NodeRecord[A]): Task[Unit] = {
     info(s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord)")
+    if(!NodeRecord.verify[A](nodeRecord)) {return Task.eval()}
     for {
       toPing <- routerState.modify { current =>
         val (_, bucket) = current.kBuckets.getBucket(nodeRecord.id)
@@ -449,7 +457,7 @@ object KRouter {
       network: KNetwork[A],
       clock: Clock = Clock.systemUTC(),
       uuidSource: () => UUID = () => UUID.randomUUID()
-  ): Task[KRouter[A]] = {
+  )(implicit codec: Codec[A]): Task[KRouter[A]] = {
     for {
       state <- Ref.of[Task, NodeRecordIndex[A]](
         getIndex(config, clock)
@@ -478,7 +486,7 @@ object KRouter {
       network: KNetwork[A],
       clock: Clock = Clock.systemUTC(),
       uuidSource: () => UUID = () => UUID.randomUUID()
-  ): Task[KRouter[A]] = {
+  )(implicit codec:Codec[A]) : Task[KRouter[A]] = {
     Ref
       .of[Task, NodeRecordIndex[A]](
         getIndex(config, clock)
@@ -500,9 +508,27 @@ object KRouter {
   // sequence number (why)
   // compressed public key (why)
   // TODO understand what these things do, which we need an implement.
-  case class NodeRecord[A](id: BitVector, routingAddress: A, messagingAddress: A) {
+  case class NodeRecord[A](id: BitVector, routingAddress: A, messagingAddress: A,uuid:UUID,sign:(BigInteger,BigInteger)) {
     override def toString: String =
-      s"NodeRecord(id = ${id.toHex}, routingAddress = $routingAddress, messagingAddress = $messagingAddress)"
+      s"NodeRecord(uuid = ${uuid}, id = ${id.toHex}, routingAddress = $routingAddress, messagingAddress = $messagingAddress)"
+  }
+
+  object NodeRecord{
+    def create[A](id: BitVector, routingAddress: A, messagingAddress: A,uuid:UUID,key:ECPrivateKeyParameters)(implicit streamCodec: StreamCodec[A]):NodeRecord[A] = {
+      val encodedUUID = ByteBuffer.allocate(16)
+      encodedUUID.putLong(0,uuid.getMostSignificantBits)
+      encodedUUID.putLong(8,uuid.getLeastSignificantBits)
+      val encoded = id.toByteArray ++ streamCodec.encode[ByteBuffer](routingAddress).array() ++ streamCodec.encode[ByteBuffer](routingAddress).array() ++ encodedUUID.array()
+      val sign = crypto.sign(encoded,key)
+      NodeRecord[A](id,routingAddress,messagingAddress,uuid,sign)
+    }
+    def verify[A](n:NodeRecord[A])(implicit streamCodec: Codec[A]):Boolean = {
+      val encodedUUID = ByteBuffer.allocate(16)
+      encodedUUID.putLong(0,n.uuid.getMostSignificantBits)
+      encodedUUID.putLong(8,n.uuid.getLeastSignificantBits)
+      val encoded = n.id.toByteArray ++ streamCodec.encode[ByteBuffer](n.routingAddress).array() ++ streamCodec.encode[ByteBuffer](n.routingAddress).array() ++ encodedUUID.array()
+      crypto.verify(encoded,n.sign._1,n.sign._2,crypto.recuperateEncodedKey(n.id.toByteArray))
+    }
   }
 
   private[scalanet] object KRouterInternals {
