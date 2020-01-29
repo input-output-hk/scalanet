@@ -416,11 +416,7 @@ class KRouterSpec extends FreeSpec with Eventually {
             keyPair._1,
             clock,
             () => uuid
-<<<<<<< HEAD
           )(new CodecFromContract[String](StringCodecContract))
-=======
-          )(new StreamCodecFromContract[String](StringCodecContract))
->>>>>>> 807b1b6... Nodes records have now authentication. Adapted to Ethereum Node record scheme.
           // Just after enrollment there will be only one bootstrap node without neighbours
           nodesAfterEnroll <- router.nodeRecords
           // Simulate situation that initial known node learned about new node
@@ -514,10 +510,14 @@ object KRouterSpec {
       testState <- Ref.of[Task, Map[BitVector, NodeData[String]]](peerConfig)
       network = new KNetworkScalanetInternalTestImpl(testState)
 <<<<<<< HEAD
+<<<<<<< HEAD
       router <- KRouter.startRouterWithServerPar(Config(nodeRecord, knownPeers), network, keyPair._1,clock, () => uuid)(new CodecFromContract[String](StringCodecContract))
 =======
       router <- KRouter.startRouterWithServerPar(Config(nodeRecord, knownPeers), network, keyPair._1,clock, () => uuid)(new StreamCodecFromContract[String](StringCodecContract))
 >>>>>>> 807b1b6... Nodes records have now authentication. Adapted to Ethereum Node record scheme.
+=======
+      router <- KRouter.startRouterWithServerPar(Config(nodeRecord, knownPeers), network, keyPair._1,clock, () => uuid)(new CodecFromContract[String](StringCodecContract))
+>>>>>>> 39d9d2f... changes in codec
     } yield router
   }
 
@@ -541,10 +541,14 @@ object KRouterSpec {
     mockEnrollment(nodeRecord, knownPeers, Seq.empty)
     KRouter
 <<<<<<< HEAD
+<<<<<<< HEAD
       .startRouterWithServerSeq(Config(nodeRecord, knownPeers, alpha, k), knetwork, keyPair._1, clock, () => uuid)(new CodecFromContract[String](StringCodecContract))
 =======
       .startRouterWithServerSeq(Config(nodeRecord, knownPeers, alpha, k), knetwork, keyPair._1, clock, () => uuid)(new StreamCodecFromContract[String](StringCodecContract))
 >>>>>>> 807b1b6... Nodes records have now authentication. Adapted to Ethereum Node record scheme.
+=======
+      .startRouterWithServerSeq(Config(nodeRecord, knownPeers, alpha, k), knetwork, keyPair._1, clock, () => uuid)(new CodecFromContract[String](StringCodecContract))
+>>>>>>> 39d9d2f... changes in codec
       .runSyncUnsafe()
   }
 
