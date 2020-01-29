@@ -82,6 +82,10 @@ object Generators {
       messagingAddress = Random.alphanumeric.take(4).mkString,
       sec_number = random.nextLong(),
       key = pair._1
+<<<<<<< HEAD
     )(new CodecFromContract[String](StringCodecContract))
+=======
+    )(new StreamCodecFromContract[String](StringCodecContract))
+>>>>>>> 807b1b6... Nodes records have now authentication. Adapted to Ethereum Node record scheme.
   }
 }
