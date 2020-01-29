@@ -646,7 +646,13 @@ object KRouterSpec {
     for {
       testState <- Ref.of[Task, Map[BitVector, NodeData[String]]](peerConfig)
       network = new KNetworkScalanetInternalTestImpl(testState)
-      router <- KRouter.startRouterWithServerPar(Config(nodeRecord, knownPeers), network, keyPair._1,clock, () => uuid)(new CodecFromContract[String](StringCodecContract))
+      router <- KRouter.startRouterWithServerPar(
+        Config(nodeRecord, knownPeers),
+        network,
+        keyPair._1,
+        clock,
+        () => uuid
+      )
     } yield router
   }
 
@@ -670,7 +676,13 @@ object KRouterSpec {
       else selfNode.get
     mockEnrollment(nodeRecord, knownPeers, Seq.empty)
     KRouter
-      .startRouterWithServerSeq(Config(nodeRecord, knownPeers, alpha, k), knetwork, keyPair._1, clock, () => uuid)(new CodecFromContract[String](StringCodecContract))
+      .startRouterWithServerSeq(
+        Config(nodeRecord, knownPeers, alpha, k),
+        knetwork,
+        keyPair._1,
+        clock,
+        () => uuid
+      )
       .runSyncUnsafe()
   }
 
