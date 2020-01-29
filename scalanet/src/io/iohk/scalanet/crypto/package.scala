@@ -21,18 +21,14 @@ import org.spongycastle.crypto.signers.{ECDSASigner, HMacDSAKCalculator}
 package object crypto {
 
   val curveParams: X9ECParameters = SECNamedCurves.getByName("secp256k1")
-  val curve: ECDomainParameters = new ECDomainParameters(
-    curveParams.getCurve,
-    curveParams.getG,
-    curveParams.getN,
-    curveParams.getH
-  )
+  val curve: ECDomainParameters =
+    new ECDomainParameters(curveParams.getCurve, curveParams.getG, curveParams.getN, curveParams.getH)
 
   def recuperateEncodedKey(key: Array[Byte]): ECPublicKeyParameters = {
     new ECPublicKeyParameters(curve.getCurve.decodePoint(key), curve)
   }
   def keyPairToByteArrays(
-    keyPair: AsymmetricCipherKeyPair
+      keyPair: AsymmetricCipherKeyPair
   ): (Array[Byte], Array[Byte]) = {
     val prvKey =
       keyPair.getPrivate.asInstanceOf[ECPrivateKeyParameters].getD.toByteArray
@@ -49,15 +45,12 @@ package object crypto {
   }
 
   def generateKeyPair(
-    secureRandom: SecureRandom
+      secureRandom: SecureRandom
   ): (ECPrivateKeyParameters, ECPublicKeyParameters) = {
     val generator = new ECKeyPairGenerator
     generator.init(new ECKeyGenerationParameters(curve, secureRandom))
     val res = generator.generateKeyPair()
-    (
-      res.getPrivate.asInstanceOf[ECPrivateKeyParameters],
-      res.getPublic.asInstanceOf[ECPublicKeyParameters]
-    )
+    (res.getPrivate.asInstanceOf[ECPrivateKeyParameters], res.getPublic.asInstanceOf[ECPublicKeyParameters])
   }
 
   private def canonicalise(s: BigInteger): BigInteger = {
@@ -66,18 +59,14 @@ package object crypto {
     else s
   }
 
-  def sign(data: Array[Byte],
-           privateKey: ECPrivateKeyParameters): (BigInteger, BigInteger) = {
+  def sign(data: Array[Byte], privateKey: ECPrivateKeyParameters): (BigInteger, BigInteger) = {
     val signer = new ECDSASigner(new HMacDSAKCalculator(new SHA256Digest))
     signer.init(true, privateKey)
     val components = signer.generateSignature(data)
     (components(0), canonicalise(components(1)))
   }
 
-  def verify(data: Array[Byte],
-             r: BigInteger,
-             s: BigInteger,
-             publicKey: ECPublicKeyParameters): Boolean = {
+  def verify(data: Array[Byte], r: BigInteger, s: BigInteger, publicKey: ECPublicKeyParameters): Boolean = {
     val signer = new ECDSASigner(new HMacDSAKCalculator(new SHA256Digest))
     signer.init(false, publicKey)
     signer.verifySignature(data, r, s)
