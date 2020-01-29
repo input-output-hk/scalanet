@@ -49,13 +49,13 @@ class KRouterSpec extends FreeSpec with Eventually {
   implicit override val patienceConfig: PatienceConfig =
     PatienceConfig(1 second, 100 millis)
 
-  "should accept a key with a valid signed" - {
+  "should accept a valid node" - {
     val nodeRecord = Generators.aRandomNodeRecord()
     val krouter = aKRouter(knownPeers = Set(nodeRecord))
     krouter.nodeRecords.runSyncUnsafe().contains(nodeRecord.id) shouldBe true
   }
 
-  "should not accept a key with a invalid signed" - {
+  "should not accept a invalid node" - {
     val nodeRecord = NodeRecord[String](
       BitVector(Array.fill[Byte](Generators.defaultBitLength)(0)),
       "7643",
@@ -69,8 +69,8 @@ class KRouterSpec extends FreeSpec with Eventually {
 
   "should store the node record with the highest sec number" - {
     val keyPair = crypto.generateKeyPair(random)
-    val nodeRecord = Generators.aRandomNodeRecord(keyPair = Some(keyPair))
-    val otherRecord = Generators.aRandomNodeRecord(keyPair = Some(keyPair))
+    val nodeRecord = Generators.aRandomNodeRecord(keyPair = keyPair)
+    val otherRecord = Generators.aRandomNodeRecord(keyPair = keyPair)
     val maxSecNumber =
       if (nodeRecord.sec_number < otherRecord.sec_number) otherRecord.sec_number
       else nodeRecord.sec_number
@@ -100,8 +100,7 @@ class KRouterSpec extends FreeSpec with Eventually {
 
     "should not locate an unknown node - no bootstrap" in {
       val krouter = aKRouter()
-      val someNodeId = aRandomBitVector(264)
-      System.out.println("someNodeID: " + someNodeId)
+      val someNodeId = aRandomBitVector()
 
       whenReady(krouter.get(someNodeId).runToFuture.failed) { e =>
         e shouldBe an[Exception]
@@ -165,7 +164,7 @@ class KRouterSpec extends FreeSpec with Eventually {
     "should update kbuckets" - {
 
       val keyPair = crypto.generateKeyPair(random)
-      val selfRecord = aRandomNodeRecord(keyPair = Some(keyPair))
+      val selfRecord = aRandomNodeRecord(keyPair = keyPair)
       val otherRecord = aRandomNodeRecord()
       val handler = mock[Option[KResponse[String]] => Task[Unit]]
 
@@ -438,7 +437,7 @@ class KRouterSpec extends FreeSpec with Eventually {
           * will finish after receiving responses from k closest nodes
           */
         val keyPair = crypto.generateKeyPair(random)
-        val initiator = aRandomNodeRecord(keyPair = Some(keyPair))
+        val initiator = aRandomNodeRecord(keyPair = keyPair)
         val xorOrder = new XorNodeOrdering[String](initiator.id)
 
         // 30 notKnownNodes + 1 bootstrap + 3 bootstrap neighbours
@@ -500,7 +499,7 @@ class KRouterSpec extends FreeSpec with Eventually {
     "should refresh buckets periodically" - {
       "when known node have met new node" in {
         val keyPair = crypto.generateKeyPair(random)
-        val selfNode = aRandomNodeRecord(keyPair = Some(keyPair))
+        val selfNode = aRandomNodeRecord(keyPair = keyPair)
         val initialKnownNode = NodeData.getBootStrapNode(0)
         val testRefreshRate = 3.seconds
 
@@ -637,7 +636,7 @@ object KRouterSpec {
     peerConfig: Map[BitVector, NodeData[String]],
   )(implicit scheduler: Scheduler): Task[KRouter[String]] = {
     val nodeRecord: NodeRecord[String] =
-      if (selfNode.isEmpty) aRandomNodeRecord(keyPair = Some(keyPair))
+      if (selfNode.isEmpty) aRandomNodeRecord(keyPair = keyPair)
       else selfNode.get
     val knownPeers = peerConfig.collect {
       case (_, data) if data.bootstrap => data.myData
@@ -672,7 +671,7 @@ object KRouterSpec {
                alpha: Int = alpha,
                k: Int = k)(implicit scheduler: Scheduler): SRouter = {
     val nodeRecord: NodeRecord[String] =
-      if (selfNode.isEmpty) aRandomNodeRecord(keyPair = Some(keyPair))
+      if (selfNode.isEmpty) aRandomNodeRecord(keyPair = keyPair)
       else selfNode.get
     mockEnrollment(nodeRecord, knownPeers, Seq.empty)
     KRouter
