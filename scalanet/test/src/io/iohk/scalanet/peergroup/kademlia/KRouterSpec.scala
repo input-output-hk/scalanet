@@ -53,7 +53,6 @@ class KRouterSpec extends FreeSpec with Eventually {
     "should not locate an unknown node - no bootstrap" in {
       val krouter = aKRouter()
       val someNodeId = aRandomBitVector(264)
-      System.out.println("someNodeID: " + someNodeId)
 
       whenReady(krouter.get(someNodeId).runToFuture.failed) { e =>
         e shouldBe an[Exception]
