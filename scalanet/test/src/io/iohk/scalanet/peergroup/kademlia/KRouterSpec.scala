@@ -670,25 +670,7 @@ object KRouterSpec {
       else selfNode.get
     mockEnrollment(nodeRecord, knownPeers, Seq.empty)
     KRouter
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
       .startRouterWithServerSeq(Config(nodeRecord, knownPeers, alpha, k), knetwork, keyPair._1, clock, () => uuid)(new CodecFromContract[String](StringCodecContract))
-=======
-      .startRouterWithServerSeq(Config(nodeRecord, knownPeers, alpha, k), knetwork, keyPair._1, clock, () => uuid)(new StreamCodecFromContract[String](StringCodecContract))
->>>>>>> 807b1b6... Nodes records have now authentication. Adapted to Ethereum Node record scheme.
-=======
-      .startRouterWithServerSeq(Config(nodeRecord, knownPeers, alpha, k), knetwork, keyPair._1, clock, () => uuid)(new CodecFromContract[String](StringCodecContract))
->>>>>>> 39d9d2f... changes in codec
-=======
-      .startRouterWithServerSeq(
-        Config(nodeRecord, knownPeers, alpha, k),
-        knetwork,
-        keyPair._1,
-        clock,
-        () => uuid
-      )
->>>>>>> ce59a91... format changes. Deleted file
       .runSyncUnsafe()
   }
 
