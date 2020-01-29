@@ -10,7 +10,7 @@ import io.iohk.scalanet.peergroup.kademlia.KRouter
 import scodec.bits.BitVector
 
 class NodeRecordCodeContract[A](codecContract: CodecContract[A]) extends CodecContract[KRouter.NodeRecord[A]]{
-  override def size(t: KRouter.NodeRecord[A]): Int = NativeInstances.ByteArrayCodec.size(t.id.toByteArray) + codecContract.size(t.messagingAddress) + codecContract.size(t.routingAddress)+16+NativeInstances.ByteArrayCodec.size(t.sign._1.toByteArray) + NativeInstances.ByteArrayCodec.size(t.sign._2.toByteArray)
+  override def size(t: KRouter.NodeRecord[A]): Int = NativeInstances.ByteArrayCodec.size(t.id.toByteArray) + codecContract.size(t.messagingAddress) + codecContract.size(t.routingAddress)+8+NativeInstances.ByteArrayCodec.size(t.sign._1.toByteArray) + NativeInstances.ByteArrayCodec.size(t.sign._2.toByteArray)
 
   override def encodeImpl(t: KRouter.NodeRecord[A], start: Int, destination: ByteBuffer): Unit = {
     val idArray = t.id.toByteArray
