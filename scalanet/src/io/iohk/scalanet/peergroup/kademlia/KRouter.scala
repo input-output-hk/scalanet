@@ -168,6 +168,10 @@ class KRouter[A](
       .onErrorHandle(_ => None)
   }
 
+  private def isFreshResult(previewsRegisterNodeRecord: Option[NodeRecord[A]],
+                            nodeRecord: NodeRecord[A]): Boolean =
+    previewsRegisterNodeRecord.isDefined && previewsRegisterNodeRecord.get.sec_number > nodeRecord.sec_number
+
   def add(nodeRecord: NodeRecord[A]): Task[Unit] = {
     info(
       s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord)"
@@ -176,7 +180,7 @@ class KRouter[A](
     else {
       getLocally(nodeRecord.id).flatMap(
         previewsRegisterNodeRecord =>
-          if (previewsRegisterNodeRecord.isDefined && previewsRegisterNodeRecord.get.sec_number > nodeRecord.sec_number)
+          if (isFreshResult(previewsRegisterNodeRecord, nodeRecord))
             Task.eval()
           else
             for {
