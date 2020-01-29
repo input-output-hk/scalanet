@@ -24,13 +24,13 @@ import scodec.bits.BitVector
 import io.iohk.scalanet.crypto
 
 class KRouter[A](
-  val config: Config[A],
-  val network: KNetwork[A],
-  private val routerState: Ref[Task, NodeRecordIndex[A]],
-  private val privateKey: ECPrivateKeyParameters,
-  val clock: Clock = Clock.systemUTC(),
-  val uuidSource: () => UUID = () => UUID.randomUUID(),
-  val rnd: Random = new SecureRandom()
+    val config: Config[A],
+    val network: KNetwork[A],
+    private val routerState: Ref[Task, NodeRecordIndex[A]],
+    private val privateKey: ECPrivateKeyParameters,
+    val clock: Clock = Clock.systemUTC(),
+    val uuidSource: () => UUID = () => UUID.randomUUID(),
+    val rnd: Random = new SecureRandom()
 )(implicit codec: Codec[A]) {
 
   private val log = LoggerFactory.getLogger(getClass)
@@ -72,9 +72,7 @@ class KRouter[A](
   // TODO[PM-1035]: parallelism should be configured by library user
   private val responseTaskConsumer =
     Consumer
-      .foreachParallelTask[(KRequest[A], Option[KResponse[A]] => Task[Unit])](
-        parallelism = 4
-      ) {
+      .foreachParallelTask[(KRequest[A], Option[KResponse[A]] => Task[Unit])](parallelism = 4) {
         case (FindNodes(uuid, nodeRecord, targetNodeId), responseHandler) =>
           debug(
             s"Received request FindNodes(${nodeRecord.id.toHex}, $nodeRecord, ${targetNodeId.toHex})"
@@ -123,14 +121,10 @@ class KRouter[A](
     loadKnownPeers.flatMap(_ => lookup(config.nodeRecord.id)).attempt.map {
       case Left(t) =>
         info(s"Enrolment lookup failed with exception: $t")
-        debug(
-          s"Enrolment failure stacktrace: ${t.getStackTrace.mkString("\n")}"
-        )
+        debug(s"Enrolment failure stacktrace: ${t.getStackTrace.mkString("\n")}")
         Seq()
       case Right(nodes) =>
-        debug(
-          s"Enrolment looked completed with network nodes ${nodes.mkString(",")}"
-        )
+        debug(s"Enrolment looked completed with network nodes ${nodes.mkString(",")}")
         info(
           s"Initialization complete. ${nodes.size} peers identified " +
             s"(of which 1 is myself and ${config.knownPeers.size} are preconfigured bootstrap peers)."
@@ -143,14 +137,12 @@ class KRouter[A](
     debug(s"get(${key.toHex})")
     getLocally(key) flatMap {
       case Some(value) => Task.now(value)
-      case None        => getRemotely(key)
+      case None => getRemotely(key)
     }
   }
 
   def remove(nodeId: BitVector): Task[Unit] = {
-    routerState.update(
-      current => current.removeNodeRecord(current.nodeRecords(nodeId))
-    )
+    routerState.update(current => current.removeNodeRecord(current.nodeRecords(nodeId)))
   }
 
   def kBuckets: Task[KBuckets] = {
@@ -168,14 +160,11 @@ class KRouter[A](
       .onErrorHandle(_ => None)
   }
 
-  private def isFreshResult(previewsRegisterNodeRecord: Option[NodeRecord[A]],
-                            nodeRecord: NodeRecord[A]): Boolean =
+  private def isFreshResult(previewsRegisterNodeRecord: Option[NodeRecord[A]], nodeRecord: NodeRecord[A]): Boolean =
     previewsRegisterNodeRecord.isDefined && previewsRegisterNodeRecord.get.sec_number > nodeRecord.sec_number
 
   def add(nodeRecord: NodeRecord[A]): Task[Unit] = {
-    info(
-      s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord)"
-    )
+    info(s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord)")
     if (!NodeRecord.verify[A](nodeRecord)) Task.eval()
     else {
       getLocally(nodeRecord.id).flatMap(
@@ -184,16 +173,15 @@ class KRouter[A](
             Task.eval()
           else
             for {
-              toPing <- routerState.modify {
-                current =>
-                  val (_, bucket) = current.kBuckets.getBucket(nodeRecord.id)
-                  if (bucket.size < config.k) {
-                    (current.addNodeRecord(nodeRecord), None)
-                  } else {
-                    // the bucket is full, not update it but ping least recently seen node (i.e. the one at the head) to see what to do
-                    val nodeToPing = current.nodeRecords(bucket.head)
-                    (current, Some(nodeToPing))
-                  }
+              toPing <- routerState.modify { current =>
+                val (_, bucket) = current.kBuckets.getBucket(nodeRecord.id)
+                if (bucket.size < config.k) {
+                  (current.addNodeRecord(nodeRecord), None)
+                } else {
+                  // the bucket is full, not update it but ping least recently seen node (i.e. the one at the head) to see what to do
+                  val nodeToPing = current.nodeRecords(bucket.head)
+                  (current, Some(nodeToPing))
+                }
               }
               result <- pingAndUpdateState(toPing, nodeRecord)
             } yield result
@@ -201,8 +189,7 @@ class KRouter[A](
     }
   }
 
-  private def pingAndUpdateState(recordToPing: Option[NodeRecord[A]],
-                                 nodeRecord: NodeRecord[A]): Task[Unit] = {
+  private def pingAndUpdateState(recordToPing: Option[NodeRecord[A]], nodeRecord: NodeRecord[A]): Task[Unit] = {
     recordToPing match {
       case None => Task.now(())
       case Some(nodeToPing) =>
@@ -314,9 +301,9 @@ class KRouter[A](
     }
 
     def shouldFinishLookup(
-      nodesLeftToQuery: Seq[NodeRecord[A]],
-      nodesFound: NonEmptyList[NodeRecord[A]],
-      lookupState: Ref[Task, Map[BitVector, RequestResult]]
+        nodesLeftToQuery: Seq[NodeRecord[A]],
+        nodesFound: NonEmptyList[NodeRecord[A]],
+        lookupState: Ref[Task, Map[BitVector, RequestResult]]
     ): Task[Boolean] = {
       for {
         currentState <- lookupState.get
@@ -328,10 +315,10 @@ class KRouter[A](
     }
 
     def getNodesToQuery(
-      currentClosestNode: NodeRecord[A],
-      receivedNodes: Seq[NodeRecord[A]],
-      nodesFound: NonEmptyList[NodeRecord[A]],
-      lookupState: Ref[Task, Map[BitVector, RequestResult]]
+        currentClosestNode: NodeRecord[A],
+        receivedNodes: Seq[NodeRecord[A]],
+        nodesFound: NonEmptyList[NodeRecord[A]],
+        lookupState: Ref[Task, Map[BitVector, RequestResult]]
     ): Task[Seq[NodeRecord[A]]] = {
 
       // All nodes which are closer to target, than the closest already found node
@@ -343,8 +330,7 @@ class KRouter[A](
       // k nodes from already found or
       // alpha nodes from closest nodes received
       val (nodesToQueryFrom, nodesToTake) =
-        if (closestNodes.isEmpty) (nodesFound.toList, config.k)
-        else (closestNodes, config.alpha)
+        if (closestNodes.isEmpty) (nodesFound.toList, config.k) else (closestNodes, config.alpha)
 
       for {
         nodesToQuery <- lookupState.modify { currentState =>
@@ -354,9 +340,7 @@ class KRouter[A](
             }
             .take(nodesToTake)
 
-          val updatedMap = unqueriedNodes.foldLeft(currentState)(
-            (map, node) => map + (node.id -> RequestScheduled)
-          )
+          val updatedMap = unqueriedNodes.foldLeft(currentState)((map, node) => map + (node.id -> RequestScheduled))
           (updatedMap, unqueriedNodes)
         }
       } yield nodesToQuery
@@ -375,9 +359,9 @@ class KRouter[A](
       */
     // Due to threading recursive function through flatmap and using Task, this is entirely stack safe
     def recLookUp(
-      nodesToQuery: Seq[NodeRecord[A]],
-      nodesFound: NonEmptyList[NodeRecord[A]],
-      lookupState: Ref[Task, Map[BitVector, RequestResult]]
+        nodesToQuery: Seq[NodeRecord[A]],
+        nodesFound: NonEmptyList[NodeRecord[A]],
+        lookupState: Ref[Task, Map[BitVector, RequestResult]]
     ): Task[NonEmptyList[NodeRecord[A]]] = {
       shouldFinishLookup(nodesToQuery, nodesFound, lookupState).flatMap {
         case true =>
@@ -390,9 +374,7 @@ class KRouter[A](
             }
 
             _ <- lookupState.update { current =>
-              queryResults.foldLeft(current)(
-                (map, result) => map + (result.info.to.id -> result.info.result)
-              )
+              queryResults.foldLeft(current)((map, result) => map + (result.info.to.id -> result.info.result))
             }
 
             receivedNodes = queryResults
@@ -427,23 +409,16 @@ class KRouter[A](
         Task.now(Seq.empty)
       } else {
         val initalRequestState =
-          closestKnownNodes.foldLeft(Map.empty[BitVector, RequestResult]) {
-            (map, node) =>
-              map + (node.id -> RequestScheduled)
+          closestKnownNodes.foldLeft(Map.empty[BitVector, RequestResult]) { (map, node) =>
+            map + (node.id -> RequestScheduled)
           }
         // All initial nodes are scheduled to request
         val lookUpTask: Task[Seq[NodeRecord[A]]] = for {
           // All initial nodes are scheduled to request
-          state <- Ref.of[Task, Map[BitVector, RequestResult]](
-            initalRequestState
-          )
+          state <- Ref.of[Task, Map[BitVector, RequestResult]](initalRequestState)
           // closestKnownNodes are constrained by alpha, it means there will be at most alpha independent recursive tasks
           results <- Task.wander(closestKnownNodes) { knownNode =>
-            recLookUp(
-              List(knownNode),
-              NonEmptyList.fromListUnsafe(closestKnownNodes.toList),
-              state
-            )
+            recLookUp(List(knownNode), NonEmptyList.fromListUnsafe(closestKnownNodes.toList), state)
           }
         } yield results.flatMap(_.toList)
 
@@ -459,22 +434,15 @@ class KRouter[A](
     _ == config.nodeRecord.id
   }
 
-  private def lookupReport(targetNodeId: BitVector,
-                           nodeRecords: Seq[KRouter.NodeRecord[A]]): String = {
+  private def lookupReport(targetNodeId: BitVector, nodeRecords: Seq[KRouter.NodeRecord[A]]): String = {
 
     if (nodeRecords.isEmpty) {
       s"Lookup to ${targetNodeId.toHex} returned no results."
     } else {
-      val ids =
-        nodeRecords.map(_.id).sorted(new XorOrdering(targetNodeId)).reverse
+      val ids = nodeRecords.map(_.id).sorted(new XorOrdering(targetNodeId)).reverse
 
       val ds: Map[BitVector, (NodeRecord[A], BigInt)] =
-        nodeRecords
-          .map(
-            nodeRecord =>
-              (nodeRecord.id, (nodeRecord, Xor.d(nodeRecord.id, targetNodeId)))
-          )
-          .toMap
+        nodeRecords.map(nodeRecord => (nodeRecord.id, (nodeRecord, Xor.d(nodeRecord.id, targetNodeId)))).toMap
 
       val rep = ids.map(nodeId => ds(nodeId)).mkString("\n| ")
 
@@ -508,15 +476,15 @@ object KRouter {
     * @param serverBufferSize maximum size of server messages buffer
     * @param refreshRate frequency of kademlia refresh procedure
     */
-  case class Config[A](nodeRecord: NodeRecord[A],
-                       knownPeers: Set[NodeRecord[A]],
-                       alpha: Int = 3,
-                       k: Int = 20,
-                       serverBufferSize: Int = 2000,
-                       refreshRate: FiniteDuration = 15.minutes)
+  case class Config[A](
+      nodeRecord: NodeRecord[A],
+      knownPeers: Set[NodeRecord[A]],
+      alpha: Int = 3,
+      k: Int = 20,
+      serverBufferSize: Int = 2000,
+      refreshRate: FiniteDuration = 15.minutes)
 
-  private[scalanet] def getIndex[A](config: Config[A],
-                                    clock: Clock): NodeRecordIndex[A] = {
+  private[scalanet] def getIndex[A](config: Config[A], clock: Clock): NodeRecordIndex[A] = {
     NodeRecordIndex(
       new KBuckets(config.nodeRecord.id, clock),
       Map(config.nodeRecord.id -> config.nodeRecord)
@@ -535,11 +503,11 @@ object KRouter {
     * @return initialised kademlia router which handles incoming requests
     */
   def startRouterWithServerSeq[A](
-    config: Config[A],
-    network: KNetwork[A],
-    privateKey: ECPrivateKeyParameters,
-    clock: Clock = Clock.systemUTC(),
-    uuidSource: () => UUID = () => UUID.randomUUID()
+      config: Config[A],
+      network: KNetwork[A],
+      privateKey: ECPrivateKeyParameters,
+      clock: Clock = Clock.systemUTC(),
+      uuidSource: () => UUID = () => UUID.randomUUID()
   )(implicit codec: Codec[A]): Task[KRouter[A]] = {
     for {
       state <- Ref.of[Task, NodeRecordIndex[A]](getIndex(config, clock))
@@ -565,26 +533,22 @@ object KRouter {
     */
   //TODO consider adding possibility of having lookup process and server processing on different schedulers
   def startRouterWithServerPar[A](
-    config: Config[A],
-    network: KNetwork[A],
-    privateKey: ECPrivateKeyParameters,
-    clock: Clock = Clock.systemUTC(),
-    uuidSource: () => UUID = () => UUID.randomUUID()
+      config: Config[A],
+      network: KNetwork[A],
+      privateKey: ECPrivateKeyParameters,
+      clock: Clock = Clock.systemUTC(),
+      uuidSource: () => UUID = () => UUID.randomUUID()
   )(implicit codec: Codec[A]): Task[KRouter[A]] = {
     Ref
       .of[Task, NodeRecordIndex[A]](getIndex(config, clock))
       .flatMap { state =>
-        Task
-          .now(
-            new KRouter(config, network, state, privateKey, clock, uuidSource)
-          )
-          .flatMap { router =>
-            Task.parMap3(
-              router.enroll(),
-              router.startServerHandling().startAndForget,
-              router.startRefreshCycle().startAndForget
-            )((_, _, _) => router)
-          }
+        Task.now(new KRouter(config, network, state, privateKey, clock, uuidSource)).flatMap { router =>
+          Task.parMap3(
+            router.enroll(),
+            router.startServerHandling().startAndForget,
+            router.startRefreshCycle().startAndForget
+          )((_, _, _) => router)
+        }
       }
   }
 
@@ -594,22 +558,23 @@ object KRouter {
   // sequence number (why)
   // compressed public key (why)
   // TODO understand what these things do, which we need an implement.
-  case class NodeRecord[A](id: BitVector,
-                           routingAddress: A,
-                           messagingAddress: A,
-                           sec_number: Long,
-                           sign: (BigInteger, BigInteger)) {
+  case class NodeRecord[A](
+      id: BitVector,
+      routingAddress: A,
+      messagingAddress: A,
+      sec_number: Long,
+      sign: (BigInteger, BigInteger)) {
     override def toString: String =
       s"NodeRecord(sec_number = ${sec_number}, id = ${id.toHex}, routingAddress = $routingAddress, messagingAddress = $messagingAddress)"
   }
 
   object NodeRecord {
     def apply[A](
-      id: BitVector,
-      routingAddress: A,
-      messagingAddress: A,
-      sec_number: Long,
-      privateKey: ECPrivateKeyParameters
+        id: BitVector,
+        routingAddress: A,
+        messagingAddress: A,
+        sec_number: Long,
+        privateKey: ECPrivateKeyParameters
     )(implicit codec: Codec[A]): NodeRecord[A] = {
       val encodedUUID = ByteBuffer.allocate(8)
       encodedUUID.putLong(0, sec_number)
@@ -649,22 +614,18 @@ object KRouter {
       def info: QueryInfo[A]
     }
     case class QueryFailed[A](info: QueryInfo[A]) extends QueryResult[A]
-    case class QuerySucceed[A](info: QueryInfo[A],
-                               foundNodes: Seq[NodeRecord[A]])
-        extends QueryResult[A]
+    case class QuerySucceed[A](info: QueryInfo[A], foundNodes: Seq[NodeRecord[A]]) extends QueryResult[A]
 
     object QueryResult {
       def failed[A](to: NodeRecord[A]): QueryResult[A] =
         QueryFailed(QueryInfo(to, RequestFailed))
 
-      def succeed[A](to: NodeRecord[A],
-                     nodes: Seq[NodeRecord[A]]): QuerySucceed[A] =
+      def succeed[A](to: NodeRecord[A], nodes: Seq[NodeRecord[A]]): QuerySucceed[A] =
         QuerySucceed(QueryInfo(to, RequestSuccess), nodes)
 
     }
 
-    case class NodeRecordIndex[A](kBuckets: KBuckets,
-                                  nodeRecords: Map[BitVector, NodeRecord[A]]) {
+    case class NodeRecordIndex[A](kBuckets: KBuckets, nodeRecords: Map[BitVector, NodeRecord[A]]) {
       def addNodeRecord(nodeRecord: NodeRecord[A]): NodeRecordIndex[A] = {
         copy(
           kBuckets = kBuckets.add(nodeRecord.id),
@@ -683,8 +644,7 @@ object KRouter {
         copy(kBuckets = kBuckets.touch(nodeRecord.id))
       }
 
-      def replaceNodeRecord(oldNode: NodeRecord[A],
-                            newNode: NodeRecord[A]): NodeRecordIndex[A] = {
+      def replaceNodeRecord(oldNode: NodeRecord[A], newNode: NodeRecord[A]): NodeRecordIndex[A] = {
         val withRemoved = removeNodeRecord(oldNode)
         withRemoved.addNodeRecord(newNode)
       }
