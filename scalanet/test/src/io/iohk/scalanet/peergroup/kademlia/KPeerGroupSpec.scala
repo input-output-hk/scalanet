@@ -2,7 +2,7 @@ package io.iohk.scalanet.peergroup.kademlia
 
 import java.nio.ByteBuffer
 
-import io.iohk.decco.{BufferInstantiator, Codec}
+import io.iohk.decco.{BufferInstantiator, Codec, auto}
 import io.iohk.scalanet.codec._
 import io.iohk.scalanet.peergroup.InMemoryPeerGroup.Network
 import io.iohk.scalanet.peergroup.PeerGroup.createOrThrow
@@ -23,7 +23,7 @@ import scala.concurrent.Await
 import scala.concurrent.duration._
 
 class KPeerGroupSpec extends FlatSpec {
-  implicit val codec:Codec[Either[NodeRecord[String],String]] = new CodecFromContract[Either[NodeRecord[String], String]](new EitherCodecContract[NodeRecord[String],String](new NodeRecordCodeContract(StringCodecContract),StringCodecContract))
+  implicit val codec:Codec[Either[NodeRecord[String],String]] = auto.codecContract2Codec(new EitherCodecContract[NodeRecord[String],String](new NodeRecordCodeContract(StringCodecContract),StringCodecContract))
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(
     1 second
   )
