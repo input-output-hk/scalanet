@@ -2,7 +2,7 @@ package io.iohk.scalanet.peergroup.kademlia
 
 import java.security.SecureRandom
 
-import io.iohk.scalanet.codec.CodecFromContract
+import io.iohk.decco.auto
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import org.scalacheck.Arbitrary.arbitrary
 import org.scalacheck.Gen
@@ -82,6 +82,6 @@ object Generators {
       messagingAddress = Random.alphanumeric.take(4).mkString,
       sec_number = random.nextLong(),
       key = pair._1
-    )(new CodecFromContract[String](StringCodecContract))
+    )(auto.codecContract2Codec[String](StringCodecContract))
   }
 }
