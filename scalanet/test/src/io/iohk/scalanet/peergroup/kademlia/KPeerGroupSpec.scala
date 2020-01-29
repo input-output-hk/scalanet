@@ -23,7 +23,7 @@ import scala.concurrent.Await
 import scala.concurrent.duration._
 
 class KPeerGroupSpec extends FlatSpec {
-  implicit val codec:Codec[Either[NodeRecord[String],String]] = new StreamCodecFromContract[Either[NodeRecord[String], String]](new EitherCodecContract[NodeRecord[String],String](new NodeRecordCodeContract(StringCodecContract),StringCodecContract))
+  implicit val codec:Codec[Either[NodeRecord[String],String]] = new CodecFromContract[Either[NodeRecord[String], String]](new EitherCodecContract[NodeRecord[String],String](new NodeRecordCodeContract(StringCodecContract),StringCodecContract))
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(
     1 second
   )

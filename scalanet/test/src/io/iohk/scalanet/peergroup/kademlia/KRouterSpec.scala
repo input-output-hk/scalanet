@@ -6,7 +6,7 @@ import java.time.Clock
 import java.util.UUID
 
 import cats.effect.concurrent.Ref
-import io.iohk.scalanet.codec.{StreamCodecFromContract, StringCodecContract}
+import io.iohk.scalanet.codec.{CodecFromContract, StringCodecContract}
 import io.iohk.scalanet.peergroup.kademlia.Generators.{aRandomBitVector, aRandomNodeRecord}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
@@ -416,7 +416,7 @@ class KRouterSpec extends FreeSpec with Eventually {
             keyPair._1,
             clock,
             () => uuid
-          )(new StreamCodecFromContract[String](StringCodecContract))
+          )(new CodecFromContract[String](StringCodecContract))
           // Just after enrollment there will be only one bootstrap node without neighbours
           nodesAfterEnroll <- router.nodeRecords
           // Simulate situation that initial known node learned about new node
@@ -509,7 +509,7 @@ object KRouterSpec {
     for {
       testState <- Ref.of[Task, Map[BitVector, NodeData[String]]](peerConfig)
       network = new KNetworkScalanetInternalTestImpl(testState)
-      router <- KRouter.startRouterWithServerPar(Config(nodeRecord, knownPeers), network, keyPair._1,clock, () => uuid)(new StreamCodecFromContract[String](StringCodecContract))
+      router <- KRouter.startRouterWithServerPar(Config(nodeRecord, knownPeers), network, keyPair._1,clock, () => uuid)(new CodecFromContract[String](StringCodecContract))
     } yield router
   }
 
@@ -532,7 +532,7 @@ object KRouterSpec {
     val nodeRecord: NodeRecord[String] = if(selfNode.isEmpty) aRandomNodeRecord(keyPair=Some(keyPair)) else selfNode.get
     mockEnrollment(nodeRecord, knownPeers, Seq.empty)
     KRouter
-      .startRouterWithServerSeq(Config(nodeRecord, knownPeers, alpha, k), knetwork, keyPair._1, clock, () => uuid)(new StreamCodecFromContract[String](StringCodecContract))
+      .startRouterWithServerSeq(Config(nodeRecord, knownPeers, alpha, k), knetwork, keyPair._1, clock, () => uuid)(new CodecFromContract[String](StringCodecContract))
       .runSyncUnsafe()
   }
 

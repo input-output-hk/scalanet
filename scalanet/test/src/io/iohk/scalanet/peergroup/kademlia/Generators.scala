@@ -1,10 +1,8 @@
 package io.iohk.scalanet.peergroup.kademlia
 
 import java.security.SecureRandom
-import java.security.spec.ECPrivateKeySpec
-import java.util.UUID
 
-import io.iohk.scalanet.codec.{StreamCodecFromContract, StringCodecContract}
+import io.iohk.scalanet.codec.CodecFromContract
 import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
 import org.scalacheck.Arbitrary.arbitrary
 import org.scalacheck.Gen
@@ -14,6 +12,7 @@ import scala.collection.mutable.ListBuffer
 import scala.util.Random
 import io.iohk.scalanet.crypto
 import org.spongycastle.crypto.params.{ECPrivateKeyParameters, ECPublicKeyParameters}
+import io.iohk.scalanet.codec.StringCodecContract
 
 object Generators {
 
@@ -83,6 +82,6 @@ object Generators {
       messagingAddress = Random.alphanumeric.take(4).mkString,
       sec_number = random.nextLong(),
       key = pair._1
-    )(new StreamCodecFromContract[String](StringCodecContract))
+    )(new CodecFromContract[String](StringCodecContract))
   }
 }
