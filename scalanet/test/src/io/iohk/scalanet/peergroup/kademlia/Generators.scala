@@ -11,7 +11,10 @@ import scodec.bits.BitVector
 import scala.collection.mutable.ListBuffer
 import scala.util.Random
 import io.iohk.scalanet.crypto
-import org.spongycastle.crypto.params.{ECPrivateKeyParameters, ECPublicKeyParameters}
+import org.spongycastle.crypto.params.{
+  ECPrivateKeyParameters,
+  ECPublicKeyParameters
+}
 import io.iohk.scalanet.codec.StringCodecContract
 
 object Generators {
@@ -26,7 +29,7 @@ object Generators {
     } yield BitVector.bits(bools)
 
   def genBitVectorPairs(
-      bitLength: Int = defaultBitLength
+    bitLength: Int = defaultBitLength
   ): Gen[(BitVector, BitVector)] =
     for {
       v1 <- genBitVector(bitLength)
@@ -34,7 +37,7 @@ object Generators {
     } yield (v1, v2)
 
   def genBitVectorTrips(
-      bitLength: Int = defaultBitLength
+    bitLength: Int = defaultBitLength
   ): Gen[(BitVector, BitVector, BitVector)] =
     for {
       v1 <- genBitVector(bitLength)
@@ -43,7 +46,7 @@ object Generators {
     } yield (v1, v2, v3)
 
   def genBitVectorExhaustive(
-      bitLength: Int = defaultBitLength
+    bitLength: Int = defaultBitLength
   ): List[BitVector] = {
     def loop(acc: ListBuffer[BitVector], b: BitVector, i: Int, n: Int): Unit = {
       if (i == n) {
@@ -60,7 +63,7 @@ object Generators {
   }
 
   def genBitVectorTripsExhaustive(
-      bitLength: Int
+    bitLength: Int
   ): List[(BitVector, BitVector, BitVector)] = {
     for {
       x <- genBitVectorExhaustive(bitLength)
@@ -73,15 +76,16 @@ object Generators {
     BitVector.bits(Range(0, bitLength).map(_ => Random.nextBoolean()))
 
   def aRandomNodeRecord(
-      bitLength: Int = defaultBitLength,keyPair:Option[(ECPrivateKeyParameters,ECPublicKeyParameters)] = None
+    bitLength: Int = defaultBitLength,
+    keyPair: (ECPrivateKeyParameters, ECPublicKeyParameters) =
+      crypto.generateKeyPair(random)
   ): NodeRecord[String] = {
-    val pair = if(keyPair.isEmpty) crypto.generateKeyPair(random) else keyPair.get
-    NodeRecord.create[String](
-      id = BitVector(crypto.encodeKey(pair._2)),
+    NodeRecord(
+      id = BitVector(crypto.encodeKey(keyPair._2)),
       routingAddress = Random.alphanumeric.take(4).mkString,
       messagingAddress = Random.alphanumeric.take(4).mkString,
       sec_number = random.nextLong(),
-      key = pair._1
+      privateKey = keyPair._1
     )(auto.codecContract2Codec[String](StringCodecContract))
   }
 }
