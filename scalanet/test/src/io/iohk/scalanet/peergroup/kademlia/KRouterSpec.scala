@@ -6,7 +6,7 @@ import java.time.Clock
 import java.util.UUID
 
 import cats.effect.concurrent.Ref
-import io.iohk.scalanet.codec.{CodecFromContract, StringCodecContract}
+import io.iohk.decco.auto
 import io.iohk.scalanet.peergroup.kademlia.Generators.{aRandomBitVector, aRandomNodeRecord}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
@@ -416,7 +416,7 @@ class KRouterSpec extends FreeSpec with Eventually {
             keyPair._1,
             clock,
             () => uuid
-          )(new CodecFromContract[String](StringCodecContract))
+          )(new codecContract2Codec)
           // Just after enrollment there will be only one bootstrap node without neighbours
           nodesAfterEnroll <- router.nodeRecords
           // Simulate situation that initial known node learned about new node
