@@ -475,15 +475,10 @@ object KRouter {
   }
 
   /**
-    * Enrolls to kademlia network from provided bootstrap nodes and then start handling incoming requests.
-    * Use when finishing of enrollment is required before starting handling of incoming requests
-    *
     * @param config discovery config
     * @param network underlying kademlia network
     * @param clock clock used in kbuckets, default is UTC
     * @param uuidSource source to generate uuids, default is java built in UUID generator
-    * @tparam A type of addressing
-    * @return initialised kademlia router which handles incoming requests
     */
   def startRouterWithServerSeq[A](
       config: Config[A],
