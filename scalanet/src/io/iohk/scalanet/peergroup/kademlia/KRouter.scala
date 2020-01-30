@@ -533,8 +533,8 @@ object KRouter {
       }
   }
 
-  // These node records are derived from Ethereum node records (https://eips.ethereum.org/EIPS/eip-778)
   /**
+    * These node records are derived from Ethereum node records (https://eips.ethereum.org/EIPS/eip-778)
     * @param id Kademlia routing direction (compressed public key).
     * @param seq instance number of the NodeRecord.
     * @param sign signature of the rest of NodeRecord
