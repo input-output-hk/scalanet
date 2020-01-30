@@ -1,8 +1,5 @@
-//based in mantis cryptography code https://github.com/input-output-hk/mantis/blob/master/src/main/scala/io/iohk/ethereum/crypto/package.scala
-
 package io.iohk.scalanet
 
-import java.math.BigInteger
 import java.security.SecureRandom
 
 import org.spongycastle.asn1.sec.SECNamedCurves
@@ -11,6 +8,7 @@ import org.spongycastle.crypto.AsymmetricCipherKeyPair
 import org.spongycastle.crypto.digests.SHA256Digest
 import org.spongycastle.crypto.generators.ECKeyPairGenerator
 import org.spongycastle.crypto.params.{
+  AsymmetricKeyParameter,
   ECDomainParameters,
   ECKeyGenerationParameters,
   ECPrivateKeyParameters,
@@ -18,15 +16,18 @@ import org.spongycastle.crypto.params.{
 }
 import org.spongycastle.crypto.signers.{ECDSASigner, HMacDSAKCalculator}
 
+// Based in mantis cryptography package
+// https://github.com/input-output-hk/mantis/blob/master/src/main/scala/io/iohk/ethereum/crypto/package.scala
 package object crypto {
 
   val curveParams: X9ECParameters = SECNamedCurves.getByName("secp256k1")
   val curve: ECDomainParameters =
     new ECDomainParameters(curveParams.getCurve, curveParams.getG, curveParams.getN, curveParams.getH)
 
-  def recuperateEncodedKey(key: Array[Byte]): ECPublicKeyParameters = {
+  def decodePublicKey(key: Array[Byte]): AsymmetricKeyParameter = {
     new ECPublicKeyParameters(curve.getCurve.decodePoint(key), curve)
   }
+
   def keyPairToByteArrays(
       keyPair: AsymmetricCipherKeyPair
   ): (Array[Byte], Array[Byte]) = {
@@ -40,36 +41,20 @@ package object crypto {
     (prvKey, pubKey)
   }
 
-  def encodeKey(key: ECPublicKeyParameters): Array[Byte] = {
-    key.getQ.getEncoded(true)
+  def encodeKey(key: AsymmetricKeyParameter): Array[Byte] = {
+    key.asInstanceOf[ECPublicKeyParameters].getQ.getEncoded(true)
   }
 
-  def generateKeyPair(
-      secureRandom: SecureRandom
-  ): (ECPrivateKeyParameters, ECPublicKeyParameters) = {
+  def generateKeyPair(secureRandom: SecureRandom): AsymmetricCipherKeyPair = {
     val generator = new ECKeyPairGenerator
     generator.init(new ECKeyGenerationParameters(curve, secureRandom))
-    val res = generator.generateKeyPair()
-    (res.getPrivate.asInstanceOf[ECPrivateKeyParameters], res.getPublic.asInstanceOf[ECPublicKeyParameters])
+    generator.generateKeyPair()
   }
 
-  private def canonicalise(s: BigInteger): BigInteger = {
-    val halfCurveOrder: BigInteger = curveParams.getN.shiftRight(1)
-    if (s.compareTo(halfCurveOrder) > 0) curve.getN.subtract(s)
-    else s
-  }
-
-  def sign(data: Array[Byte], privateKey: ECPrivateKeyParameters): (BigInteger, BigInteger) = {
+  def verify(data: Array[Byte], sign: ECDSASignature, publicKey: AsymmetricKeyParameter): Boolean = {
     val signer = new ECDSASigner(new HMacDSAKCalculator(new SHA256Digest))
-    signer.init(true, privateKey)
-    val components = signer.generateSignature(data)
-    (components(0), canonicalise(components(1)))
-  }
-
-  def verify(data: Array[Byte], r: BigInteger, s: BigInteger, publicKey: ECPublicKeyParameters): Boolean = {
-    val signer = new ECDSASigner(new HMacDSAKCalculator(new SHA256Digest))
-    signer.init(false, publicKey)
-    signer.verifySignature(data, r, s)
+    signer.init(false, publicKey.asInstanceOf[ECPublicKeyParameters])
+    signer.verifySignature(data, sign.r.bigInteger, sign.s.bigInteger)
   }
 
 }
