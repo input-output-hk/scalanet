@@ -19,23 +19,22 @@ import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
 import monix.eval.Task
 import monix.reactive.{Consumer, Observable, OverflowStrategy}
 import org.slf4j.LoggerFactory
-import org.spongycastle.crypto.params.ECPrivateKeyParameters
+import org.spongycastle.crypto.params.{AsymmetricKeyParameter}
 import scodec.bits.BitVector
 import io.iohk.scalanet.crypto
+import io.iohk.scalanet.crypto.ECDSASignature
+import org.spongycastle.crypto.AsymmetricCipherKeyPair
 
 class KRouter[A](
     val config: Config[A],
     val network: KNetwork[A],
     private val routerState: Ref[Task, NodeRecordIndex[A]],
-    private val privateKey: ECPrivateKeyParameters,
     val clock: Clock = Clock.systemUTC(),
     val uuidSource: () => UUID = () => UUID.randomUUID(),
     val rnd: Random = new SecureRandom()
 )(implicit codec: Codec[A]) {
 
   private val log = LoggerFactory.getLogger(getClass)
-
-  var currentNodeRecord = config.nodeRecord
 
   /**
     * Start refresh cycle i.e periodically performs lookup for random node id
@@ -54,18 +53,8 @@ class KRouter[A](
     Observable
       .intervalWithFixedDelay(config.refreshRate, config.refreshRate)
       .consumeWith(Consumer.foreachTask { _ =>
-        {
-          val newNodeRecord = NodeRecord(
-            currentNodeRecord.id,
-            currentNodeRecord.routingAddress,
-            currentNodeRecord.messagingAddress,
-            currentNodeRecord.sec_number + 1,
-            privateKey
-          )
-          currentNodeRecord = newNodeRecord
-          lookup(KBuckets.generateRandomId(config.nodeRecord.id.length, rnd))
-            .map(_ => ())
-        }
+        lookup(KBuckets.generateRandomId(config.nodeRecord.id.length, rnd)).map(_ => ())
+
       })
   }
 
@@ -83,14 +72,14 @@ class KRouter[A](
             closestNodes = state.kBuckets
               .closestNodes(targetNodeId, config.k)
               .map(state.nodeRecords(_))
-            response = Nodes(uuid, currentNodeRecord, closestNodes)
+            response = Nodes(uuid, config.nodeRecord, closestNodes)
             _ <- add(nodeRecord).startAndForget
             responseTask <- responseHandler(Some(response))
           } yield responseTask
 
         case (Ping(uuid, nodeRecord), responseHandler) =>
           debug(s"Received request Ping(${nodeRecord.id.toHex}, $nodeRecord)")
-          val response = Pong(uuid, currentNodeRecord)
+          val response = Pong(uuid, config.nodeRecord)
           for {
             _ <- add(nodeRecord).startAndForget
             responseTask <- responseHandler(Some(response))
@@ -153,13 +142,13 @@ class KRouter[A](
 
   def ping(recToPing: NodeRecord[A]): Task[Option[NodeRecord[A]]] = {
     network
-      .ping(recToPing, Ping(uuidSource(), currentNodeRecord))
+      .ping(recToPing, Ping(uuidSource(), config.nodeRecord))
       .map(x => Some(x.nodeRecord))
       .onErrorHandle(_ => None)
   }
 
   private def isFreshResult(previewsRegisterNodeRecord: Option[NodeRecord[A]], nodeRecord: NodeRecord[A]): Boolean =
-    previewsRegisterNodeRecord.isDefined && previewsRegisterNodeRecord.get.sec_number > nodeRecord.sec_number
+    previewsRegisterNodeRecord.isDefined && previewsRegisterNodeRecord.get.seq > nodeRecord.seq
 
   def add(nodeRecord: NodeRecord[A]): Task[Unit] = {
     info(s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord)")
@@ -187,6 +176,11 @@ class KRouter[A](
     }
   }
 
+  private def nodeInstanceIsTheSame(
+      nodeToPing: KRouter.NodeRecord[A],
+      nodePingResponse: KRouter.NodeRecord[A]): Boolean =
+    nodeToPing.seq.equals(nodePingResponse.seq)
+
   private def pingAndUpdateState(recordToPing: Option[NodeRecord[A]], nodeRecord: NodeRecord[A]): Task[Unit] = {
     recordToPing match {
       case None => Task.now(())
@@ -194,9 +188,10 @@ class KRouter[A](
         for {
           nodePingResponse <- ping(nodeToPing)
           _ <- routerState.update { current =>
-            if (nodePingResponse.isDefined && nodePingResponse.get.sec_number >= nodeToPing.sec_number) {
+            if (nodePingResponse.isDefined && nodePingResponse.get.seq >= nodeToPing.seq) {
               // if it does respond, it is moved to the tail and the other node record discarded.
-              if (nodeToPing.sec_number.equals(nodePingResponse.get.sec_number))
+              // If it respond with a newer node record, the information is updated
+              if (nodeInstanceIsTheSame(nodeToPing, nodePingResponse.get))
                 current.touchNodeRecord(nodeToPing)
               else current.replaceNodeRecord(nodeToPing, nodePingResponse.get)
             } else {
@@ -255,7 +250,7 @@ class KRouter[A](
 
       val findNodesRequest = FindNodes(
         requestId = requestId,
-        nodeRecord = currentNodeRecord,
+        nodeRecord = config.nodeRecord,
         targetNodeId = targetNodeId
       )
 
@@ -495,14 +490,13 @@ object KRouter {
   def startRouterWithServerSeq[A](
       config: Config[A],
       network: KNetwork[A],
-      privateKey: ECPrivateKeyParameters,
       clock: Clock = Clock.systemUTC(),
       uuidSource: () => UUID = () => UUID.randomUUID()
   )(implicit codec: Codec[A]): Task[KRouter[A]] = {
     for {
       state <- Ref.of[Task, NodeRecordIndex[A]](getIndex(config, clock))
       router <- Task.now(
-        new KRouter(config, network, state, privateKey, clock, uuidSource)
+        new KRouter(config, network, state, clock, uuidSource)
       )
       _ <- router.enroll()
       _ <- router.startServerHandling().startAndForget
@@ -525,14 +519,13 @@ object KRouter {
   def startRouterWithServerPar[A](
       config: Config[A],
       network: KNetwork[A],
-      privateKey: ECPrivateKeyParameters,
       clock: Clock = Clock.systemUTC(),
       uuidSource: () => UUID = () => UUID.randomUUID()
   )(implicit codec: Codec[A]): Task[KRouter[A]] = {
     Ref
       .of[Task, NodeRecordIndex[A]](getIndex(config, clock))
       .flatMap { state =>
-        Task.now(new KRouter(config, network, state, privateKey, clock, uuidSource)).flatMap { router =>
+        Task.now(new KRouter(config, network, state, clock, uuidSource)).flatMap { router =>
           Task.parMap3(
             router.enroll(),
             router.startServerHandling().startAndForget,
@@ -543,19 +536,14 @@ object KRouter {
   }
 
   // These node records are derived from Ethereum node records (https://eips.ethereum.org/EIPS/eip-778)
-  // TODO node records require an additional
-  // signature (why)
-  // sequence number (why)
-  // compressed public key (why)
-  // TODO understand what these things do, which we need an implement.
-  case class NodeRecord[A](
-      id: BitVector,
-      routingAddress: A,
-      messagingAddress: A,
-      sec_number: Long,
-      sign: (BigInteger, BigInteger)) {
+  /**
+    * @param id Kademlia routing direction (compressed public key).
+    * @param seq instance number of the NodeRecord.
+    * @param sign signature of the rest of NodeRecord
+    */
+  case class NodeRecord[A](id: BitVector, routingAddress: A, messagingAddress: A, seq: Long, sign: ECDSASignature) {
     override def toString: String =
-      s"NodeRecord(sec_number = ${sec_number}, id = ${id.toHex}, routingAddress = $routingAddress, messagingAddress = $messagingAddress)"
+      s"NodeRecord(sec_number = ${seq}, id = ${id.toHex}, routingAddress = $routingAddress, messagingAddress = $messagingAddress)"
   }
 
   object NodeRecord {
@@ -564,7 +552,7 @@ object KRouter {
         routingAddress: A,
         messagingAddress: A,
         sec_number: Long,
-        privateKey: ECPrivateKeyParameters
+        keyPair: AsymmetricCipherKeyPair
     )(implicit codec: Codec[A]): NodeRecord[A] = {
       val encodedUUID = ByteBuffer.allocate(8)
       encodedUUID.putLong(0, sec_number)
@@ -573,23 +561,26 @@ object KRouter {
         .array() ++ codec
         .encode[ByteBuffer](routingAddress)
         .array() ++ encodedUUID.array()
-      val sign = crypto.sign(encoded, privateKey)
+      val sign = crypto.ECDSASignature.sign(encoded, keyPair)
       NodeRecord[A](id, routingAddress, messagingAddress, sec_number, sign)
     }
     def verify[A](n: NodeRecord[A])(implicit codec: Codec[A]): Boolean = {
       val encodedUUID = ByteBuffer.allocate(8)
-      encodedUUID.putLong(0, n.sec_number)
+      encodedUUID.putLong(0, n.seq)
       val encoded = n.id.toByteArray ++ codec
         .encode[ByteBuffer](n.routingAddress)
         .array() ++ codec
         .encode[ByteBuffer](n.routingAddress)
         .array() ++ encodedUUID.array()
-      crypto.verify(
-        encoded,
-        n.sign._1,
-        n.sign._2,
-        crypto.recuperateEncodedKey(n.id.toByteArray)
-      )
+      try {
+        crypto.verify(
+          encoded,
+          n.sign,
+          crypto.decodePublicKey(n.id.toByteArray)
+        )
+      } catch {
+        case e: IllegalArgumentException => false
+      }
     }
   }
 
