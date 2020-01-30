@@ -105,9 +105,7 @@ class KRouter[A](
   private def startServerHandling(): Task[Unit] = {
     // asyncBoundary means that we are giving up on observable back pressure and the consumer will need consume
     // events as soon as available, it is behaviour similar to ConcurrentSubject
-    network.kRequests
-      .asyncBoundary(OverflowStrategy.DropNew(config.serverBufferSize))
-      .consumeWith(responseTaskConsumer)
+    network.kRequests.asyncBoundary(OverflowStrategy.DropNew(config.serverBufferSize)).consumeWith(responseTaskConsumer)
   }
 
   /**
@@ -213,9 +211,7 @@ class KRouter[A](
                 s"Moving ${nodeToPing.id} to head of bucket. Discarding (${nodeRecord.id.toHex}, $nodeRecord) as routing table candidate."
               )
             } else {
-              info(
-                s"Replacing ${nodeToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord)."
-              )
+              info(s"Replacing ${nodeToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord).")
             }
           }
         } yield ()
@@ -226,10 +222,7 @@ class KRouter[A](
     lookup(key).flatMap { _ =>
       getLocally(key) flatMap {
         case Some(value) => Task.now(value)
-        case None =>
-          Task.raiseError(
-            new Exception(s"Target node id ${key.toHex} not found")
-          )
+        case None => Task.raiseError(new Exception(s"Target node id ${key.toHex} not found"))
       }
     }
   }
@@ -322,9 +315,7 @@ class KRouter[A](
     ): Task[Seq[NodeRecord[A]]] = {
 
       // All nodes which are closer to target, than the closest already found node
-      val closestNodes = receivedNodes.filter(
-        node => xorOrder.compare(node, currentClosestNode) < 0
-      )
+      val closestNodes = receivedNodes.filter(node => xorOrder.compare(node, currentClosestNode) < 0)
 
       // we chose either:
       // k nodes from already found or
@@ -408,10 +399,9 @@ class KRouter[A](
         debug("Lookup finished without any nodes, as bootstrap nodes ")
         Task.now(Seq.empty)
       } else {
-        val initalRequestState =
-          closestKnownNodes.foldLeft(Map.empty[BitVector, RequestResult]) { (map, node) =>
-            map + (node.id -> RequestScheduled)
-          }
+        val initalRequestState = closestKnownNodes.foldLeft(Map.empty[BitVector, RequestResult]) { (map, node) =>
+          map + (node.id -> RequestScheduled)
+        }
         // All initial nodes are scheduled to request
         val lookUpTask: Task[Seq[NodeRecord[A]]] = for {
           // All initial nodes are scheduled to request
@@ -627,17 +617,11 @@ object KRouter {
 
     case class NodeRecordIndex[A](kBuckets: KBuckets, nodeRecords: Map[BitVector, NodeRecord[A]]) {
       def addNodeRecord(nodeRecord: NodeRecord[A]): NodeRecordIndex[A] = {
-        copy(
-          kBuckets = kBuckets.add(nodeRecord.id),
-          nodeRecords = nodeRecords + (nodeRecord.id -> nodeRecord)
-        )
+        copy(kBuckets = kBuckets.add(nodeRecord.id), nodeRecords = nodeRecords + (nodeRecord.id -> nodeRecord))
       }
 
       def removeNodeRecord(nodeRecord: NodeRecord[A]): NodeRecordIndex[A] = {
-        copy(
-          kBuckets = kBuckets.remove(nodeRecord.id),
-          nodeRecords = nodeRecords - nodeRecord.id
-        )
+        copy(kBuckets = kBuckets.remove(nodeRecord.id), nodeRecords = nodeRecords - nodeRecord.id)
       }
 
       def touchNodeRecord(nodeRecord: NodeRecord[A]): NodeRecordIndex[A] = {
