@@ -1,6 +1,5 @@
 package io.iohk.scalanet.peergroup.kademlia
 
-import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.security.SecureRandom
 import java.time.Clock
@@ -10,7 +9,6 @@ import cats.data.NonEmptyList
 import cats.effect.concurrent.Ref
 import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 import io.iohk.decco.Codec
-import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
