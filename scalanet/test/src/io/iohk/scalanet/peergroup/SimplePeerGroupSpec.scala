@@ -7,14 +7,13 @@ import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures._
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.concurrent.ScalaFutures
-import io.iohk.decco.auto._
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import io.iohk.scalanet.TaskValues._
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
-
+import scodec.Codec
+import io.iohk.scalanet.codec.DefaultCodecs.General._
 import scala.util.Random
 
 class SimplePeerGroupSpec extends FlatSpec {
@@ -229,7 +228,13 @@ class SimplePeerGroupSpec extends FlatSpec {
     )
   }
 
+  import scodec.codecs.implicits._
+  import SimplePeerGroup._
+
   type UnderlyingMessage = Either[ControlMessage[String, InetMultiAddress], String]
+
+  implicit val codec: Codec[UnderlyingMessage] =
+    scodec.codecs.either(Codec[Boolean], Codec[ControlMessage[String, InetMultiAddress]], Codec[String])
 
   private def withSimplePeerGroups(
       bootstrapAddress: String,

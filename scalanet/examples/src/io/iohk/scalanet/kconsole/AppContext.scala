@@ -6,12 +6,11 @@ import io.iohk.scalanet.peergroup.kademlia.{KMessage, KRouter}
 import monix.execution.Scheduler
 
 class AppContext(nodeConfig: KRouter.Config[InetMultiAddress])(implicit scheduler: Scheduler) {
+  import scodec.codecs.implicits._
+  import io.iohk.scalanet.codec.DefaultCodecs.KademliaMessages._
+  import io.iohk.scalanet.codec.DefaultCodecs.General._
 
   val kRouter: KRouter[InetMultiAddress] = {
-
-    import io.iohk.scalanet.peergroup.kademlia.BitVectorCodec._
-    import io.iohk.decco.auto._
-    import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
 
     try {
       val routingConfig =

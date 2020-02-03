@@ -14,7 +14,7 @@ object scalanet extends ScalaModule with PublishModule {
 
   def scalaVersion = "2.12.7"
 
-  def publishVersion = "0.1.3-SNAPSHOT"
+  def publishVersion = "0.1.4-SNAPSHOT"
 
   override def repositories =
     super.repositories ++ Seq(
@@ -46,9 +46,8 @@ object scalanet extends ScalaModule with PublishModule {
     ivy"io.netty:netty-all:4.1.31.Final",
     ivy"org.eclipse.californium:scandium:2.0.0-M15",
     ivy"org.eclipse.californium:element-connector:2.0.0-M15",
-    ivy"org.scodec::scodec-bits:1.1.6",
-    ivy"io.iohk::decco:0.2",
-    ivy"io.iohk::decco-auto:0.2",
+    ivy"org.scodec::scodec-bits:1.1.12",
+    ivy"org.scodec::scodec-core:1.11.4",
     ivy"org.scala-lang.modules::scala-parser-combinators:1.1.2"
   )
 

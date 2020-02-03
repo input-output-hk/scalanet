@@ -1,11 +1,10 @@
 package io.iohk.scalanet.peergroup
 
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils._
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.FlatSpec
 import org.scalatest.concurrent.ScalaFutures
+import scodec.codecs.implicits.implicitStringCodec
 
 import scala.concurrent.duration._
 

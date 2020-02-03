@@ -2,10 +2,9 @@ package io.iohk.scalanet.peergroup
 
 import java.io.IOException
 import java.net.{InetSocketAddress, PortUnreachableException}
-import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.decco.{BufferInstantiator, Codec}
+import scodec.Codec
 import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{ChannelId, getChannelId, toTask}
@@ -31,6 +30,7 @@ import monix.execution.Scheduler
 import monix.execution.atomic.AtomicBoolean
 import monix.reactive.observables.ConnectableObservable
 import org.slf4j.LoggerFactory
+import scodec.bits.BitVector
 
 import scala.util.control.NonFatal
 import scala.concurrent.duration._
@@ -39,12 +39,11 @@ import scala.concurrent.duration._
   * PeerGroup implementation on top of UDP.
   *
   * @param config bind address etc. See the companion object.
-  * @param codec a decco codec for reading writing messages to NIO ByteBuffer.
+  * @param codec a scodec codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
 class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Scheduler.singleThread("cleanup-thread"))(
     implicit codec: Codec[M],
-    bufferInstantiator: BufferInstantiator[ByteBuffer],
     scheduler: Scheduler
 ) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
@@ -83,7 +82,7 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
               try {
                 val remoteAddress = datagram.sender()
                 val localAddress = datagram.recipient()
-                val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
+                val messageE = codec.decodeValue(BitVector(datagram.content().nioBuffer())).toEither
                 log.info(s"Client channel read message with remote $remoteAddress and local $localAddress")
 
                 val channelId = (remoteAddress, localAddress)
@@ -135,7 +134,7 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
                 val remoteAddress = datagram.sender()
                 val localAddress = processAddress.inetSocketAddress
 
-                val messageE: Either[Codec.Failure, M] = codec.decode(datagram.content().nioBuffer().asReadOnlyBuffer())
+                val messageE = codec.decodeValue(BitVector(datagram.content().nioBuffer())).toEither
 
                 log.info(s"Server read $messageE")
                 val serverChannel: NioDatagramChannel = ctx.channel().asInstanceOf[NioDatagramChannel]
@@ -253,12 +252,14 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
         recipient: InetSocketAddress,
         nettyChannel: NioDatagramChannel
     ): Task[Unit] = {
-      val encodedMessage = codec.encode(message)
-      toTask(nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(encodedMessage), recipient, sender)))
-        .onErrorRecoverWith {
-          case _: IOException =>
-            Task.raiseError(new MessageMTUException[InetMultiAddress](to, encodedMessage.capacity()))
-        }
+      Task.fromTry(codec.encode(message).toTry).flatMap { encodedMessage =>
+        val asBuffer = encodedMessage.toByteBuffer
+        toTask(nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(asBuffer), recipient, sender)))
+          .onErrorRecoverWith {
+            case _: IOException =>
+              Task.raiseError(new MessageMTUException[InetMultiAddress](to, asBuffer.capacity()))
+          }
+      }
     }
 
     def isOpen: Boolean = open.get()

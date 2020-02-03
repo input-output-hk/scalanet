@@ -2,7 +2,6 @@ package io.iohk.scalanet.peergroup
 
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.decco._
 import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.{ChannelCreated, HandshakeFailed}
 import io.iohk.scalanet.peergroup.PeerGroup.{HandshakeException, ServerEvent}
@@ -12,6 +11,8 @@ import monix.execution.Scheduler
 import monix.reactive.Observable
 import monix.reactive.observables.ConnectableObservable
 import org.slf4j.LoggerFactory
+import scodec.Codec
+import shapeless.Lazy
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -180,18 +181,38 @@ class SimplePeerGroup[A, AA, M](
 }
 
 object SimplePeerGroup {
+  import scodec.codecs._
 
-  private[scalanet] sealed trait ControlMessage[A, AA]
+  implicit def mapCodec[K, V](implicit kC: Lazy[Codec[List[(K, V)]]]): Codec[Map[K, V]] = {
+    kC.value.xmap(list => list.toMap, map => map.toList)
+  }
 
-  private[scalanet] case class EnrolMe[A, AA](myAddress: A, multicastAddresses: List[A], myUnderlyingAddress: AA)
+  sealed trait ControlMessage[A, AA]
+
+  object ControlMessage {
+    implicit def controlDisc[A, AA](implicit cA: Codec[A], cAA: Codec[AA]): Discriminated[ControlMessage[A, AA], Int] =
+      Discriminated[ControlMessage[A, AA], Int](scodec.codecs.uint4)
+  }
+
+  case class EnrolMe[A, AA](myAddress: A, multicastAddresses: List[A], myUnderlyingAddress: AA)
       extends ControlMessage[A, AA]
 
-  private[scalanet] case class Enrolled[A, AA](
+  object EnrolMe {
+    implicit def enrolMeDisc[A, AA]: Discriminator[ControlMessage[A, AA], EnrolMe[A, AA], Int] =
+      Discriminator[ControlMessage[A, AA], EnrolMe[A, AA], Int](0)
+  }
+
+  case class Enrolled[A, AA](
       address: A,
       underlyingAddress: AA,
       routingTable: Map[A, AA],
       multiCastTable: Map[A, List[AA]]
   ) extends ControlMessage[A, AA]
+
+  object Enrolled {
+    implicit def enrolledDisc[A, AA]: Discriminator[ControlMessage[A, AA], Enrolled[A, AA], Int] =
+      Discriminator[ControlMessage[A, AA], Enrolled[A, AA], Int](1)
+  }
 
   case class Config[A, AA](processAddress: A, multicastAddresses: List[A], knownPeers: Map[A, AA])
 }

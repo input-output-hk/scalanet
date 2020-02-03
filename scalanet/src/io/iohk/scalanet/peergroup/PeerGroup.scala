@@ -1,6 +1,6 @@
 package io.iohk.scalanet.peergroup
 
-import io.iohk.decco.Codec
+import scodec.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
 import monix.eval.Task

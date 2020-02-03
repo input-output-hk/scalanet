@@ -1,122 +1,69 @@
 package io.iohk.scalanet.codec
 
-import java.nio.ByteBuffer
+import monix.execution.atomic.AtomicAny
+import scodec.bits.BitVector
+import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
+import scodec.codecs._
 
-import io.iohk.decco.{BufferInstantiator, Codec}
-import io.iohk.decco.Codec.Failure
-import io.iohk.scalanet.codec.FramingCodec.State._
-import io.iohk.scalanet.codec.FramingCodec._
+class FramingCodec[T](val messageCodec: Codec[T], maxMessageLength: Int = 32) extends StreamCodec[T] {
 
-import scala.collection.mutable
-import scala.collection.mutable.ListBuffer
+  private val longCodec = ulong(maxMessageLength)
 
-class FramingCodec[T](val messageCodec: Codec[T], val maxFrameLength: Int = Int.MaxValue) extends StreamCodec[T] {
+  private val codec = variableSizeBitsLong(longCodec, messageCodec)
 
-  private var state: State = ReadingLength
-  private var length: Int = 0
-  private var db: ByteBuffer = ByteBuffer.allocate(0)
-  private val nlb = ByteBuffer.allocate(4)
-  private var skipped: Int = 0
+  private val atomicBuffer = AtomicAny[BitVector](BitVector.empty)
 
-  override def streamDecode[B](source: B)(implicit bi: BufferInstantiator[B]): Seq[T] = this.synchronized {
-    val b = bi.asByteBuffer(source)
-    val s = mutable.ListBuffer[T]()
-    while (b.hasRemaining) {
-      state match {
-        case ReadingLength =>
-          readLength(b)
-        case ReadingBytes =>
-          readBytes(b, s)
-        case SkippingBytes =>
-          skipBytes(b)
-      }
+  override def streamDecode(newBits: BitVector): Seq[T] = {
+    val result = atomicBuffer.transformAndExtract { state =>
+      val newBuffer = state ++ newBits
+      val (resultingBuffer, decodedMessages) = processBuffer(newBuffer, codec)
+      (decodedMessages, resultingBuffer)
     }
-    s
+    result
   }
 
-  override def encode[B](t: T)(implicit bi: BufferInstantiator[B]): B = {
-    val encodedMessage = bi.asByteBuffer(messageCodec.encode(t))
-    val size = encodedMessage.capacity()
-    val bb = bi.instantiateByteBuffer(size + 4)
-    bb.putInt(size)
-    bb.put(encodedMessage)
-    bb.position(0)
-    bi.asB(bb)
+  override def cleanSlate: StreamCodec[T] = new FramingCodec[T](messageCodec, maxMessageLength)
+
+  override def encode(value: T): Attempt[BitVector] = codec.encode(value)
+
+  override def decode(bits: BitVector): Attempt[DecodeResult[T]] = {
+    codec.decode(bits)
   }
 
-  override def decode[B](start: Int, source: B)(implicit bi: BufferInstantiator[B]): Either[Failure, T] = {
-    messageCodec.decode(start + 4, source)
-  }
+  override def sizeBound: SizeBound = codec.sizeBound
 
-  override def decode[B](source: B)(implicit bi: BufferInstantiator[B]): Either[Failure, T] = {
-    decode(0, source)
-  }
-
-  override def cleanSlate: FramingCodec[T] = new FramingCodec[T](messageCodec)
-
-  private def readLength[B](b: ByteBuffer): Unit = {
-    while (b.remaining() > 0 && nlb.position() < 4) {
-      nlb.put(b.get())
-    }
-    if (nlb.position() == 4) {
-      val l = nlb.getInt(0)
-      if (l > maxFrameLength) {
-        nlb.clear()
-        length = l
-        state = SkippingBytes
+  private def processBuffer[M](buf: BitVector, c: Codec[M]): (BitVector, Seq[M]) = {
+    @scala.annotation.tailrec
+    def go(left: BitVector, processed: Seq[M]): (BitVector, Seq[M]) = {
+      if (left.isEmpty) {
+        (left, processed)
       } else {
-        length = nlb.getInt(0)
-        nlb.clear()
-        db = ByteBuffer.allocate(length)
-        state = ReadingBytes
+        c.decode(left) match {
+          case Attempt.Successful(v) =>
+            go(v.remainder, processed :+ v.value)
+          case Attempt.Failure(x) =>
+            x match {
+              case Err.InsufficientBits(needed, have, _)
+                  if (isReadingCorrectSize(left, have, needed) || isReadingCorrectValue(left, have, needed)) =>
+                (left, processed)
+
+              case e =>
+                // Unexpected error, it can  be that messages were in wrong format, or we got some malicious peers.
+                // Reset the buffer
+                (BitVector.empty, processed)
+            }
+        }
       }
     }
+    go(buf, Seq())
   }
 
-  private def readBytes[B](b: ByteBuffer, s: ListBuffer[T])(implicit bi: BufferInstantiator[B]): Unit = {
-    val remainingBytes = length - db.position()
-    if (b.remaining() >= remainingBytes) {
-      readUnchecked(remainingBytes, b, db)
-      db.position(0)
-      messageCodec.decode(bi.asB(db)).foreach(message => s += message)
-      state = ReadingLength
-    } else { // (b.remaining() < remainingBytes)
-      readUnchecked(b.remaining(), b, db)
-    }
+  private def isReadingCorrectSize(bufferRead: BitVector, have: Long, needed: Long) = {
+    (bufferRead.size == have) && (needed == maxMessageLength)
   }
 
-  private def skipBytes[B](b: ByteBuffer): Unit = {
-    val remainingBytes = length - skipped
-    if (b.remaining() >= remainingBytes) {
-      skipUnchecked(remainingBytes, b)
-      skipped = 0
-      state = ReadingLength
-    } else {
-      skipped += b.remaining()
-      skipUnchecked(b.remaining(), b)
-      assert(b.remaining() == 0, "didn't read the buffer")
-    }
+  private def isReadingCorrectValue(bufferRead: BitVector, have: Long, needed: Long) = {
+    val l = bufferRead.size - maxMessageLength
+    (l == have) && have < needed
   }
-}
-
-object FramingCodec {
-
-  trait State
-
-  object State {
-    case object ReadingLength extends State
-    case object ReadingBytes extends State
-    case object SkippingBytes extends State
-  }
-
-  private def readUnchecked(n: Int, from: ByteBuffer, to: ByteBuffer): Unit = {
-    var m: Int = 0
-    while (m < n) {
-      to.put(from.get())
-      m += 1
-    }
-  }
-
-  private def skipUnchecked(n: Int, from: ByteBuffer): Unit =
-    from.position(from.position() + n)
 }

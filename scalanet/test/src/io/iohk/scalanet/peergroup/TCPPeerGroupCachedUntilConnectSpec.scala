@@ -1,8 +1,5 @@
 package io.iohk.scalanet.peergroup
 
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-import io.iohk.decco.Codec
-import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.TaskValues._
 import io.iohk.scalanet.codec.FramingCodec
@@ -12,6 +9,8 @@ import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.{BeforeAndAfterAll, FlatSpec}
+import scodec.Codec
+import scodec.codecs.implicits.implicitStringCodec
 
 import scala.concurrent.duration._
 

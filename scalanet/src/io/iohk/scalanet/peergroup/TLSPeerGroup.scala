@@ -2,12 +2,10 @@ package io.iohk.scalanet.peergroup
 
 import java.io.IOException
 import java.net.{ConnectException, InetSocketAddress}
-import java.nio.ByteBuffer
 import java.nio.channels.ClosedChannelException
 import java.security.PrivateKey
 import java.security.cert.{Certificate, X509Certificate}
 
-import io.iohk.decco._
 import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
@@ -27,6 +25,7 @@ import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.observables.ConnectableObservable
 import org.slf4j.LoggerFactory
+import scodec.bits.BitVector
 
 import scala.collection.JavaConverters._
 import scala.concurrent.Promise
@@ -40,12 +39,11 @@ import scala.util.control.NonFatal
   * that are not instances of TLSPeerGroup.
   *
   * @param config bind address etc. See the companion object.
-  * @param codec  a decco codec for reading writing messages to NIO ByteBuffer.
+  * @param codec  a scodec codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
 class TLSPeerGroup[M](val config: Config)(
     implicit codec: StreamCodec[M],
-    bi: BufferInstantiator[ByteBuffer],
     scheduler: Scheduler
 ) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
@@ -76,7 +74,7 @@ class TLSPeerGroup[M](val config: Config)(
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
-        val newChannel = new ServerChannelImpl[M](serverSubject, ch, sslServerCtx, codec, bi)
+        val newChannel = new ServerChannelImpl[M](serverSubject, ch, sslServerCtx, codec)
         serverSubject.onNext(ChannelCreated(newChannel))
         log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
@@ -95,7 +93,7 @@ class TLSPeerGroup[M](val config: Config)(
   override def processAddress: InetMultiAddress = config.processAddress
 
   override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
-    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, sslClientCtx, codec, bi).initialize
+    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, sslClientCtx, codec).initialize
   }
 
   override def server(): ConnectableObservable[ServerEvent[InetMultiAddress, M]] = serverSubject
@@ -167,8 +165,7 @@ object TLSPeerGroup {
 
   private class MessageNotifier[M](
       val messageSubject: ConnectableSubject[M],
-      codec: StreamCodec[M],
-      bi: BufferInstantiator[ByteBuffer]
+      codec: StreamCodec[M]
   ) extends ChannelInboundHandlerAdapter {
 
     private val log = LoggerFactory.getLogger(getClass)
@@ -184,7 +181,7 @@ object TLSPeerGroup {
             s"to local address ${ctx.channel().localAddress()}"
         )
         codec
-          .streamDecode(byteBuf.nioBuffer().asReadOnlyBuffer())(bi)
+          .streamDecode(BitVector(byteBuf.nioBuffer()))
           .foreach(message => messageSubject.onNext(message))
       } finally {
         byteBuf.release()
@@ -200,8 +197,7 @@ object TLSPeerGroup {
       inetSocketAddress: InetSocketAddress,
       clientBootstrap: Bootstrap,
       sslClientCtx: SslContext,
-      codec: StreamCodec[M],
-      bi: BufferInstantiator[ByteBuffer]
+      codec: StreamCodec[M]
   )(implicit scheduler: Scheduler)
       extends Channel[InetMultiAddress, M] {
 
@@ -251,7 +247,7 @@ object TLSPeerGroup {
                 }
               }
             })
-            .addLast(new MessageNotifier[M](messageSubject, codec, bi))
+            .addLast(new MessageNotifier[M](messageSubject, codec))
         }
       })
 
@@ -287,7 +283,9 @@ object TLSPeerGroup {
             s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
               s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
           )
-          toTask(ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
+          Task.fromTry(codec.encode(message).toTry).flatMap { enc =>
+            toTask(ctx.writeAndFlush(Unpooled.wrappedBuffer(enc.toByteBuffer)))
+          }
         })
         .onErrorRecoverWith {
           case e: IOException =>
@@ -311,8 +309,7 @@ object TLSPeerGroup {
       serverSubject: ConnectableSubject[ServerEvent[InetMultiAddress, M]],
       val nettyChannel: SocketChannel,
       sslServerCtx: SslContext,
-      codec: StreamCodec[M],
-      bi: BufferInstantiator[ByteBuffer]
+      codec: StreamCodec[M]
   )(implicit scheduler: Scheduler)
       extends Channel[InetMultiAddress, M] {
 
@@ -342,16 +339,18 @@ object TLSPeerGroup {
           }
         }
       })
-      .addLast(new MessageNotifier(messageSubject, codec, bi))
+      .addLast(new MessageNotifier(messageSubject, codec))
 
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
-      toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
-        .onErrorRecoverWith {
-          case e: ClosedChannelException =>
-            Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
-        }
+      Task.fromTry(codec.encode(message).toTry).flatMap { enc =>
+        toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(enc.toByteBuffer)))
+          .onErrorRecoverWith {
+            case e: IOException =>
+              Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
+          }
+      }
     }
 
     override def in: ConnectableObservable[M] = messageSubject

@@ -1,12 +1,8 @@
 package io.iohk.scalanet.peergroup
 
-import java.nio.ByteBuffer
 import java.security.PrivateKey
 import java.security.cert.{Certificate, CertificateFactory}
 
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-import io.iohk.decco.auto._
-import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.TaskValues._
@@ -25,6 +21,8 @@ import org.scalatest.RecoverMethods.recoverToExceptionIf
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.{BeforeAndAfterAll, FlatSpec}
+import scodec.Codec
+import scodec.codecs.implicits.implicitStringCodec
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -170,7 +168,7 @@ object TLSPeerGroupSpec {
 
   def withTwoTLSPeerGroups[M](cgens: (String => Config)*)(
       testCode: (TLSPeerGroup[M], TLSPeerGroup[M]) => Any
-  )(implicit codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = cgens.foreach { cgen =>
+  )(implicit codec: StreamCodec[M]): Unit = cgens.foreach { cgen =>
     val pg1 = tlsPeerGroup[M](cgen("alice"))
     val pg2 = tlsPeerGroup[M](cgen("bob"))
     println(s"Alice is ${pg1.processAddress}")
@@ -185,7 +183,7 @@ object TLSPeerGroupSpec {
 
   def withATLSPeerGroup[M](cgens: (String => Config)*)(
       testCode: TLSPeerGroup[M] => Any
-  )(implicit codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = cgens.foreach { cgen =>
+  )(implicit codec: StreamCodec[M]): Unit = cgens.foreach { cgen =>
     val pg = tlsPeerGroup[M](cgen("alice"))
     try {
       testCode(pg)
@@ -196,7 +194,7 @@ object TLSPeerGroupSpec {
 
   def tlsPeerGroup[M](
       config: Config
-  )(implicit codec: StreamCodec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): TLSPeerGroup[M] = {
+  )(implicit codec: StreamCodec[M]): TLSPeerGroup[M] = {
     val pg = new TLSPeerGroup[M](config)
     Await.result(pg.initialize().runToFuture, Duration.Inf)
     pg
