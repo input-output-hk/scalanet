@@ -1,21 +1,18 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
-import java.nio.ByteBuffer
 import java.util.UUID
 
 import cats.effect.concurrent.Ref
-import io.iohk.decco.{BufferInstantiator, Codec, CodecContract}
-import io.iohk.scalanet.NetUtils.aRandomAddress
 import io.iohk.scalanet.codec.FramingCodec
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.ChannelId
 import io.iohk.scalanet.peergroup.ReqResponseProtocol._
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.observables.ConnectableObservable
+import scodec.Codec
 
-import scala.concurrent.duration._
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration.{FiniteDuration, _}
 
 /**
   * Simple higher level protocol on top of generic peer group. User is shielded from differnt implementation details like:
@@ -25,7 +22,7 @@ import scala.concurrent.duration.FiniteDuration
   *   - it lacks any error handling
   *   - it is not entairly thread safe
   *   - can only handle simple server handler
-  *   - there is not resource cleaning
+  *   - there is no resource cleaning
   *
   * @param group transport peer group
   * @param state currently open client channels
@@ -108,22 +105,10 @@ class ReqResponseProtocol[M](
 }
 
 object ReqResponseProtocol {
-  final case class MessageEnvelope[M](id: UUID, m: M)
+  import scodec.codecs.implicits._
 
-  object MessageEnvelope {
-    implicit def mCCinstance[M](implicit codecContract: CodecContract[M]): CodecContract[MessageEnvelope[M]] = {
-      import io.iohk.decco.auto._
-      val uud = implicitly[CodecContract[UUID]]
-      // it would be nice to have such combinators for Codec not only  CodeContract
-      // manual coded is needed as auto deriviation does not handle well cases when class has abstract type member here M
-      uud
-        .zip(codecContract)
-        .map(
-          { case (uuid, m) => MessageEnvelope(uuid, m) },
-          fi => (fi.id, fi.m)
-        )
-    }
-  }
+  // Default scodec product codec deriviation due to implicits
+  final case class MessageEnvelope[M](id: UUID, m: M)
 
   private def buildProtocol[M](
       group: PeerGroup[InetMultiAddress, MessageEnvelope[M]]
@@ -140,10 +125,8 @@ object ReqResponseProtocol {
   case object Tcp extends TransportProtocol
 
   def getTcpReqResponseProtocolClient[M](
-      address: InetSocketAddress = aRandomAddress()
-  )(implicit s: Scheduler, b: BufferInstantiator[ByteBuffer], c: CodecContract[M]): Task[ReqResponseProtocol[M]] = {
-    import MessageEnvelope._
-    import io.iohk.decco.auto._
+      address: InetSocketAddress
+  )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[M]] = {
     val codec = implicitly[Codec[MessageEnvelope[M]]]
     implicit lazy val framingCodec = new FramingCodec[MessageEnvelope[M]](codec)
     val pg1 = new TCPPeerGroup[MessageEnvelope[M]](TCPPeerGroup.Config(address))
@@ -151,18 +134,16 @@ object ReqResponseProtocol {
   }
 
   def getUdpReqResponseProtocolClient[M](
-      address: InetSocketAddress = aRandomAddress()
-  )(implicit s: Scheduler, b: BufferInstantiator[ByteBuffer], c: CodecContract[M]): Task[ReqResponseProtocol[M]] = {
-    import MessageEnvelope._
-    import io.iohk.decco.auto._
+      address: InetSocketAddress
+  )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[M]] = {
     val pg1 = new UDPPeerGroup[MessageEnvelope[M]](UDPPeerGroup.Config(address))
     buildProtocol(pg1)
   }
 
   def getReqResponseProtocol[M](
       transport: TransportProtocol,
-      address: InetSocketAddress = aRandomAddress()
-  )(implicit s: Scheduler, b: BufferInstantiator[ByteBuffer], c: CodecContract[M]): Task[ReqResponseProtocol[M]] = {
+      address: InetSocketAddress
+  )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[M]] = {
     transport match {
       case Udp => getUdpReqResponseProtocolClient(address)
       case Tcp => getTcpReqResponseProtocolClient(address)
