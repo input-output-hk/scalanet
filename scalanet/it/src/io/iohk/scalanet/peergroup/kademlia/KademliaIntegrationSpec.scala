@@ -163,9 +163,10 @@ object KademliaIntegrationSpec {
 
   val randomGen = new SecureRandom()
   val testBitLength = 16
-  import io.iohk.scalanet.peergroup.kademlia.BitVectorCodec._
-  import io.iohk.decco.auto._
-  import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
+
+  import io.iohk.scalanet.codec.DefaultCodecs.KademliaMessages._
+  import io.iohk.scalanet.codec.DefaultCodecs.General._
+  import scodec.codecs.implicits._
 
   def startRouter(
       udpConfig: UDPPeerGroup.Config,

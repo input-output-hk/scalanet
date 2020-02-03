@@ -2,9 +2,6 @@ package io.iohk.scalanet.peergroup
 
 import java.io.IOException
 import java.net.{ConnectException, InetAddress, InetSocketAddress}
-import java.nio.ByteBuffer
-
-import io.iohk.decco._
 import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
@@ -27,6 +24,7 @@ import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.observables.ConnectableObservable
 import org.slf4j.LoggerFactory
+import scodec.bits.BitVector
 
 import scala.concurrent.Promise
 import scala.util.control.NonFatal
@@ -45,7 +43,6 @@ import scala.util.control.NonFatal
   */
 class TCPPeerGroup[M](val config: Config)(
     implicit codec: StreamCodec[M],
-    bi: BufferInstantiator[ByteBuffer],
     scheduler: Scheduler
 ) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
@@ -64,7 +61,7 @@ class TCPPeerGroup[M](val config: Config)(
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
-        val newChannel = new ServerChannelImpl[M](ch, codec.cleanSlate, bi)
+        val newChannel = new ServerChannelImpl[M](ch, codec.cleanSlate)
         serverSubject.onNext(ChannelCreated(newChannel))
         log.debug(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
@@ -83,7 +80,7 @@ class TCPPeerGroup[M](val config: Config)(
   override def processAddress: InetMultiAddress = config.processAddress
 
   override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
-    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, codec.cleanSlate, bi).initialize
+    new ClientChannelImpl[M](to.inetSocketAddress, clientBootstrap, codec.cleanSlate).initialize
   }
 
   override def server(): ConnectableObservable[ServerEvent[InetMultiAddress, M]] = serverSubject
@@ -110,8 +107,7 @@ object TCPPeerGroup {
 
   private[scalanet] class ServerChannelImpl[M](
       val nettyChannel: SocketChannel,
-      codec: StreamCodec[M],
-      bi: BufferInstantiator[ByteBuffer]
+      codec: StreamCodec[M]
   )(implicit scheduler: Scheduler)
       extends Channel[InetMultiAddress, M] {
 
@@ -124,16 +120,18 @@ object TCPPeerGroup {
 
     nettyChannel
       .pipeline()
-      .addLast(new MessageNotifier(messageSubject, codec, bi))
+      .addLast(new MessageNotifier(messageSubject, codec))
 
     override val to: InetMultiAddress = InetMultiAddress(nettyChannel.remoteAddress())
 
     override def sendMessage(message: M): Task[Unit] = {
-      toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
-        .onErrorRecoverWith {
-          case e: IOException =>
-            Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
-        }
+      Task.fromTry(codec.encode(message).toTry).flatMap { enc =>
+        toTask(nettyChannel.writeAndFlush(Unpooled.wrappedBuffer(enc.toByteBuffer)))
+          .onErrorRecoverWith {
+            case e: IOException =>
+              Task.raiseError(new ChannelBrokenException[InetMultiAddress](to, e))
+          }
+      }
     }
 
     override def in: ConnectableObservable[M] = messageSubject
@@ -147,8 +145,7 @@ object TCPPeerGroup {
   private class ClientChannelImpl[M](
       inetSocketAddress: InetSocketAddress,
       clientBootstrap: Bootstrap,
-      codec: StreamCodec[M],
-      bi: BufferInstantiator[ByteBuffer]
+      codec: StreamCodec[M]
   )(implicit scheduler: Scheduler)
       extends Channel[InetMultiAddress, M] {
 
@@ -180,7 +177,7 @@ object TCPPeerGroup {
                 deactivation.success(())
               }
             })
-            .addLast(new MessageNotifier[M](messageSubject, codec, bi))
+            .addLast(new MessageNotifier[M](messageSubject, codec))
         }
       })
 
@@ -201,7 +198,9 @@ object TCPPeerGroup {
             s"Processing outbound message from local address ${ctx.channel().localAddress()} " +
               s"to remote address ${ctx.channel().remoteAddress()} via channel id ${ctx.channel().id()}"
           )
-          toTask(ctx.writeAndFlush(Unpooled.wrappedBuffer(codec.encode(message)(bi))))
+          Task.fromTry(codec.encode(message).toTry).flatMap { enc =>
+            toTask(ctx.writeAndFlush(Unpooled.wrappedBuffer(enc.toByteBuffer)))
+          }
         })
         .onErrorRecoverWith {
           case e: IOException =>
@@ -223,8 +222,7 @@ object TCPPeerGroup {
 
   private class MessageNotifier[M](
       val messageSubject: ConnectableSubject[M],
-      codec: StreamCodec[M],
-      bi: BufferInstantiator[ByteBuffer]
+      codec: StreamCodec[M]
   ) extends ChannelInboundHandlerAdapter {
 
     private val log = LoggerFactory.getLogger(getClass)
@@ -239,7 +237,8 @@ object TCPPeerGroup {
           s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
             s"to local address ${ctx.channel().localAddress()}"
         )
-        codec.streamDecode(byteBuf.nioBuffer())(bi).foreach(message => messageSubject.onNext(message))
+        val vec = BitVector(byteBuf.nioBuffer())
+        codec.streamDecode(vec).foreach(message => messageSubject.onNext(message))
       } finally {
         byteBuf.release()
       }

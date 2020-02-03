@@ -7,9 +7,6 @@ import org.scalatest.Matchers._
 import io.iohk.scalanet.NetUtils._
 
 import scala.concurrent.duration._
-import io.iohk.decco.auto._
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-import io.iohk.decco.Codec
 import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import org.scalatest.concurrent.ScalaFutures._
@@ -19,6 +16,9 @@ import monix.eval.Task
 import monix.execution.Scheduler
 import monix.execution.schedulers.TestScheduler
 import org.scalatest.RecoverMethods._
+import scodec.Codec
+import scodec.bits.ByteVector
+import scodec.codecs.implicits._
 
 import scala.concurrent.Await
 
@@ -30,10 +30,10 @@ class UDPPeerGroupSpec extends FlatSpec with EitherValues {
   behavior of "UDPPeerGroup"
 
   it should "report an error for sending a message greater than the MTU" in
-    withARandomUDPPeerGroup[Array[Byte]] { alice =>
+    withARandomUDPPeerGroup[ByteVector] { alice =>
       val address = InetMultiAddress(NetUtils.aRandomAddress())
-      val invalidMessage = NetUtils.randomBytes(16777216)
-      val messageSize = Codec[Array[Byte]].encode(invalidMessage).capacity()
+      val invalidMessage = ByteVector(NetUtils.randomBytes(16777216))
+      val messageSize = Codec[ByteVector].encode(invalidMessage).toOption.get.toByteBuffer.capacity()
 
       val error = recoverToExceptionIf[MessageMTUException[InetMultiAddress]] {
         alice.client(address).flatMap(channel => channel.sendMessage(invalidMessage)).runToFuture

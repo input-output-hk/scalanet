@@ -1,12 +1,10 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
-import java.nio.ByteBuffer
 import java.security.cert.Certificate
 import java.security.{PrivateKey, PublicKey}
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.DTLSPeerGroup.Config
@@ -21,13 +19,14 @@ import org.eclipse.californium.scandium.DTLSConnector
 import org.eclipse.californium.scandium.config.DtlsConnectorConfig
 import org.eclipse.californium.scandium.dtls.cipher.CipherSuite._
 import org.eclipse.californium.scandium.dtls.{HandshakeException, Handshaker, SessionAdapter}
+import scodec.Codec
+import scodec.bits.BitVector
 
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
 
 class DTLSPeerGroup[M](val config: Config)(
     implicit codec: Codec[M],
-    bufferInstantiator: BufferInstantiator[ByteBuffer],
     scheduler: Scheduler
 ) extends PeerGroup[InetMultiAddress, M] {
 
@@ -70,31 +69,32 @@ class DTLSPeerGroup[M](val config: Config)(
     override val in: ConnectableObservable[M] = channelSubject
 
     override def sendMessage(message: M): Task[Unit] = {
-      import io.iohk.scalanet.peergroup.BufferConversionOps._
-      val buffer = codec.encode(message)
+      Task.fromTry(codec.encode(message).toTry).flatMap { encoded =>
+        val asBuffer = encoded.toByteBuffer
+        Task
+          .async[Unit] { cb: Callback[Throwable, Unit] =>
+            val messageCallback = new MessageCallback {
+              override def onConnecting(): Unit = ()
+              override def onDtlsRetransmission(i: Int): Unit = ()
+              override def onContextEstablished(endpointContext: EndpointContext): Unit = ()
 
-      Task
-        .async[Unit] { cb: Callback[Throwable, Unit] =>
-          val messageCallback = new MessageCallback {
-            override def onConnecting(): Unit = ()
-            override def onDtlsRetransmission(i: Int): Unit = ()
-            override def onContextEstablished(endpointContext: EndpointContext): Unit = ()
-
-            override def onSent(): Unit = cb.onSuccess(())
-            override def onError(throwable: Throwable): Unit = throwable match {
-              case h: HandshakeException =>
-                cb.onError(new PeerGroup.HandshakeException[InetMultiAddress](to, h))
-              case _: IllegalArgumentException =>
-                cb.onError(new MessageMTUException[InetMultiAddress](to, buffer.capacity()))
+              override def onSent(): Unit = cb.onSuccess(())
+              override def onError(throwable: Throwable): Unit = throwable match {
+                case h: HandshakeException =>
+                  cb.onError(new PeerGroup.HandshakeException[InetMultiAddress](to, h))
+                case _: IllegalArgumentException =>
+                  cb.onError(new MessageMTUException[InetMultiAddress](to, asBuffer.capacity()))
+              }
             }
+
+            val rawData =
+              RawData
+                .outbound(encoded.toByteArray, new AddressEndpointContext(to.inetSocketAddress), messageCallback, false)
+
+            dtlsConnector.send(rawData)
+
           }
-
-          val rawData =
-            RawData.outbound(buffer.toArray, new AddressEndpointContext(to.inetSocketAddress), messageCallback, false)
-
-          dtlsConnector.send(rawData)
-
-        }
+      }
     }
 
     override def close(): Task[Unit] = {
@@ -129,7 +129,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
       val activeChannel: ChannelImpl = activeChannels(channelId)
 
-      val messageE = codec.decode(ByteBuffer.wrap(rawData.bytes))
+      val messageE = codec.decodeValue(BitVector(rawData.bytes)).toEither
 
       messageE.foreach(message => activeChannel.channelSubject.onNext(message))
     })
@@ -160,7 +160,7 @@ class DTLSPeerGroup[M](val config: Config)(
 
         val activeChannel: ChannelImpl = activeChannels.getOrElseUpdate(channelId, createNewChannel(rawData))
 
-        val messageE = codec.decode(ByteBuffer.wrap(rawData.bytes))
+        val messageE = codec.decodeValue(BitVector(rawData.bytes)).toEither
 
         messageE.foreach(message => activeChannel.channelSubject.onNext(message))
       }

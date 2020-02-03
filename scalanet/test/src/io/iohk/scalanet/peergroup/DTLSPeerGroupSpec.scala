@@ -1,12 +1,8 @@
 package io.iohk.scalanet.peergroup
 
-import java.nio.ByteBuffer
 import java.security.PrivateKey
 import java.security.cert.{Certificate, CertificateFactory}
 
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-import io.iohk.decco.auto._
-import io.iohk.decco.{BufferInstantiator, Codec}
 import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils.{aRandomAddress, isListeningUDP}
 import io.iohk.scalanet.TaskValues._
@@ -21,6 +17,9 @@ import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.RecoverMethods._
 import org.scalatest.concurrent.ScalaFutures._
+import scodec.Codec
+import scodec.bits.ByteVector
+import scodec.codecs.implicits._
 
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, _}
@@ -41,8 +40,8 @@ class DTLSPeerGroupSpec extends FlatSpec {
     }
 
   it should "report an error for a handshake failure -- client receives" in
-    withTwoDTLSPeerGroups[Array[Byte]](duffKeyConfig) { (alice, bob) =>
-      val alicesMessage = NetUtils.randomBytes(1500)
+    withTwoDTLSPeerGroups[ByteVector](duffKeyConfig) { (alice, bob) =>
+      val alicesMessage = ByteVector(NetUtils.randomBytes(1500))
 
       val aliceClient = alice.client(bob.processAddress).evaluated
 
@@ -54,10 +53,10 @@ class DTLSPeerGroupSpec extends FlatSpec {
     }
 
   it should "report an error for sending a message greater than the MTU" in
-    withADTLSPeerGroup[Array[Byte]](rawKeyConfig) { alice =>
+    withADTLSPeerGroup[ByteVector](rawKeyConfig) { alice =>
       val address = InetMultiAddress(NetUtils.aRandomAddress())
-      val invalidMessage = NetUtils.randomBytes(16584)
-      val messageSize = Codec[Array[Byte]].encode(invalidMessage).capacity()
+      val invalidMessage = ByteVector(NetUtils.randomBytes(16584))
+      val messageSize = Codec[ByteVector].encode(invalidMessage).require.toByteBuffer.capacity()
 
       val error = recoverToExceptionIf[MessageMTUException[InetMultiAddress]] {
         alice.client(address).flatMap(channel => channel.sendMessage(invalidMessage)).runToFuture
@@ -122,7 +121,7 @@ object DTLSPeerGroupSpec {
 
   def withTwoDTLSPeerGroups[M](cgens: (String => Config)*)(
       testCode: (DTLSPeerGroup[M], DTLSPeerGroup[M]) => Any
-  )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = cgens.foreach { cgen =>
+  )(implicit codec: Codec[M]): Unit = cgens.foreach { cgen =>
     val pg1 = dtlsPeerGroup[M](cgen("alice"))
     val pg2 = dtlsPeerGroup[M](cgen("bob"))
     println(s"Alice is ${pg1.processAddress}")
@@ -137,7 +136,7 @@ object DTLSPeerGroupSpec {
 
   def withADTLSPeerGroup[M](cgens: (String => Config)*)(
       testCode: DTLSPeerGroup[M] => Any
-  )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): Unit = cgens.foreach { cgen =>
+  )(implicit codec: Codec[M]): Unit = cgens.foreach { cgen =>
     val pg = dtlsPeerGroup[M](cgen("alice"))
     try {
       testCode(pg)
@@ -148,7 +147,7 @@ object DTLSPeerGroupSpec {
 
   def dtlsPeerGroup[M](
       config: Config
-  )(implicit codec: Codec[M], bufferInstantiator: BufferInstantiator[ByteBuffer]): DTLSPeerGroup[M] = {
+  )(implicit codec: Codec[M]): DTLSPeerGroup[M] = {
     val pg = new DTLSPeerGroup[M](config)
     Await.result(pg.initialize().runToFuture, Duration.Inf)
     pg

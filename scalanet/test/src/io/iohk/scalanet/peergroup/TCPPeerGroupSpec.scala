@@ -1,8 +1,5 @@
 package io.iohk.scalanet.peergroup
 
-import io.iohk.decco.BufferInstantiator.global.HeapByteBuffer
-import io.iohk.decco.Codec
-import io.iohk.decco.auto._
 import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.TaskValues._
@@ -18,7 +15,8 @@ import org.scalatest.RecoverMethods._
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.{BeforeAndAfterAll, FlatSpec}
-
+import scodec.Codec
+import scodec.codecs.implicits.implicitStringCodec
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.Random

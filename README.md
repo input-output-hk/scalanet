@@ -10,7 +10,6 @@ What does all that mean?
  * Resource managed. Scalanet makes it as easy as possible to send and receive messages without having to open or close connections.
  * Asynchronous. Scalanet is non-blocking. In this regard, it is like netty, however, unlike netty, Scalanet uses *reactive*
  programming idioms. 
- * Strongly typed. The library can translate binary data to and from case classes through the use of our codec library, [decco](https://github.com/input-output-hk/decco.git). If you have used libraries like [circe](https://github.com/circe/circe) or other libraries that derive typeclasses with shapeless, decco works in the same way.
  * Technology support. Out of the box, Scalanet supports TCP and UDP (with other internet and non-internet technologies to come) but through an abstraction called the _Peer Group_, allows for the addition of other transports or more complex p2p overlays (kademlia, ethereum, etc). The _Peer Group_ provides a consistent interface whatever your networking approach.   
 
 It is well suited to peer-to-peer apps but supports client-server too.
