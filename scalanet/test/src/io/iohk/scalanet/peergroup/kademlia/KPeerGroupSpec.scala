@@ -1,5 +1,6 @@
 package io.iohk.scalanet.peergroup.kademlia
 
+import io.iohk.scalanet.codec.{EitherCodec, NodeRecordCode}
 import io.iohk.scalanet.peergroup.InMemoryPeerGroup.Network
 import io.iohk.scalanet.peergroup.PeerGroup.createOrThrow
 import io.iohk.scalanet.peergroup.StandardTestPack.messagingTest
@@ -15,16 +16,18 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.mockito.MockitoSugar._
 import org.scalatest.concurrent.ScalaFutures._
 import scodec.Codec
+
 import scala.concurrent.Await
 import scala.concurrent.duration._
-import scodec.codecs._
-import KPeerGroupSpec._
 
 class KPeerGroupSpec extends FlatSpec {
 
-  implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(
-    1 second
-  )
+  import scodec.codecs.implicits._
+  implicit val nodeRecordCodec = new NodeRecordCode[String]
+  implicit val codec = new EitherCodec[KRouter.NodeRecord[String], String]
+
+  implicit val patienceConfig: ScalaFutures.PatienceConfig =
+    PatienceConfig(1 second)
 
   behavior of "KPeerGroup"
 
@@ -39,14 +42,12 @@ class KPeerGroupSpec extends FlatSpec {
 }
 
 object KPeerGroupSpec {
-  import scodec.codecs.implicits._
-
-  implicit val eCodec = either(bool, Codec[NodeRecord[String]], Codec[String])
 
   def withTwoPeerGroups(a: NodeRecord[String], b: NodeRecord[String])(
       testCode: (KPeerGroup[String, String], KPeerGroup[String, String]) => Any
   )(
-      implicit scheduler: Scheduler
+      implicit scheduler: Scheduler,
+      codec: Codec[Either[NodeRecord[String], String]]
   ): Unit = {
 
     val n: Network[String, Either[NodeRecord[String], String]] = new Network()
