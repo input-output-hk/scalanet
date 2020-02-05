@@ -241,7 +241,6 @@ class KRouter[A](
     }.memoizeOnSuccess
 
     val xorOrder = new XorOrder[A](targetNodeId)
-
     def query(knownNodeRecord: NodeRecord[A]): Task[Seq[NodeRecord[A]]] = {
 
       val requestId = uuidSource()
@@ -299,6 +298,7 @@ class KRouter[A](
         shouldFinish = nodesLeftToQuery.isEmpty || closestKnodes.size == config.k
       } yield shouldFinish
     }
+<<<<<<< HEAD
 
     def getNodesToQuery(
         currentClosestNode: NodeRecord[A],
@@ -330,6 +330,39 @@ class KRouter[A](
       } yield nodesToQuery
     }
 
+=======
+
+    def getNodesToQuery(
+        currentClosestNode: NodeRecord[A],
+        receivedNodes: Seq[NodeRecord[A]],
+        nodesFound: NonEmptyList[NodeRecord[A]],
+        lookupState: Ref[Task, Map[BitVector, RequestResult]]
+    ): Task[Seq[NodeRecord[A]]] = {
+
+      // All nodes which are closer to target, than the closest already found node
+      val closestNodes = receivedNodes.filter(node => xorOrder.compare(node, currentClosestNode) < 0)
+
+      // we chose either:
+      // k nodes from already found or
+      // alpha nodes from closest nodes received
+      val (nodesToQueryFrom, nodesToTake) =
+        if (closestNodes.isEmpty) (nodesFound.toList, config.k) else (closestNodes, config.alpha)
+
+      for {
+        nodesToQuery <- lookupState.modify { currentState =>
+          val unqueriedNodes = nodesToQueryFrom
+            .collect {
+              case node if !currentState.contains(node.id) => node
+            }
+            .take(nodesToTake)
+
+          val updatedMap = unqueriedNodes.foldLeft(currentState)((map, node) => map + (node.id -> RequestScheduled))
+          (updatedMap, unqueriedNodes)
+        }
+      } yield nodesToQuery
+    }
+
+>>>>>>> 83e076e2d23b5c3553879e0dc7f856459ff0f657
     /**
       * 1. Get alpha closest nodes
       * 2. Send parallel async Find_node request to alpha closest nodes
@@ -472,6 +505,7 @@ object KRouter {
       new KBuckets(config.nodeRecord.id, clock),
       Map(config.nodeRecord.id -> config.nodeRecord)
     )
+<<<<<<< HEAD
   }
 
   /**
@@ -532,3 +566,157 @@ object KRouter {
         }
       }
   }
+=======
+  }
+
+  /**
+    * Enrolls to kademlia network from provided bootstrap nodes and then start handling incoming requests.
+    * Use when finishing of enrollment is required before starting handling of incoming requests
+    *
+    * @param config discovery config
+    * @param network underlying kademlia network
+    * @param clock clock used in kbuckets, default is UTC
+    * @param uuidSource source to generate uuids, default is java built in UUID generator
+    * @tparam A type of addressing
+    * @return initialised kademlia router which handles incoming requests
+    */
+  def startRouterWithServerSeq[A](
+      config: Config[A],
+      network: KNetwork[A],
+      clock: Clock = Clock.systemUTC(),
+      uuidSource: () => UUID = () => UUID.randomUUID()
+  )(implicit codec: Codec[A]): Task[KRouter[A]] = {
+    for {
+      state <- Ref.of[Task, NodeRecordIndex[A]](getIndex(config, clock))
+      router <- Task.now(
+        new KRouter(config, network, state, clock, uuidSource)
+      )
+      _ <- router.enroll()
+      _ <- router.startServerHandling().startAndForget
+      _ <- router.startRefreshCycle().startAndForget
+    } yield router
+  }
+
+  /**
+    * Enrolls to kademlia network and start handling incoming requests and refresh buckets cycle in parallel
+    *
+    *
+    * @param config discovery config
+    * @param network underlying kademlia network
+    * @param clock clock used in kbuckets, default is UTC
+    * @param uuidSource source to generate uuids, default is java built in UUID generator
+    * @tparam A type of addressing
+    * @return initialised kademlia router which handles incoming requests
+    */
+  //TODO consider adding possibility of having lookup process and server processing on different schedulers
+  def startRouterWithServerPar[A](
+      config: Config[A],
+      network: KNetwork[A],
+      clock: Clock = Clock.systemUTC(),
+      uuidSource: () => UUID = () => UUID.randomUUID()
+  )(implicit codec: Codec[A]): Task[KRouter[A]] = {
+    Ref
+      .of[Task, NodeRecordIndex[A]](getIndex(config, clock))
+      .flatMap { state =>
+        Task.now(new KRouter(config, network, state, clock, uuidSource)).flatMap { router =>
+          Task.parMap3(
+            router.enroll(),
+            router.startServerHandling().startAndForget,
+            router.startRefreshCycle().startAndForget
+          )((_, _, _) => router)
+        }
+      }
+  }
+
+  /**
+    * These node records are derived from Ethereum node records (https://eips.ethereum.org/EIPS/eip-778)
+    * @param id Kademlia routing direction (compressed public key).
+    * @param seq instance number of the NodeRecord.
+    * @param sign signature of the rest of NodeRecord
+    */
+  case class NodeRecord[A](id: BitVector, routingAddress: A, messagingAddress: A, seq: Long, sign: ECDSASignature) {
+    override def toString: String =
+      s"NodeRecord(sec_number = ${seq}, id = ${id.toHex}, routingAddress = $routingAddress, messagingAddress = $messagingAddress)"
+  }
+
+  object NodeRecord {
+    def apply[A](
+        id: BitVector,
+        routingAddress: A,
+        messagingAddress: A,
+        sec_number: Long,
+        keyPair: AsymmetricCipherKeyPair
+    )(implicit codec: Codec[A]): NodeRecord[A] = {
+      val encodedUUID = ByteBuffer.allocate(8)
+      encodedUUID.putLong(0, sec_number)
+      val encoded = id.toByteArray ++ codec
+        .encode[ByteBuffer](routingAddress)
+        .array() ++ codec
+        .encode[ByteBuffer](routingAddress)
+        .array() ++ encodedUUID.array()
+      val sign = crypto.ECDSASignature.sign(encoded, keyPair)
+      NodeRecord[A](id, routingAddress, messagingAddress, sec_number, sign)
+    }
+    def verify[A](n: NodeRecord[A])(implicit codec: Codec[A]): Boolean = {
+      val encodedUUID = ByteBuffer.allocate(8)
+      encodedUUID.putLong(0, n.seq)
+      val encoded = n.id.toByteArray ++ codec
+        .encode[ByteBuffer](n.routingAddress)
+        .array() ++ codec
+        .encode[ByteBuffer](n.routingAddress)
+        .array() ++ encodedUUID.array()
+      try {
+        crypto.verify(
+          encoded,
+          n.sign,
+          crypto.decodePublicKey(n.id.toByteArray)
+        )
+      } catch {
+        case e: IllegalArgumentException => false
+      }
+    }
+  }
+
+  private[scalanet] object KRouterInternals {
+    sealed abstract class RequestResult
+    case object RequestFailed extends RequestResult
+    case object RequestSuccess extends RequestResult
+    case object RequestScheduled extends RequestResult
+
+    case class QueryInfo[A](to: NodeRecord[A], result: RequestResult)
+    sealed abstract class QueryResult[A] {
+      def info: QueryInfo[A]
+    }
+    case class QueryFailed[A](info: QueryInfo[A]) extends QueryResult[A]
+    case class QuerySucceed[A](info: QueryInfo[A], foundNodes: Seq[NodeRecord[A]]) extends QueryResult[A]
+
+    object QueryResult {
+      def failed[A](to: NodeRecord[A]): QueryResult[A] =
+        QueryFailed(QueryInfo(to, RequestFailed))
+
+      def succeed[A](to: NodeRecord[A], nodes: Seq[NodeRecord[A]]): QuerySucceed[A] =
+        QuerySucceed(QueryInfo(to, RequestSuccess), nodes)
+
+    }
+
+    case class NodeRecordIndex[A](kBuckets: KBuckets, nodeRecords: Map[BitVector, NodeRecord[A]]) {
+      def addNodeRecord(nodeRecord: NodeRecord[A]): NodeRecordIndex[A] = {
+        copy(kBuckets = kBuckets.add(nodeRecord.id), nodeRecords = nodeRecords + (nodeRecord.id -> nodeRecord))
+      }
+
+      def removeNodeRecord(nodeRecord: NodeRecord[A]): NodeRecordIndex[A] = {
+        copy(kBuckets = kBuckets.remove(nodeRecord.id), nodeRecords = nodeRecords - nodeRecord.id)
+      }
+
+      def touchNodeRecord(nodeRecord: NodeRecord[A]): NodeRecordIndex[A] = {
+        copy(kBuckets = kBuckets.touch(nodeRecord.id))
+      }
+
+      def replaceNodeRecord(oldNode: NodeRecord[A], newNode: NodeRecord[A]): NodeRecordIndex[A] = {
+        val withRemoved = removeNodeRecord(oldNode)
+        withRemoved.addNodeRecord(newNode)
+      }
+    }
+  }
+}
+>>>>>>> 83e076e2d23b5c3553879e0dc7f856459ff0f657
