@@ -1,21 +1,20 @@
 package io.iohk.scalanet
 
-import java.math.BigInteger
 import java.security.SecureRandom
 
-import org.spongycastle.asn1.sec.SECNamedCurves
-import org.spongycastle.asn1.x9.X9ECParameters
-import org.spongycastle.crypto.AsymmetricCipherKeyPair
-import org.spongycastle.crypto.digests.SHA256Digest
-import org.spongycastle.crypto.generators.ECKeyPairGenerator
-import org.spongycastle.crypto.params.{
+import org.bouncycastle.asn1.sec.SECNamedCurves
+import org.bouncycastle.asn1.x9.X9ECParameters
+import org.bouncycastle.crypto.AsymmetricCipherKeyPair
+import org.bouncycastle.crypto.digests.SHA256Digest
+import org.bouncycastle.crypto.generators.ECKeyPairGenerator
+import org.bouncycastle.crypto.params.{
   AsymmetricKeyParameter,
   ECDomainParameters,
   ECKeyGenerationParameters,
   ECPrivateKeyParameters,
   ECPublicKeyParameters
 }
-import org.spongycastle.crypto.signers.{ECDSASigner, HMacDSAKCalculator}
+import org.bouncycastle.crypto.signers.{ECDSASigner, HMacDSAKCalculator}
 
 // Based in mantis cryptography package
 // https://github.com/input-output-hk/mantis/blob/master/src/main/scala/io/iohk/ethereum/crypto/package.scala

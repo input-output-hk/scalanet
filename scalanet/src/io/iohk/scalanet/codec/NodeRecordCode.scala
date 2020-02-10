@@ -1,51 +1,43 @@
 package io.iohk.scalanet.codec
 
-import io.iohk.scalanet.peergroup.kademlia.{KMessage, KRouter}
-import scodec.Attempt.{Failure, Successful}
+import io.iohk.scalanet.peergroup.kademlia.KRouter
 import scodec.{Attempt, Codec, DecodeResult, SizeBound}
 import scodec.bits.BitVector
 
-class NodeRecordCode[A](implicit codec: Codec[A],longCodec:Codec[Long],bitVectorCodec:Codec[BitVector]) extends Codec[KRouter.NodeRecord[A]] {
+class NodeRecordCode[A](implicit codec: Codec[A], longCodec: Codec[Long], bitVectorCodec: Codec[BitVector])
+    extends Codec[KRouter.NodeRecord[A]] {
   override def decode(bits: BitVector): Attempt[DecodeResult[KRouter.NodeRecord[A]]] = {
-    longCodec.decode(bits) match{
-      case Failure(f) => Failure(f)
-      case Successful(seq) => ECDSASignatureCodec.decode(seq.remainder) match{
-        case Failure(f) => Failure(f)
-        case Successful(sign) => codec.decode(sign.remainder) match{
-          case Failure(f) => Failure(f)
-          case Successful(routingAddress) => codec.decode(routingAddress.remainder) match{
-            case Failure(f) => Failure(f)
-            case Successful(messagingAddress) => bitVectorCodec.decode(messagingAddress.remainder) match{
-              case Failure(f) => Failure(f)
-              case Successful(id) => Successful(new DecodeResult[KRouter.NodeRecord[A]](KRouter.NodeRecord(id.value,routingAddress.value,messagingAddress.value,seq.value,sign.value),id.remainder))
-            }
-          }
-        }
-      }
-    }
+    for {
+      seq <- longCodec.decode(bits)
+      sign <- ECDSASignatureCodec.decode(seq.remainder)
+      routingAddress <- codec.decode(sign.remainder)
+      messagingAddress <- codec.decode(routingAddress.remainder)
+      id <- bitVectorCodec.decode(messagingAddress.remainder)
+    } yield
+      new DecodeResult[KRouter.NodeRecord[A]](
+        KRouter.NodeRecord(id.value, routingAddress.value, messagingAddress.value, seq.value, sign.value),
+        id.remainder)
   }
 
   override def encode(value: KRouter.NodeRecord[A]): Attempt[BitVector] = {
-    longCodec.encode(value.seq) match{
-      case Failure(f) => Failure(f)
-      case Successful(seq) => ECDSASignatureCodec.encode(value.sign) match{
-        case Failure(f) => Failure(f)
-        case Successful(sign) => codec.encode(value.routingAddress) match{
-          case Failure(f) => Failure(f)
-          case Successful(routingAddress) => codec.encode(value.messagingAddress) match{
-            case Failure(f) => Failure(f)
-            case Successful(messagingAddress) => bitVectorCodec.encode(value.id) match{
-              case Failure(f) => Failure(f)
-              case Successful(id) => Successful(seq ++ sign ++ routingAddress ++ messagingAddress ++ id)
-            }
-          }
-        }
-      }
-    }
+    for {
+      seq <- longCodec.encode(value.seq)
+      sign <- ECDSASignatureCodec.encode(value.sign)
+      routingAddress <- codec.encode(value.routingAddress)
+      messagingAddress <- codec.encode(value.messagingAddress)
+      id <- bitVectorCodec.encode(value.id)
+    } yield seq ++ sign ++ routingAddress ++ messagingAddress ++ id
   }
 
-  override def sizeBound: SizeBound = SizeBound(bitVectorCodec.sizeBound.lowerBound.+(longCodec.sizeBound.lowerBound.+(codec.sizeBound.lowerBound.+(ECDSASignatureCodec.sizeBound.lowerBound))),{
-    if(ECDSASignatureCodec.sizeBound.upperBound.isEmpty || bitVectorCodec.sizeBound.upperBound.isEmpty || longCodec.sizeBound.upperBound.isEmpty || codec.sizeBound.upperBound.isEmpty) None
-    else Some(bitVectorCodec.sizeBound.lowerBound.+(longCodec.sizeBound.lowerBound.+(codec.sizeBound.lowerBound.+(ECDSASignatureCodec.sizeBound.lowerBound))))
-  })
+  override def sizeBound: SizeBound =
+    SizeBound(
+      bitVectorCodec.sizeBound.lowerBound + (longCodec.sizeBound.lowerBound
+        + codec.sizeBound.lowerBound + ECDSASignatureCodec.sizeBound.lowerBound),
+      for {
+        signatureUpperBound <- ECDSASignatureCodec.sizeBound.upperBound
+        bitVectorUppeBound <- bitVectorCodec.sizeBound.upperBound
+        longUpperBound <- longCodec.sizeBound.upperBound
+        codecUpperBound <- codec.sizeBound.upperBound
+      } yield (signatureUpperBound + bitVectorUppeBound + longUpperBound + 2 * codecUpperBound)
+    )
 }

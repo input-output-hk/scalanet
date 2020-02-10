@@ -1,8 +1,8 @@
 package io.iohk.scalanet.crypto
 
-import org.spongycastle.crypto.AsymmetricCipherKeyPair
-import org.spongycastle.crypto.digests.SHA256Digest
-import org.spongycastle.crypto.signers.{ECDSASigner, HMacDSAKCalculator}
+import org.bouncycastle.crypto.AsymmetricCipherKeyPair
+import org.bouncycastle.crypto.digests.SHA256Digest
+import org.bouncycastle.crypto.signers.{ECDSASigner, HMacDSAKCalculator}
 
 object ECDSASignature {
 
@@ -14,7 +14,7 @@ object ECDSASignature {
     ECDSASignature(BigInt(1, r), BigInt(1, s))
   }
 
-  def sign(message: Array[Byte], keyPair: AsymmetricCipherKeyPair, chainId: Option[Byte] = None): ECDSASignature = {
+  def sign(message: Array[Byte], keyPair: AsymmetricCipherKeyPair): ECDSASignature = {
     val signer = new ECDSASigner(new HMacDSAKCalculator(new SHA256Digest))
     signer.init(true, keyPair.getPrivate)
     val components = signer.generateSignature(message)

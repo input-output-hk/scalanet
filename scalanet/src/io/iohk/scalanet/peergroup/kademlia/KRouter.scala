@@ -15,12 +15,15 @@ import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
 import monix.eval.Task
 import monix.reactive.{Consumer, Observable, OverflowStrategy}
 import org.slf4j.LoggerFactory
-import org.spongycastle.crypto.params.AsymmetricKeyParameter
+import org.bouncycastle.crypto.params.AsymmetricKeyParameter
 import scodec.bits.BitVector
 import io.iohk.scalanet.crypto
 import io.iohk.scalanet.crypto.ECDSASignature
-import org.spongycastle.crypto.AsymmetricCipherKeyPair
+import org.bouncycastle.crypto.AsymmetricCipherKeyPair
 import scodec.Codec
+import scodec.codecs.implicits._
+
+import scala.util.Try
 
 class KRouter[A](
     val config: Config[A],
@@ -145,7 +148,7 @@ class KRouter[A](
   }
 
   private def isFreshResult(previewsRegisterNodeRecord: Option[NodeRecord[A]], nodeRecord: NodeRecord[A]): Boolean =
-    previewsRegisterNodeRecord.isDefined && previewsRegisterNodeRecord.get.seq > nodeRecord.seq
+    previewsRegisterNodeRecord.exists(prev => prev.seq > nodeRecord.seq)
 
   def add(nodeRecord: NodeRecord[A]): Task[Unit] = {
     info(s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord)")
@@ -544,6 +547,20 @@ object KRouter {
   }
 
   object NodeRecord {
+    private def encodeNodeRecordWithoutSign[A](id: BitVector, routingAddress: A, messagingAddress: A, sec_number: Long)(
+        implicit codec: Codec[A]): BitVector = {
+      val encoded = for {
+        encodedSecNumber <- implicitLongCodec.encode(sec_number)
+        encodedID <- implicitBitVectorCodec.encode(id)
+        encodedRoutingAddress <- codec.encode(routingAddress)
+        encodedMessagingAddress <- codec.encode(messagingAddress)
+      } yield encodedSecNumber ++ encodedID ++ encodedRoutingAddress ++ encodedMessagingAddress
+      encoded.require
+    }
+
+    private def encodeNodeRecordWithoutSign[A](n: NodeRecord[A])(implicit codec: Codec[A]): BitVector =
+      encodeNodeRecordWithoutSign[A](n.id, n.routingAddress, n.messagingAddress, n.seq)
+
     def apply[A](
         id: BitVector,
         routingAddress: A,
@@ -551,41 +568,19 @@ object KRouter {
         sec_number: Long,
         keyPair: AsymmetricCipherKeyPair
     )(implicit codec: Codec[A]): NodeRecord[A] = {
-      val encodedUUID = ByteBuffer.allocate(8)
-      encodedUUID.putLong(0, sec_number)
-      val encoded = id.toByteArray ++ codec
-        .encode(routingAddress)
-        .toOption
-        .get
-        .toByteArray ++ codec
-        .encode(routingAddress)
-        .toOption
-        .get
-        .toByteArray ++ encodedUUID.array()
-      val sign = crypto.ECDSASignature.sign(encoded, keyPair)
+      val encoded = encodeNodeRecordWithoutSign[A](id, routingAddress, messagingAddress, sec_number)
+      val sign = crypto.ECDSASignature.sign(encoded.toByteArray, keyPair)
       NodeRecord[A](id, routingAddress, messagingAddress, sec_number, sign)
     }
+
     def verify[A](n: NodeRecord[A])(implicit codec: Codec[A]): Boolean = {
-      val encodedUUID = ByteBuffer.allocate(8)
-      encodedUUID.putLong(0, n.seq)
-      val encoded = n.id.toByteArray ++ codec
-        .encode(n.routingAddress)
-        .toOption
-        .get
-        .toByteArray ++ codec
-        .encode(n.routingAddress)
-        .toOption
-        .get
-        .toByteArray ++ encodedUUID.array()
-      try {
+      val encoded = encodeNodeRecordWithoutSign(n)
+      Try[Boolean](
         crypto.verify(
-          encoded,
+          encoded.toByteArray,
           n.sign,
           crypto.decodePublicKey(n.id.toByteArray)
-        )
-      } catch {
-        case e: IllegalArgumentException => false
-      }
+        )).getOrElse(false)
     }
   }
 

@@ -1,13 +1,15 @@
 package io.iohk.scalanet.codec
 
+import java.math.BigInteger
 import java.net.{InetAddress, InetSocketAddress}
 
 import io.iohk.scalanet.peergroup.InetMultiAddress
 import io.iohk.scalanet.peergroup.kademlia.KMessage
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
+import scodec.Attempt.{Failure, Successful}
 import scodec.bits.{BitVector, ByteVector}
-import scodec.{Codec, DecodeResult}
+import scodec.{Attempt, Codec, DecodeResult, SizeBound}
 import scodec.codecs.{Discriminated, Discriminator}
 import scodec.codecs._
 import shapeless.Lazy
@@ -41,7 +43,7 @@ object DefaultCodecs {
             b.value
           }
           DecodeResult(InetAddress.getByAddress(bts.toArray), b.remainder)
-        }
+      }
     )
 
     implicit val inetSocketAddress: Codec[InetSocketAddress] = {
@@ -56,6 +58,20 @@ object DefaultCodecs {
 
     implicit def seqCoded[A](implicit listCodec: Lazy[Codec[List[A]]]): Codec[Seq[A]] = {
       listCodec.value.xmap(l => l.toSeq, seq => seq.toList)
+    }
+
+    implicit val bigIntegerCodec: Codec[BigInteger] = new Codec[BigInteger] {
+      override def decode(bits: BitVector): Attempt[DecodeResult[BigInteger]] =
+        implicits.implicitByteVectorCodec.decode(bits) match {
+          case Failure(f) => Failure(f)
+          case Successful(value) =>
+            Successful(new DecodeResult[BigInteger](new BigInteger(value.value.toArray), value.remainder))
+        }
+
+      override def encode(value: BigInteger): Attempt[BitVector] =
+        implicits.implicitByteVectorCodec.encode(ByteVector(value.toByteArray))
+
+      override def sizeBound: SizeBound = implicits.implicitByteVectorCodec.sizeBound
     }
   }
 

@@ -1,36 +1,30 @@
 package io.iohk.scalanet.codec
 
-import java.math.BigInteger
-
 import io.iohk.scalanet.crypto.ECDSASignature
-import scodec.Attempt.{Failure, Successful}
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.BitVector
 import scodec.{Attempt, Codec, DecodeResult, SizeBound}
-import scodec.codecs.implicits.implicitByteVectorCodec
+import io.iohk.scalanet.codec.DefaultCodecs.General._
 
 object ECDSASignatureCodec extends Codec[ECDSASignature] {
   override def decode(bits: BitVector): Attempt[DecodeResult[ECDSASignature]] = {
-    implicitByteVectorCodec.decode(bits) match{
-      case Failure(f) => Failure(f)
-      case Successful(r) => implicitByteVectorCodec.decode(r.remainder) match{
-        case Failure(f) => Failure(f)
-        case Successful(s) => Successful(new DecodeResult[ECDSASignature](ECDSASignature(new BigInteger(r.value.toArray),new BigInteger(s.value.toArray)),s.remainder))
-      }
-    }
+    for {
+      r <- bigIntegerCodec.decode(bits)
+      s <- bigIntegerCodec.decode(r.remainder)
+    } yield new DecodeResult[ECDSASignature](ECDSASignature(r.value, s.value), s.remainder)
   }
 
   override def encode(value: ECDSASignature): Attempt[BitVector] = {
-    implicitByteVectorCodec.encode(ByteVector(value.r.toByteArray)) match{
-      case Failure(f) => Failure(f)
-      case Successful(r) => implicitByteVectorCodec.encode(ByteVector(value.s.toByteArray)) match{
-        case Failure(f) => Failure(f)
-        case Successful(s) => Successful(r++s)
-      }
-    }
+    for {
+      r <- bigIntegerCodec.encode(value.r.bigInteger)
+      s <- bigIntegerCodec.encode(value.s.bigInteger)
+    } yield r ++ s
   }
 
-  override def sizeBound: SizeBound = SizeBound(implicitByteVectorCodec.sizeBound.lowerBound*2,{
-    if(implicitByteVectorCodec.sizeBound.upperBound.isEmpty) None
-    else Some(implicitByteVectorCodec.sizeBound.upperBound.get*2)
-  })
+  override def sizeBound: SizeBound =
+    SizeBound(
+      bigIntegerCodec.sizeBound.lowerBound * 2,
+      for {
+        v <- bigIntegerCodec.sizeBound.upperBound
+      } yield 2 * v
+    )
 }
