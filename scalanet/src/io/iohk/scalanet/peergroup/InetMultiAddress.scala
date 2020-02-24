@@ -2,6 +2,14 @@ package io.iohk.scalanet.peergroup
 
 import java.net.{InetAddress, InetSocketAddress}
 
+trait Addressable[A] {
+  def getAddress(a: A): InetSocketAddress
+}
+
+object Addressable {
+  def apply[A](implicit sh: Addressable[A]): Addressable[A] = sh
+}
+
 /**
   * TCP and UDP (and other socket-based protocols) have a problem where addressing and multiplexing are coupled.
   * This means that, in TCP world a single node can have multiple addresses. Even though port numbers are used
@@ -35,5 +43,11 @@ case class InetMultiAddress(inetSocketAddress: InetSocketAddress) {
   override def hashCode(): Int = {
     val state = Seq(inetAddress)
     state.map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
+  }
+}
+
+object InetMultiAddress {
+  implicit val adressInst = new Addressable[InetMultiAddress] {
+    override def getAddress(a: InetMultiAddress): InetSocketAddress = a.inetSocketAddress
   }
 }

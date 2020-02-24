@@ -12,7 +12,7 @@ import $ivy.`com.lihaoyi::mill-contrib-buildinfo:0.4.1`
 //object scalanet extends ScalaModule with PublishModule with ScoverageModule {
 object scalanet extends ScalaModule with PublishModule {
 
-  def scalaVersion = "2.12.7"
+  def scalaVersion = "2.12.10"
 
   def publishVersion = "0.1.5-SNAPSHOT"
 
@@ -48,7 +48,10 @@ object scalanet extends ScalaModule with PublishModule {
     ivy"org.eclipse.californium:element-connector:2.0.0-M15",
     ivy"org.scodec::scodec-bits:1.1.12",
     ivy"org.scodec::scodec-core:1.11.4",
-    ivy"org.scala-lang.modules::scala-parser-combinators:1.1.2"
+    ivy"org.scala-lang.modules::scala-parser-combinators:1.1.2",
+    ivy"org.bouncycastle:bcprov-jdk15on:1.64",
+    ivy"org.bouncycastle:bcpkix-jdk15on:1.64",
+    ivy"org.bouncycastle:bctls-jdk15on:1.64"
   )
 
   def pomSettings = PomSettings(
@@ -88,7 +91,7 @@ object scalanet extends ScalaModule with PublishModule {
   object it extends TestModule
 
   object examples extends ScalaModule {
-    override def scalaVersion = "2.12.7"
+    override def scalaVersion = "2.12.10"
 
     override def scalacOptions = scalanet.scalacOptions
 

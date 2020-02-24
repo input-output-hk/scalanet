@@ -1,12 +1,16 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
+import java.security.SecureRandom
 import java.util.UUID
 
 import cats.effect.concurrent.Ref
 import io.iohk.scalanet.codec.FramingCodec
+import io.iohk.scalanet.crypto.CryptoUtils
+import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSPeerGroup, Secp256k1}
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.ChannelId
 import io.iohk.scalanet.peergroup.ReqResponseProtocol._
+import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.PeerInfo
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.observables.ConnectableObservable
@@ -28,16 +32,16 @@ import scala.concurrent.duration.{FiniteDuration, _}
   * @param state currently open client channels
   * @tparam M the message type.
   */
-class ReqResponseProtocol[M](
-    group: PeerGroup[InetMultiAddress, MessageEnvelope[M]],
-    state: Ref[Task, Map[ChannelId, Channel[InetMultiAddress, MessageEnvelope[M]]]]
-)(implicit s: Scheduler) {
+class ReqResponseProtocol[A, M](
+    group: PeerGroup[A, MessageEnvelope[M]],
+    state: Ref[Task, Map[ChannelId, Channel[A, MessageEnvelope[M]]]]
+)(implicit s: Scheduler, a: Addressable[A]) {
 
   private def getChan(
-      to: InetMultiAddress,
+      to: A,
       chId: ChannelId,
-      st: Map[ChannelId, Channel[InetMultiAddress, MessageEnvelope[M]]]
-  ): Task[Channel[InetMultiAddress, MessageEnvelope[M]]] = {
+      st: Map[ChannelId, Channel[A, MessageEnvelope[M]]]
+  ): Task[Channel[A, MessageEnvelope[M]]] = {
     // this is not really thread safe.
     if (st.contains(chId)) {
       Task.now(st(chId))
@@ -57,8 +61,8 @@ class ReqResponseProtocol[M](
   // It do not closes client channel after each message as, in case of tcp it would be really costly
   // to create new tcp connection for each message.
   // it probably should return Task[Either[E, M]]
-  def send(m: M, to: InetMultiAddress, requestDuration: FiniteDuration = 5.seconds): Task[M] = {
-    val chID = (group.processAddress.inetSocketAddress, to.inetSocketAddress)
+  def send(m: M, to: A, requestDuration: FiniteDuration = 5.seconds): Task[M] = {
+    val chID = (a.getAddress(group.processAddress), a.getAddress(to))
     for {
       st <- state.get
       ch <- getChan(to, chID, st)
@@ -69,7 +73,7 @@ class ReqResponseProtocol[M](
   }
 
   private def sendMandAwaitForResponse(
-      c: Channel[InetMultiAddress, MessageEnvelope[M]],
+      c: Channel[A, MessageEnvelope[M]],
       messageToSend: MessageEnvelope[M],
       timeOutDuration: FiniteDuration
   ): Task[M] =
@@ -101,7 +105,7 @@ class ReqResponseProtocol[M](
       }
   }
 
-  def processAddress: InetMultiAddress = group.processAddress
+  def processAddress: A = group.processAddress
 }
 
 object ReqResponseProtocol {
@@ -110,44 +114,76 @@ object ReqResponseProtocol {
   // Default scodec product codec deriviation due to implicits
   final case class MessageEnvelope[M](id: UUID, m: M)
 
-  private def buildProtocol[M](
-      group: PeerGroup[InetMultiAddress, MessageEnvelope[M]]
-  )(implicit s: Scheduler): Task[ReqResponseProtocol[M]] = {
+  private def buildProtocol[A, M](
+      group: PeerGroup[A, MessageEnvelope[M]]
+  )(implicit s: Scheduler, a: Addressable[A]): Task[ReqResponseProtocol[A, M]] = {
     for {
       _ <- group.initialize()
-      initState <- Ref.of[Task, Map[ChannelId, Channel[InetMultiAddress, MessageEnvelope[M]]]](Map.empty)
-      prot <- Task.now(new ReqResponseProtocol[M](group, initState))
+      initState <- Ref.of[Task, Map[ChannelId, Channel[A, MessageEnvelope[M]]]](Map.empty)
+      prot <- Task.now(new ReqResponseProtocol[A, M](group, initState))
     } yield prot
   }
 
-  sealed abstract class TransportProtocol extends Product with Serializable
-  case object Udp extends TransportProtocol
-  case object Tcp extends TransportProtocol
+  sealed abstract class TransportProtocol extends Product with Serializable {
+    type AddressingType
+    def getProtocol[M](
+        address: InetSocketAddress
+    )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[AddressingType, M]]
+  }
+  case object Udp extends TransportProtocol {
+    override type AddressingType = InetMultiAddress
+
+    override def getProtocol[M](
+        address: InetSocketAddress
+    )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[InetMultiAddress, M]] = {
+      getUdpReqResponseProtocolClient(address)
+    }
+  }
+  case object Tcp extends TransportProtocol {
+    override type AddressingType = InetMultiAddress
+
+    override def getProtocol[M](
+        address: InetSocketAddress
+    )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[InetMultiAddress, M]] = {
+      getTcpReqResponseProtocolClient(address)
+    }
+  }
+  case object DTLS extends TransportProtocol {
+    override type AddressingType = PeerInfo
+
+    override def getProtocol[M](
+        address: InetSocketAddress
+    )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[PeerInfo, M]] = {
+      getTlsReqResponseProtocolClient(address)
+    }
+  }
 
   def getTcpReqResponseProtocolClient[M](
       address: InetSocketAddress
-  )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[M]] = {
+  )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[InetMultiAddress, M]] = {
     val codec = implicitly[Codec[MessageEnvelope[M]]]
     implicit lazy val framingCodec = new FramingCodec[MessageEnvelope[M]](codec)
     val pg1 = new TCPPeerGroup[MessageEnvelope[M]](TCPPeerGroup.Config(address))
     buildProtocol(pg1)
   }
 
-  def getUdpReqResponseProtocolClient[M](
+  def getTlsReqResponseProtocolClient[M](
       address: InetSocketAddress
-  )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[M]] = {
-    val pg1 = new UDPPeerGroup[MessageEnvelope[M]](UDPPeerGroup.Config(address))
+  )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[PeerInfo, M]] = {
+    val codec = implicitly[Codec[MessageEnvelope[M]]]
+    implicit lazy val framingCodec = new FramingCodec[MessageEnvelope[M]](codec)
+    val rnd = new SecureRandom()
+    val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
+    val pg1 =
+      new DynamicTLSPeerGroup[MessageEnvelope[M]](DynamicTLSPeerGroup.Config(address, Secp256k1, hostkeyPair, rnd))
     buildProtocol(pg1)
   }
 
-  def getReqResponseProtocol[M](
-      transport: TransportProtocol,
+  def getUdpReqResponseProtocolClient[M](
       address: InetSocketAddress
-  )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[M]] = {
-    transport match {
-      case Udp => getUdpReqResponseProtocolClient(address)
-      case Tcp => getTcpReqResponseProtocolClient(address)
-    }
+  )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[InetMultiAddress, M]] = {
+    val pg1 = new UDPPeerGroup[MessageEnvelope[M]](UDPPeerGroup.Config(address))
+    buildProtocol(pg1)
   }
 
 }

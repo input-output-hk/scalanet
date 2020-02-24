@@ -8,7 +8,7 @@ import org.scalatest.{Assertion, AsyncFlatSpec, BeforeAndAfterAll}
 
 import scala.concurrent.{ExecutionContext, Future}
 import org.scalatest.prop.TableDrivenPropertyChecks._
-import io.iohk.scalanet.peergroup.ReqResponseProtocol.{Tcp, Udp}
+import io.iohk.scalanet.peergroup.ReqResponseProtocol._
 import org.scalatest.Matchers._
 import io.iohk.scalanet.NetUtils._
 import scodec.codecs.implicits._
@@ -16,7 +16,7 @@ import scodec.codecs.implicits._
 /**
   *
   * Spec to test different concurrency scenario on top of our low level peer groups.
-  * FIXME Add more scenarios. Add tls.
+  * FIXME Add more scenarios.
   *
   */
 class TransportPeerGroupAsyncSpec extends AsyncFlatSpec with BeforeAndAfterAll {
@@ -32,15 +32,16 @@ class TransportPeerGroupAsyncSpec extends AsyncFlatSpec with BeforeAndAfterAll {
   private val rpcs = Table(
     ("Label", "Transport type"),
     ("TCP", Tcp),
-    ("UDP", Udp)
+    ("UDP", Udp),
+    ("DTLS", DTLS)
   )
   forAll(rpcs) { (label, transportType) =>
     import TransportPeerGroupAsyncSpec._
 
     s"Request response on top of ${label}" should "exchange messages between clients sequentially" in taskTestCase {
       for {
-        client1 <- ReqResponseProtocol.getReqResponseProtocol[String](transportType, aRandomAddress())
-        client2 <- ReqResponseProtocol.getReqResponseProtocol[String](transportType, aRandomAddress())
+        client1 <- transportType.getProtocol[String](aRandomAddress())
+        client2 <- transportType.getProtocol[String](aRandomAddress())
         - <- Task.parZip2(
           client1.startHandling(echoDoubleHandler).startAndForget,
           client2.startHandling(echoDoubleHandler).startAndForget
@@ -59,9 +60,9 @@ class TransportPeerGroupAsyncSpec extends AsyncFlatSpec with BeforeAndAfterAll {
 
     s"Request response on top of ${label}" should "exchange messages between clients concurrently" in taskTestCase {
       for {
-        client1 <- ReqResponseProtocol.getReqResponseProtocol[Int](transportType, aRandomAddress())
-        client2 <- ReqResponseProtocol.getReqResponseProtocol[Int](transportType, aRandomAddress())
-        client3 <- ReqResponseProtocol.getReqResponseProtocol[Int](transportType, aRandomAddress())
+        client1 <- transportType.getProtocol[Int](aRandomAddress())
+        client2 <- transportType.getProtocol[Int](aRandomAddress())
+        client3 <- transportType.getProtocol[Int](aRandomAddress())
         - <- Task.parZip3(
           client1.startHandling(doublingHandler).startAndForget,
           client2.startHandling(doublingHandler).startAndForget,
@@ -93,9 +94,9 @@ class TransportPeerGroupAsyncSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       val client2Numbers = (10 to 30).toList
       val client3Numbers = (20 to 40).toList
       for {
-        client1 <- ReqResponseProtocol.getReqResponseProtocol[Int](transportType, aRandomAddress())
-        client2 <- ReqResponseProtocol.getReqResponseProtocol[Int](transportType, aRandomAddress())
-        client3 <- ReqResponseProtocol.getReqResponseProtocol[Int](transportType, aRandomAddress())
+        client1 <- transportType.getProtocol[Int](aRandomAddress())
+        client2 <- transportType.getProtocol[Int](aRandomAddress())
+        client3 <- transportType.getProtocol[Int](aRandomAddress())
         - <- Task.parZip3(
           client1.startHandling(doublingHandler).startAndForget,
           client2.startHandling(doublingHandler).startAndForget,
