@@ -262,7 +262,9 @@ object DynamicTLSPeerGroup {
         new PeerGroup.ChannelSetupException(to, t)
       case _: SSLKeyException =>
         new PeerGroup.HandshakeException(to, t)
-      case e: SSLHandshakeException =>
+      case _: SSLHandshakeException =>
+        new PeerGroup.HandshakeException(to, t)
+      case _: SSLException =>
         new PeerGroup.HandshakeException(to, t)
       case _ =>
         t
@@ -342,7 +344,6 @@ object DynamicTLSPeerGroup {
                 val channel = new ServerChannelImpl[M](nettyChannel, peerId, codec, messageSubject)
                 serverSubject.onNext(ChannelCreated(channel))
               } else {
-                println(s"WOOOWO HANDSHAGE DAILED ${e}")
                 // Handshake failed we do not habe id of remote peer
                 serverSubject
                   .onNext(
