@@ -175,7 +175,7 @@ object ReqResponseProtocol {
     val rnd = new SecureRandom()
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
     val pg1 =
-      new DynamicTLSPeerGroup[MessageEnvelope[M]](DynamicTLSPeerGroup.Config(address, Secp256k1, hostkeyPair, rnd))
+      new DynamicTLSPeerGroup[MessageEnvelope[M]](DynamicTLSPeerGroup.Config(address, Secp256k1, hostkeyPair, rnd).get)
     buildProtocol(pg1)
   }
 

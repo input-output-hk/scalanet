@@ -26,6 +26,10 @@ import scodec.bits.BitVector
 import scala.util.Try
 
 private[scalanet] object CryptoUtils {
+
+  /**
+    * Elliptic Curve Groups(ECDHE) recommended by TLS 1.3
+    */
   sealed abstract class SupportedCurves(val name: String)
   case object Secp256r1 extends SupportedCurves("secp256r1")
   case object Secp384r1 extends SupportedCurves("secp384r1")
@@ -81,7 +85,7 @@ private[scalanet] object CryptoUtils {
     new KeyPair(keyFac.generatePublic(spkiKeySpec), keyFac.generatePrivate(pkcs8KeySpec))
   }
 
-  def getKeyFromBytes(bytes: Array[Byte]) = {
+  def getKeyFromBytes(bytes: Array[Byte]): Try[PublicKey] = Try {
     val ecPoint = curve.getCurve.decodePoint(bytes)
     val spec = new ECParameterSpec(curveParams.getCurve, curveParams.getG, curveParams.getN)
     val pubKeySpec = new ECPublicKeySpec(ecPoint, spec)

@@ -23,6 +23,10 @@ object KeyType {
   implicit val d = Discriminated[KeyType, Int](uint8)
 }
 
+/**
+  *  Standard Ethereum EC encoding for Secp256k1 public and private keys i.e 65 bytes public key, where
+  *  first indicated if key is compressed or not, and last 64 bytes are public uncompressed point on Secp256k1 curve
+  */
 case object Secp256k1 extends KeyType {
   val curveName = "secp256k1"
   val n = 2
@@ -30,10 +34,22 @@ case object Secp256k1 extends KeyType {
 }
 
 private[scalanet] object DynamicTLSExtension {
+
+  /**
+    * Prefix is defined in libp2p spec: `The peer signs the concatenation of the string libp2p-tls-handshake:`
+    */
   val prefix = "libp2p-tls-handshake:"
 
   val prefixAsBytes = ascii.encode(prefix).require
 
+  /**
+    * In specs extension is defined as protobuf:
+    * message PublicKey {
+    *  required KeyType Type = 1;
+    *  required bytes Data = 2;
+    * }
+    *
+    */
   case class ExtensionPublicKey private (keyType: KeyType, encodedPublicKey: PublicKey)
 
   object ExtensionPublicKey {
@@ -53,7 +69,7 @@ private[scalanet] object DynamicTLSExtension {
         for {
           keyTypeResult <- keyCodec.decode(bits)
           rest <- keyTypeResult.value match {
-            case Secp256k1 => Attempt.fromTry(Try(CryptoUtils.getKeyFromBytes(keyTypeResult.remainder.toByteArray)))
+            case Secp256k1 => Attempt.fromTry(CryptoUtils.getKeyFromBytes(keyTypeResult.remainder.toByteArray))
           }
         } yield DecodeResult(new ExtensionPublicKey(keyTypeResult.value, rest), BitVector.empty)
       }
@@ -64,7 +80,9 @@ private[scalanet] object DynamicTLSExtension {
     implicit class ExtensionPublicKeyOps(key: ExtensionPublicKey) {
       def getNodeId: BitVector = {
         key.keyType match {
-          case Secp256k1 => CryptoUtils.getEcPublicKey(key.encodedPublicKey).get.drop(8)
+          case Secp256k1 =>
+            // we can .get as we are passing key from properly constructed ExtensionPublicKey object
+            CryptoUtils.getEcPublicKey(key.encodedPublicKey).get.drop(8)
         }
       }
     }
@@ -91,10 +109,16 @@ private[scalanet] object DynamicTLSExtension {
 
     private case class SignedKeyBytes(publicKey: Array[Byte], signature: Array[Byte])
 
+    /**
+      *  Identifier defined in libp2p specs which has been, allocated by IANA to the libp2p project at Protocol Labs.
+      */
     val extensionIdentifier = "1.3.6.1.4.1.53594.1.1"
 
     val signedKeyExtensionIdentifier = new ASN1ObjectIdentifier(extensionIdentifier)
 
+    /**
+      *  Return the SignedKey extension contained in a byte[] returned by a X509Certificate.getExtensionValue() call.
+      */
     private def parseAsn1EncodedBytes(bytes: Array[Byte]): Attempt[SignedKeyBytes] = {
       Attempt.fromTry {
         Try {
@@ -108,6 +132,15 @@ private[scalanet] object DynamicTLSExtension {
       }
     }
 
+    /**
+      * Encodes Signed key extension as ANS.1-encoded data structure:
+      *
+      * SignedKey ::= SEQUENCE {
+      *    publicKey BIT STRING,
+      *    signature BIT STRING
+      * }
+      *
+      */
     private def toASN1Encodable(signedKey: SignedKey): Attempt[ASN1Encodable] = {
       for {
         publicKey <- ExtensionPublicKey.extensionPublicKeyCodec.encode(signedKey.publicKey)
@@ -136,6 +169,12 @@ private[scalanet] object DynamicTLSExtension {
       } yield SignedKey(pub, sig)
     }
 
+    /**
+      *  From libp2p tls spec:
+      *  The peer signs the concatenation of the string `libp2p-tls-handshake:` and the public key that it used to generate
+      *  the certificate carrying the libp2p Public Key Extension, using its private host key.
+      *
+      */
     private def buildSignedKey(
         keyType: KeyType,
         hostKeyPair: KeyPair,

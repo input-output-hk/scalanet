@@ -118,7 +118,7 @@ object DynamicTLSPeerGroupSpec {
 
   def getCorrectConfig(address: InetSocketAddress = aRandomAddress()): DynamicTLSPeerGroup.Config = {
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
-    Config(address, Secp256k1, hostkeyPair, rnd)
+    Config(address, Secp256k1, hostkeyPair, rnd).get
   }
 
   def getIncorrectConfigWrongId(address: InetSocketAddress = aRandomAddress()): DynamicTLSPeerGroup.Config = {

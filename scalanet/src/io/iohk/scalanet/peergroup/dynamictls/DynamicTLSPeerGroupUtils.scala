@@ -23,6 +23,17 @@ private[scalanet] object DynamicTLSPeerGroupUtils {
 
   class IdIdentification(bytes: Array[Byte]) extends SNIServerName(typeOfIdentificaiton, bytes)
 
+  /**
+    *
+    * Custom manager which is used by netty ssl to accept or reject peer certificates.
+    *
+    * Extended version is needed to have access to SslEngine to, to pass client id to other parts of the system
+    * via getSSLParameters
+    *
+    * Methods without SslEngine argument are left with `???` to make sure that if there would arise case that they would
+    * be called, then exception will be thrown instead of just trusting external peer without validations.
+    *
+    */
   class DynamicTlsTrustManager(info: Option[BitVector]) extends X509ExtendedTrustManager {
     override def checkClientTrusted(x509Certificates: Array[X509Certificate], s: String): Unit = ???
 

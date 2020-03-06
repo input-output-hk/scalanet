@@ -19,6 +19,12 @@ object CustomTlsValidator {
   case object WrongExtensionSignature extends CertificateError("Signature on cert extension is invalid")
   case object SeverIdNotMatchExpected extends CertificateError("Server id do not match expected")
 
+  /**
+    *
+    * Clients MUST verify that the peer ID derived from the certificate matches the peer ID they
+    * intended to connect to, and MUST abort the connection if there is a mismatch.
+    *
+    */
   private def validateServerId(
       receivedKey: SignedKey,
       expectedPeerInfo: BitVector
@@ -26,6 +32,11 @@ object CustomTlsValidator {
     Either.cond(receivedKey.publicKey.getNodeId == expectedPeerInfo, (), SeverIdNotMatchExpected)
   }
 
+  /**
+    *
+    * Endpoints MUST NOT send a certificate chain that contains more than one certificate
+    *
+    */
   private def validateCertificatesQuantity(
       certificates: Array[X509Certificate]
   ): Either[CertificateError, X509Certificate] = {
@@ -36,6 +47,12 @@ object CustomTlsValidator {
     }
   }
 
+  /**
+    *
+    * The certificate MUST have NotBefore and NotAfter fields set such that the certificate is valid
+    * at the time it is received by the peer
+    *
+    */
   private def validateCertificateDate(cert: X509Certificate): Either[CertificateError, Unit] = {
     val todayUtcDate = Date.from(LocalDateTime.now(Clock.systemUTC()).toInstant(ZoneOffset.UTC))
     Try(cert.checkValidity(todayUtcDate)) match {
@@ -44,6 +61,11 @@ object CustomTlsValidator {
     }
   }
 
+  /**
+    *
+    * Peers MUST verify the signature, and abort the connection attempt if signature verification fails
+    *
+    */
   private def validateCertificateSignature(
       signedKey: SignedKey,
       cert: X509Certificate
@@ -68,6 +90,11 @@ object CustomTlsValidator {
     }
   }
 
+  /**
+    *
+    * Performs all validations required by libp2p spec
+    *
+    */
   def validateCertificates(
       certificates: Array[X509Certificate],
       connectingTo: Option[BitVector]
@@ -84,6 +111,12 @@ object CustomTlsValidator {
     }
   }
 
+  /**
+    *
+    * The certificate MUST contain the libp2p Public Key Extension. If this extension is missing,
+    * endpoints MUST abort the connection attempt
+    *
+    */
   private def validateCertificateExtension(
       cert: X509Certificate,
       extensionId: String

@@ -41,6 +41,7 @@ import scodec.bits.BitVector
 
 import scala.collection.JavaConverters._
 import scala.concurrent.Promise
+import scala.util.Try
 import scala.util.control.NonFatal
 
 /**
@@ -142,16 +143,16 @@ object DynamicTLSPeerGroup {
         keyType: KeyType,
         hostKeyPair: KeyPair,
         secureRandom: SecureRandom
-    ): Config = {
+    ): Try[Config] = {
 
-      val nodeData = SignedKeyExtensionNodeData(keyType, hostKeyPair, Secp256r1, secureRandom).get
-
-      Config(
-        bindAddress,
-        PeerInfo(nodeData.calculatedNodeId, InetMultiAddress(bindAddress)),
-        nodeData.generatedConnectionKey,
-        nodeData.certWithExtension
-      )
+      SignedKeyExtensionNodeData(keyType, hostKeyPair, Secp256r1, secureRandom).map { nodeData =>
+        Config(
+          bindAddress,
+          PeerInfo(nodeData.calculatedNodeId, InetMultiAddress(bindAddress)),
+          nodeData.generatedConnectionKey,
+          nodeData.certWithExtension
+        )
+      }
     }
 
     def apply(
@@ -159,7 +160,7 @@ object DynamicTLSPeerGroup {
         keyType: KeyType,
         hostKeyPair: AsymmetricCipherKeyPair,
         secureRandom: SecureRandom
-    ): Config = {
+    ): Try[Config] = {
       val convertedKeyPair = CryptoUtils.convertBcToJceKeyPair(hostKeyPair)
       Config(bindAddress, keyType, convertedKeyPair, secureRandom)
     }
