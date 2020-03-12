@@ -1,23 +1,21 @@
 package io.iohk.scalanet.dynamictls
 
 import java.security.SecureRandom
-import java.time.{Clock, LocalDateTime, ZoneOffset}
-import java.util.Date
-
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
 import io.iohk.scalanet.peergroup.dynamictls.CustomTlsValidator.{
   NoCertExtension,
-  SeverIdNotMatchExpected,
+  ServerIdNotMatchExpected,
   WrongCertificateDate,
   WrongExtensionFormat,
   WrongExtensionSignature,
   WrongNumberOfCertificates
 }
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.{Extension, SignedKey, SignedKeyExtensionNodeData}
-import io.iohk.scalanet.peergroup.dynamictls.{CustomTlsValidator, Secp256k1}
+import io.iohk.scalanet.peergroup.dynamictls.{CustomTlsValidator, DynamicTLSExtension, Secp256k1}
 import io.iohk.scalanet.testutils.GeneratorUtils
 import org.bouncycastle.asn1.DERGeneralString
+import org.joda.time.DateTime
 import org.scalatest.prop.GeneratorDrivenPropertyChecks.forAll
 import org.scalatest.prop.GeneratorDrivenPropertyChecks._
 import org.scalatest.{FlatSpec, Matchers}
@@ -25,9 +23,9 @@ import scodec.bits.BitVector
 
 class CustomTlsValidatorSpec extends FlatSpec with Matchers {
   val rnd = new SecureRandom()
-  val today = LocalDateTime.now(Clock.systemUTC())
-  val beforeDate = Date.from(today.minusMonths(1).toInstant(ZoneOffset.UTC))
-  val afterDate = Date.from(today.plusYears(100).toInstant(ZoneOffset.UTC))
+  val interval = DynamicTLSExtension.getInterval()
+  val beforeDate = interval.getStart.toDate
+  val afterDate = interval.getEnd.toDate
 
   "CustomTlsValidator" should "successfully validate client certificates" in {
     forAll(GeneratorUtils.genKey(Secp256k1.curveName, rnd)) { keyPair =>
@@ -51,7 +49,7 @@ class CustomTlsValidatorSpec extends FlatSpec with Matchers {
       (keyPair, badId) =>
         val extension = SignedKeyExtensionNodeData(Secp256k1, keyPair, Secp256r1, rnd).get
         val result = CustomTlsValidator.validateCertificates(Array(extension.certWithExtension), Some(BitVector(badId)))
-        assert(result == Left(SeverIdNotMatchExpected))
+        assert(result == Left(ServerIdNotMatchExpected))
     }
   }
 
@@ -93,13 +91,13 @@ class CustomTlsValidatorSpec extends FlatSpec with Matchers {
     val (_, extension) =
       SignedKey.buildSignedKeyExtension(Secp256k1, hostkeyPair, connectionKeyPairPublicKeyAsBytes, rnd).require
 
-    val notValidBeforeDate = Date.from(today.plusYears(1).toInstant(ZoneOffset.UTC))
+    val notValidBeforeDate = DateTime.now().plusYears(1).toDate
     val cer =
       CryptoUtils.buildCertificateWithExtensions(connectionKeyPair, rnd, List(extension), notValidBeforeDate, afterDate)
     val result = CustomTlsValidator.validateCertificates(Array(cer), None)
     assert(result == Left(WrongCertificateDate))
 
-    val notValidAfterDate = Date.from(today.minusDays(1).toInstant(ZoneOffset.UTC))
+    val notValidAfterDate = DateTime.now().minusDays(1).toDate
     val cer1 =
       CryptoUtils.buildCertificateWithExtensions(connectionKeyPair, rnd, List(extension), beforeDate, notValidAfterDate)
     val result1 = CustomTlsValidator.validateCertificates(Array(cer1), None)

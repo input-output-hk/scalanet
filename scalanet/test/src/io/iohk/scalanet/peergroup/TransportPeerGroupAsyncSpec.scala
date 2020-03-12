@@ -33,7 +33,7 @@ class TransportPeerGroupAsyncSpec extends AsyncFlatSpec with BeforeAndAfterAll {
     ("Label", "Transport type"),
     ("TCP", Tcp),
     ("UDP", Udp),
-    ("DTLS", DTLS)
+    ("DTLS", DynamicTLS)
   )
   forAll(rpcs) { (label, transportType) =>
     import TransportPeerGroupAsyncSpec._

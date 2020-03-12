@@ -2,14 +2,13 @@ package io.iohk.scalanet.peergroup.dynamictls
 
 import java.security.cert.X509Certificate
 import java.security.{KeyPair, PublicKey, SecureRandom}
-import java.time.{Clock, LocalDateTime, ZoneOffset}
-import java.util.Date
 
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.crypto.CryptoUtils.SupportedCurves
 import org.bouncycastle.asn1._
 import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils
 import org.bouncycastle.math.ec.custom.sec.SecP256K1Curve
+import org.joda.time.{DateTime, Interval}
 import scodec.bits.BitVector
 import scodec.codecs.{Discriminated, Discriminator, ascii, bits, uint8}
 import scodec.{Attempt, Codec, DecodeResult, SizeBound}
@@ -30,7 +29,7 @@ object KeyType {
 case object Secp256k1 extends KeyType {
   val curveName = "secp256k1"
   val n = 2
-  implicit val Secp256k1disc = Discriminator[KeyType, Secp256k1.type, Int](n)
+  implicit val Secp256k1Disc = Discriminator[KeyType, Secp256k1.type, Int](n)
 }
 
 private[scalanet] object DynamicTLSExtension {
@@ -206,6 +205,16 @@ private[scalanet] object DynamicTLSExtension {
 
   }
 
+  /**
+    *  Created validity interval
+    */
+  def getInterval(
+      startDate: DateTime = DateTime.now().minusDays(1),
+      endDate: DateTime = DateTime.now().plusYears(100)
+  ): Interval = {
+    new Interval(startDate, endDate)
+  }
+
   case class SignedKeyExtensionNodeData(
       calculatedNodeId: BitVector,
       certWithExtension: X509Certificate,
@@ -227,9 +236,7 @@ private[scalanet] object DynamicTLSExtension {
       val connectionKeyPairPublicKeyAsBytes = CryptoUtils.getEcPublicKey(connectionKeyPair.getPublic).get
 
       // Certificate will be valid for next 100 years, the same value is used in libp2p go implementation
-      val today = LocalDateTime.now(Clock.systemUTC())
-      val beforeDate = Date.from(today.minusMonths(1).toInstant(ZoneOffset.UTC))
-      val afterDate = Date.from(today.plusYears(100).toInstant(ZoneOffset.UTC))
+      val validInterval = getInterval()
 
       SignedKey
         .buildSignedKeyExtension(Secp256k1, hostKeyPair, connectionKeyPairPublicKeyAsBytes, secureRandom)
@@ -242,8 +249,8 @@ private[scalanet] object DynamicTLSExtension {
                 connectionKeyPair,
                 secureRandom,
                 List(signedKeyExtension),
-                beforeDate,
-                afterDate
+                validInterval.getStart.toDate,
+                validInterval.getEnd.toDate
               )
 
             new SignedKeyExtensionNodeData(nodeId, cert, connectionKeyPair)

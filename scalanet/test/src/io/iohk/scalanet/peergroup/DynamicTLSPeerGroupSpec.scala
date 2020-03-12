@@ -2,9 +2,6 @@ package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
 import java.security.SecureRandom
-import java.time.{Clock, LocalDateTime, ZoneOffset}
-import java.util.Date
-
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.codec.FramingCodec
 import io.iohk.scalanet.crypto.CryptoUtils
@@ -12,7 +9,7 @@ import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
 import io.iohk.scalanet.peergroup.DynamicTLSPeerGroupSpec._
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, HandshakeException}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.SignedKey
-import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSPeerGroup, Secp256k1}
+import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSExtension, DynamicTLSPeerGroup, Secp256k1}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{Config, PeerInfo}
 import io.iohk.scalanet.testutils.GeneratorUtils
 import monix.eval.Task
@@ -127,9 +124,7 @@ object DynamicTLSPeerGroupSpec {
   }
 
   def getIncorrectConfigWrongSig(address: InetSocketAddress = aRandomAddress()): DynamicTLSPeerGroup.Config = {
-    val today = LocalDateTime.now(Clock.systemUTC())
-    val beforeDate = Date.from(today.minusMonths(1).toInstant(ZoneOffset.UTC))
-    val afterDate = Date.from(today.plusYears(100).toInstant(ZoneOffset.UTC))
+    val validInterval = DynamicTLSExtension.getInterval()
 
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
 
@@ -139,7 +134,13 @@ object DynamicTLSPeerGroupSpec {
 
     val (sig, extension) = SignedKey.buildSignedKeyExtension(Secp256k1, hostkeyPair, fakeKey, rnd).require
 
-    val cer = CryptoUtils.buildCertificateWithExtensions(connectionKeyPair, rnd, List(extension), beforeDate, afterDate)
+    val cer = CryptoUtils.buildCertificateWithExtensions(
+      connectionKeyPair,
+      rnd,
+      List(extension),
+      validInterval.getStart.toDate,
+      validInterval.getEnd.toDate
+    )
 
     DynamicTLSPeerGroup.Config(
       address,

@@ -30,6 +30,7 @@ import scala.concurrent.duration.{FiniteDuration, _}
   *
   * @param group transport peer group
   * @param state currently open client channels
+  * @tparam A used addressing scheme
   * @tparam M the message type.
   */
 class ReqResponseProtocol[A, M](
@@ -148,7 +149,7 @@ object ReqResponseProtocol {
       getTcpReqResponseProtocolClient(address)
     }
   }
-  case object DTLS extends TransportProtocol {
+  case object DynamicTLS extends TransportProtocol {
     override type AddressingType = PeerInfo
 
     override def getProtocol[M](
@@ -174,9 +175,12 @@ object ReqResponseProtocol {
     implicit lazy val framingCodec = new FramingCodec[MessageEnvelope[M]](codec)
     val rnd = new SecureRandom()
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
-    val pg1 =
-      new DynamicTLSPeerGroup[MessageEnvelope[M]](DynamicTLSPeerGroup.Config(address, Secp256k1, hostkeyPair, rnd).get)
-    buildProtocol(pg1)
+
+    for {
+      config <- Task.fromTry(DynamicTLSPeerGroup.Config(address, Secp256k1, hostkeyPair, rnd))
+      pg = new DynamicTLSPeerGroup[MessageEnvelope[M]](config)
+      prot <- buildProtocol(pg)
+    } yield prot
   }
 
   def getUdpReqResponseProtocolClient[M](

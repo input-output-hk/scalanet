@@ -35,14 +35,28 @@ private[scalanet] object CryptoUtils {
   case object Secp384r1 extends SupportedCurves("secp384r1")
   case object Secp521r1 extends SupportedCurves("secp521r1")
 
-  val curveName = "secp256k1"
+  private val curveName = "secp256k1"
 
-  val PROVIDER = new BouncyCastleProvider()
+  type SignatureBytes = Array[Byte]
 
-  val curveParams: X9ECParameters = SECNamedCurves.getByName(curveName)
+  private val usedSignatureScheme = "SHA256withECDSA"
 
-  val curve: ECDomainParameters =
+  private val usedKeyScheme = "EC"
+
+  private val PROVIDER = new BouncyCastleProvider()
+
+  private val curveParams: X9ECParameters = SECNamedCurves.getByName(curveName)
+
+  private val curve: ECDomainParameters =
     new ECDomainParameters(curveParams.getCurve, curveParams.getG, curveParams.getN, curveParams.getH)
+
+  private def getEcdsaSignature: Signature = {
+    Signature.getInstance(usedSignatureScheme, PROVIDER)
+  }
+
+  private def getEcKeyFactory: KeyFactory = {
+    KeyFactory.getInstance(usedKeyScheme, PROVIDER)
+  }
 
   def generateKeyPair(secureRandom: SecureRandom): AsymmetricCipherKeyPair = {
     val generator = new ECKeyPairGenerator
@@ -61,19 +75,19 @@ private[scalanet] object CryptoUtils {
     genEcKeyPair(secureRandom, curveName.name)
   }
 
-  def signEcdsa(data: Array[Byte], privateKey: PrivateKey, secureRandom: SecureRandom): Array[Byte] = {
-    val ecdsaSign = Signature.getInstance("SHA256withECDSA", PROVIDER)
+  def signEcdsa(data: Array[Byte], privateKey: PrivateKey, secureRandom: SecureRandom): SignatureBytes = {
+    val ecdsaSign = getEcdsaSignature
     ecdsaSign.initSign(privateKey, secureRandom)
     ecdsaSign.update(data);
     ecdsaSign.sign();
   }
 
-  def verifyEcdsa(data: Array[Byte], sig: Array[Byte], publicKey: java.security.PublicKey): Boolean =
+  def verifyEcdsa(data: Array[Byte], signature: SignatureBytes, publicKey: java.security.PublicKey): Boolean =
     Try {
-      val ecdsaVerify = Signature.getInstance("SHA256withECDSA", PROVIDER)
+      val ecdsaVerify = getEcdsaSignature
       ecdsaVerify.initVerify(publicKey)
       ecdsaVerify.update(data)
-      ecdsaVerify.verify(sig)
+      ecdsaVerify.verify(signature)
     }.fold(_ => false, result => result)
 
   def convertBcToJceKeyPair(bcKeyPair: AsymmetricCipherKeyPair): KeyPair = {
@@ -81,7 +95,7 @@ private[scalanet] object CryptoUtils {
     val pkcs8KeySpec = new PKCS8EncodedKeySpec(pkcs8Encoded)
     val spkiEncoded = SubjectPublicKeyInfoFactory.createSubjectPublicKeyInfo(bcKeyPair.getPublic).getEncoded()
     val spkiKeySpec = new X509EncodedKeySpec(spkiEncoded)
-    val keyFac = KeyFactory.getInstance("EC", PROVIDER)
+    val keyFac = getEcKeyFactory
     new KeyPair(keyFac.generatePublic(spkiKeySpec), keyFac.generatePrivate(pkcs8KeySpec))
   }
 
@@ -89,7 +103,7 @@ private[scalanet] object CryptoUtils {
     val ecPoint = curve.getCurve.decodePoint(bytes)
     val spec = new ECParameterSpec(curveParams.getCurve, curveParams.getG, curveParams.getN)
     val pubKeySpec = new ECPublicKeySpec(ecPoint, spec)
-    val keyFac = KeyFactory.getInstance("EC", PROVIDER)
+    val keyFac = getEcKeyFactory
     keyFac.generatePublic(pubKeySpec)
   }
 
@@ -120,7 +134,7 @@ private[scalanet] object CryptoUtils {
       certificateBuilder.addExtension(extension.oid, extension.isCritical, extension.value)
     }
 
-    val signer = new JcaContentSignerBuilder("SHA256WITHECDSA").build(connectionKeyPair.getPrivate);
+    val signer = new JcaContentSignerBuilder(usedSignatureScheme).build(connectionKeyPair.getPrivate);
 
     val ca = certificateBuilder.build(signer)
 

@@ -82,12 +82,12 @@ private[scalanet] object DynamicTLSPeerGroupUtils {
   }
 
   sealed trait SSLContextFor
-  case object SSLContextForSever extends SSLContextFor
+  case object SSLContextForServer extends SSLContextFor
   case class SSLContextForClient(to: PeerInfo) extends SSLContextFor
 
   def buildCustomSSlContext(f: SSLContextFor, config: DynamicTLSPeerGroup.Config): SslContext = {
     f match {
-      case SSLContextForSever =>
+      case SSLContextForServer =>
         SslContextBuilder
           .forServer(config.connectionKeyPair.getPrivate, List(config.connectionCertificate): _*)
           .trustManager(new CustomTrustManagerFactory(None))

@@ -1,11 +1,9 @@
 package io.iohk.scalanet.peergroup.dynamictls
 
 import java.security.cert.{CertificateException, X509Certificate}
-import java.time.{Clock, LocalDateTime, ZoneOffset}
-import java.util.Date
-
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.SignedKey
+import org.joda.time.DateTime
 import scodec.bits.BitVector
 
 import scala.util.{Failure, Success, Try}
@@ -17,7 +15,7 @@ object CustomTlsValidator {
   case object NoCertExtension extends CertificateError("Certificate does not have required extension")
   case object WrongExtensionFormat extends CertificateError("Extension has invalid format")
   case object WrongExtensionSignature extends CertificateError("Signature on cert extension is invalid")
-  case object SeverIdNotMatchExpected extends CertificateError("Server id do not match expected")
+  case object ServerIdNotMatchExpected extends CertificateError("Server id do not match expected")
 
   /**
     *
@@ -28,8 +26,8 @@ object CustomTlsValidator {
   private def validateServerId(
       receivedKey: SignedKey,
       expectedPeerInfo: BitVector
-  ): Either[SeverIdNotMatchExpected.type, Unit] = {
-    Either.cond(receivedKey.publicKey.getNodeId == expectedPeerInfo, (), SeverIdNotMatchExpected)
+  ): Either[ServerIdNotMatchExpected.type, Unit] = {
+    Either.cond(receivedKey.publicKey.getNodeId == expectedPeerInfo, (), ServerIdNotMatchExpected)
   }
 
   /**
@@ -54,8 +52,7 @@ object CustomTlsValidator {
     *
     */
   private def validateCertificateDate(cert: X509Certificate): Either[CertificateError, Unit] = {
-    val todayUtcDate = Date.from(LocalDateTime.now(Clock.systemUTC()).toInstant(ZoneOffset.UTC))
-    Try(cert.checkValidity(todayUtcDate)) match {
+    Try(cert.checkValidity(DateTime.now().toDate)) match {
       case Failure(_) => Left(WrongCertificateDate)
       case Success(_) => Right(())
     }
@@ -81,12 +78,8 @@ object CustomTlsValidator {
       keyBytes <- CryptoUtils.getEcPublicKey(pubKeyInBcFormat)
       result <- Try(SignedKey.verifySignature(signedKey, keyBytes))
     } yield result) match {
-      case Failure(_) => Left(WrongExtensionSignature)
-      case Success(value) =>
-        if (value)
-          Right(())
-        else
-          Left(WrongExtensionSignature)
+      case Failure(_) | Success(false) => Left(WrongExtensionSignature)
+      case Success(true) => Right(())
     }
   }
 
