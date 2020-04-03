@@ -31,7 +31,6 @@ class TransportPeerGroupAsyncSpec extends AsyncFlatSpec with BeforeAndAfterAll {
 
   private val rpcs = Table(
     ("Label", "Transport type"),
-    ("TCP", Tcp),
     ("UDP", Udp),
     ("DTLS", DynamicTLS)
   )
