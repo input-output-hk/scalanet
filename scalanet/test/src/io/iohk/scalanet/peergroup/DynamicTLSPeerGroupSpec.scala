@@ -2,12 +2,14 @@ package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
 import java.security.SecureRandom
+
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.codec.FramingCodec
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
 import io.iohk.scalanet.peergroup.DynamicTLSPeerGroupSpec._
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, HandshakeException}
+import io.iohk.scalanet.peergroup.ReqResponseProtocol.DynamicTLS
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.SignedKey
 import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSExtension, DynamicTLSPeerGroup, Secp256k1}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{Config, PeerInfo}
@@ -24,6 +26,7 @@ import scodec.codecs.implicits._
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.util.Random
 
 class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5 seconds)
@@ -44,6 +47,30 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       rec <- server.server().refCount.collectChannelCreated.mergeMap(ch => ch.in.refCount).headL
     } yield {
       rec shouldEqual "Hello enc server"
+    }
+  }
+
+  it should "send/receive large messages received in parralel from different channels" in taskTestCase {
+    val randomString1 = Random.nextString(50000)
+    val randomString2 = Random.nextString(50000)
+    val randomString3 = Random.nextString(50000)
+
+    for {
+      client1 <- DynamicTLS.getProtocol[String](aRandomAddress())
+      client2 <- DynamicTLS.getProtocol[String](aRandomAddress())
+      client3 <- DynamicTLS.getProtocol[String](aRandomAddress())
+      server <- DynamicTLS.getProtocol[String](aRandomAddress())
+      _ <- server.startHandling(s => s).startAndForget
+      responses1 <- Task.parZip3(
+        client1.send(randomString1, server.processAddress),
+        client2.send(randomString2, server.processAddress),
+        client3.send(randomString3, server.processAddress)
+      )
+      (resp1a, resp1b, resp1c) = responses1
+    } yield {
+      resp1a shouldEqual randomString1
+      resp1b shouldEqual randomString2
+      resp1c shouldEqual randomString3
     }
   }
 

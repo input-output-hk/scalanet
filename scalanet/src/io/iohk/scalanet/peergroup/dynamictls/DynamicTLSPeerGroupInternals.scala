@@ -46,7 +46,10 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
         )
         codec
           .streamDecode(BitVector(byteBuf.nioBuffer()))
-          .foreach(message => messageSubject.onNext(message))
+          .foreach { message =>
+            log.debug("decoded message {}", message)
+            messageSubject.onNext(message)
+          }
       } finally {
         byteBuf.release()
       }
