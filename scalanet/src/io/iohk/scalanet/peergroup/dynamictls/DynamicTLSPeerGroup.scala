@@ -102,10 +102,12 @@ class DynamicTLSPeerGroup[M](val config: Config)(
   override def server(): ConnectableObservable[ServerEvent[PeerInfo, M]] = serverSubject
 
   override def shutdown(): Task[Unit] = {
-    serverSubject.onComplete()
     for {
+      _ <- Task.now(log.debug("Start shutdown of tls peer group for peer {}", processAddress))
+      _ <- Task(serverSubject.onComplete())
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
+      _ <- Task.now(log.debug("Tls peer group shutdown for peer {}", processAddress))
     } yield ()
   }
 }

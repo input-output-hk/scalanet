@@ -18,6 +18,7 @@ import io.iohk.scalanet.peergroup.PeerGroup.{
 }
 import io.iohk.scalanet.peergroup.UDPPeerGroup._
 import io.iohk.scalanet.peergroup.UDPPeerGroup.UDPPeerGroupInternals
+import io.iohk.scalanet.peergroup.UDPPeerGroup.UDPPeerGroupInternals.ChannelType
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel
@@ -229,20 +230,24 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
 
     override def in: ConnectableObservable[M] = messageSubject
 
+    private def closeNettyChannel(channelType: ChannelType): Task[Unit] = {
+      channelType match {
+        case UDPPeerGroupInternals.ServerChannel =>
+          // on netty side there is only one channel for accepting incoming connection so if we close it, we will effectively
+          // close server
+          Task.now(())
+        case UDPPeerGroupInternals.ClientChannel =>
+          // each client connection creates new channel on netty side
+          toTask(nettyChannel.close())
+      }
+    }
+
     override def close(): Task[Unit] = {
       for {
-
-        _ <- Task.now(open.flip(false))
-        _ <- channelType match {
-          case UDPPeerGroupInternals.ServerChannel =>
-            // on netty side there is only one channel for accepting incoming connection so if we close it, we will effectively
-            // close server
-            Task.now(())
-          case UDPPeerGroupInternals.ClientChannel =>
-            // each client connection creates new channel on netty side
-            toTask(nettyChannel.close())
-        }
-        _ <- Task.eval(messageSubject.onComplete())
+        _ <- Task.now(log.debug("Closing channel from {} to {}", localAddress: Any, remoteAddress: Any))
+        _ <- Task.parZip2(Task(open.flip(false)), closeNettyChannel(channelType))
+        _ <- Task(messageSubject.onComplete())
+        _ <- Task.now(log.debug("Channel from {} to {} closed", localAddress: Any, remoteAddress: Any))
       } yield ()
     }
 
@@ -252,6 +257,7 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
         recipient: InetSocketAddress,
         nettyChannel: NioDatagramChannel
     ): Task[Unit] = {
+      log.debug("Sending message {} to peer {}", message, recipient)
       Task.fromTry(codec.encode(message).toTry).flatMap { encodedMessage =>
         val asBuffer = encodedMessage.toByteBuffer
         toTask(nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(asBuffer), recipient, sender)))
@@ -296,6 +302,7 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
       }
       .onErrorRecoverWith {
         case e: Throwable =>
+          log.debug("Udp channel setup failed due to {}", e)
           Task.raiseError(new ChannelSetupException[InetMultiAddress](to, e))
       }
   }
