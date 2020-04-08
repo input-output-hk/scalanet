@@ -69,7 +69,7 @@ class DynamicTLSPeerGroup[M](val config: Config)(
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
-        new ServerChannelBuilder[M](serverSubject, ch, sslServerCtx, codec)
+        new ServerChannelBuilder[M](serverSubject, ch, sslServerCtx, codec.cleanSlate)
         log.info(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })
@@ -95,7 +95,7 @@ class DynamicTLSPeerGroup[M](val config: Config)(
       to,
       clientBootstrap,
       DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForClient(to), config),
-      codec
+      codec.cleanSlate
     ).initialize
   }
 

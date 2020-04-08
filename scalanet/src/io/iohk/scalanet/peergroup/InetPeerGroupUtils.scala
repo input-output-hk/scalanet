@@ -4,14 +4,13 @@ import java.net.{InetSocketAddress, ServerSocket}
 
 import io.netty.util
 import monix.eval.Task
-import monix.execution.Cancelable
 
 object InetPeerGroupUtils {
 
   type ChannelId = (InetSocketAddress, InetSocketAddress)
 
   def toTask(f: => util.concurrent.Future[_]): Task[Unit] = {
-    Task.create[Unit] { (_, cb) =>
+    Task.async[Unit] { cb =>
       try {
         f.addListener(
           (future: util.concurrent.Future[_]) => if (future.isSuccess) cb.onSuccess(()) else cb.onError(future.cause())
@@ -20,7 +19,6 @@ object InetPeerGroupUtils {
         case t: Throwable =>
           cb.onError(t)
       }
-      Cancelable.empty
     }
   }
 
