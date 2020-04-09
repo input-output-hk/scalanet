@@ -69,7 +69,11 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
 
     override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
       // swallow netty's default logging of the stack trace.
-      log.debug("Unexpected exception {} on channel to peer {}", cause.getMessage: Any, ctx.channel().remoteAddress(): Any)
+      log.debug(
+        "Unexpected exception {} on channel to peer {}",
+        cause.getMessage: Any,
+        ctx.channel().remoteAddress(): Any
+      )
     }
   }
 

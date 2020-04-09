@@ -34,7 +34,8 @@ class FramingCodecSpec extends FlatSpec with EitherValues {
     forAll(genString(), Gen.choose(minPacketSize, maxPacketSize)) { (listOfString, packetSize) =>
       val enc = listOfString.map(encoder.encode(_).require).foldLeft(BitVector.empty)((acc, bit) => acc ++ bit)
       val encPacketed = enc.grouped(packetSize).toList
-      val decoded = encPacketed.foldLeft(List(): List[String])((acc, vec) => acc ++ encoder.streamDecode(vec).right.value)
+      val decoded =
+        encPacketed.foldLeft(List(): List[String])((acc, vec) => acc ++ encoder.streamDecode(vec).right.value)
       decoded shouldEqual listOfString
     }
   }
@@ -46,7 +47,8 @@ class FramingCodecSpec extends FlatSpec with EitherValues {
       (listOfMessages: List[RandomMessage], packetSize) =>
         val enc = listOfMessages.map(encoder.encode(_).require).foldLeft(BitVector.empty)((acc, bit) => acc ++ bit)
         val encPacketed = enc.grouped(packetSize).toList
-        val decoded = encPacketed.foldLeft(List(): List[RandomMessage])((acc, vec) => acc ++ encoder.streamDecode(vec).right.value)
+        val decoded =
+          encPacketed.foldLeft(List(): List[RandomMessage])((acc, vec) => acc ++ encoder.streamDecode(vec).right.value)
         decoded shouldEqual listOfMessages
     }
   }
