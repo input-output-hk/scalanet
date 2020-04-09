@@ -140,15 +140,7 @@ object ReqResponseProtocol {
       getUdpReqResponseProtocolClient(address)
     }
   }
-  case object Tcp extends TransportProtocol {
-    override type AddressingType = InetMultiAddress
 
-    override def getProtocol[M](
-        address: InetSocketAddress
-    )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[InetMultiAddress, M]] = {
-      getTcpReqResponseProtocolClient(address)
-    }
-  }
   case object DynamicTLS extends TransportProtocol {
     override type AddressingType = PeerInfo
 
@@ -157,15 +149,6 @@ object ReqResponseProtocol {
     )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[PeerInfo, M]] = {
       getTlsReqResponseProtocolClient(address)
     }
-  }
-
-  def getTcpReqResponseProtocolClient[M](
-      address: InetSocketAddress
-  )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[InetMultiAddress, M]] = {
-    val codec = implicitly[Codec[MessageEnvelope[M]]]
-    implicit lazy val framingCodec = new FramingCodec[MessageEnvelope[M]](codec)
-    val pg1 = new TCPPeerGroup[MessageEnvelope[M]](TCPPeerGroup.Config(address))
-    buildProtocol(pg1)
   }
 
   def getTlsReqResponseProtocolClient[M](
