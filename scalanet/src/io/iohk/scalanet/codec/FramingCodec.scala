@@ -5,11 +5,11 @@ import scodec.bits.BitVector
 import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
 import scodec.codecs._
 
-class FramingCodec[T](val messageCodec: Codec[T], maxMessageLength: Int = 32) extends StreamCodec[T] {
+class FramingCodec[T](val messageCodec: Codec[T], lengthFieldLength: Int = 32) extends StreamCodec[T] {
 
-  private val longCodec = ulong(maxMessageLength)
+  private val lengthFieldCodec = ulong(lengthFieldLength)
 
-  private val codec = variableSizeBitsLong(longCodec, messageCodec)
+  private val codec = variableSizeBitsLong(lengthFieldCodec, messageCodec)
 
   private val atomicBuffer = AtomicAny[BitVector](BitVector.empty)
 
@@ -22,7 +22,7 @@ class FramingCodec[T](val messageCodec: Codec[T], maxMessageLength: Int = 32) ex
     result
   }
 
-  override def cleanSlate: StreamCodec[T] = new FramingCodec[T](messageCodec, maxMessageLength)
+  override def cleanSlate: StreamCodec[T] = new FramingCodec[T](messageCodec, lengthFieldLength)
 
   override def encode(value: T): Attempt[BitVector] = codec.encode(value)
 
@@ -59,11 +59,11 @@ class FramingCodec[T](val messageCodec: Codec[T], maxMessageLength: Int = 32) ex
   }
 
   private def isReadingCorrectSize(bufferRead: BitVector, have: Long, needed: Long) = {
-    (bufferRead.size == have) && (needed == maxMessageLength)
+    (bufferRead.size == have) && (needed == lengthFieldLength)
   }
 
   private def isReadingCorrectValue(bufferRead: BitVector, have: Long, needed: Long) = {
-    val l = bufferRead.size - maxMessageLength
+    val l = bufferRead.size - lengthFieldLength
     (l == have) && have < needed
   }
 }
