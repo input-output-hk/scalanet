@@ -43,7 +43,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
     private val log = LoggerFactory.getLogger(getClass)
 
     override def channelInactive(channelHandlerContext: ChannelHandlerContext): Unit = {
-      log.debug("Channel to peer")
+      log.debug("Channel to peer {} inactive", channelHandlerContext.channel().remoteAddress())
       messageSubject.onComplete()
     }
 
@@ -54,12 +54,14 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
           s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
             s"to local address ${ctx.channel().localAddress()}"
         )
-        codec
-          .streamDecode(BitVector(byteBuf.nioBuffer()))
-          .foreach { message =>
-            log.debug("decoded message {}", message)
-            messageSubject.onNext(message)
-          }
+        codec.streamDecode(BitVector(byteBuf.nioBuffer())) match {
+          case Left(value) =>
+            log.debug("Unexpected decoding error {} from peer {}", value: Any, ctx.channel().remoteAddress(): Any)
+
+          case Right(value) =>
+            log.debug("Decoded {} messages from peer {}", value.size, ctx.channel().remoteAddress())
+            value.foreach(messageSubject.onNext)
+        }
       } finally {
         byteBuf.release()
       }
@@ -67,6 +69,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
 
     override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
       // swallow netty's default logging of the stack trace.
+      log.debug("Unexpected exception {} on channel to peer {}", cause.getMessage: Any, ctx.channel().remoteAddress(): Any)
     }
   }
 
@@ -259,7 +262,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
     override val to: PeerInfo = PeerInfo(peerId, InetMultiAddress(nettyChannel.remoteAddress()))
 
     override def sendMessage(message: M): Task[Unit] = {
-      log.debug("Sending message {} to peer {} via server channel", message, nettyChannel.localAddress())
+      log.debug("Sending message to peer {} via server channel", nettyChannel.localAddress())
       nettyChannel.sendMessage(message)(codec).onErrorRecoverWith {
         case e: IOException =>
           log.debug("Sending message to {} failed due to {}", message, e)

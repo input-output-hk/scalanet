@@ -13,7 +13,7 @@ class FramingCodec[T](val messageCodec: Codec[T], maxMessageLength: Int = 32) ex
 
   private val atomicBuffer = AtomicAny[BitVector](BitVector.empty)
 
-  override def streamDecode(newBits: BitVector): Seq[T] = {
+  override def streamDecode(newBits: BitVector): Either[String, Seq[T]]= {
     val result = atomicBuffer.transformAndExtract { state =>
       val newBuffer = state ++ newBits
       val (resultingBuffer, decodedMessages) = processBuffer(newBuffer, codec)
@@ -32,11 +32,11 @@ class FramingCodec[T](val messageCodec: Codec[T], maxMessageLength: Int = 32) ex
 
   override def sizeBound: SizeBound = codec.sizeBound
 
-  private def processBuffer[M](buf: BitVector, c: Codec[M]): (BitVector, Seq[M]) = {
+  private def processBuffer[M](buf: BitVector, c: Codec[M]): (BitVector, Either[String, Seq[M]]) = {
     @scala.annotation.tailrec
-    def go(left: BitVector, processed: Seq[M]): (BitVector, Seq[M]) = {
+    def go(left: BitVector, processed: Seq[M]): (BitVector, Either[String, Seq[M]]) = {
       if (left.isEmpty) {
-        (left, processed)
+        (left, Right(processed))
       } else {
         c.decode(left) match {
           case Attempt.Successful(v) =>
@@ -45,12 +45,12 @@ class FramingCodec[T](val messageCodec: Codec[T], maxMessageLength: Int = 32) ex
             x match {
               case Err.InsufficientBits(needed, have, _)
                   if (isReadingCorrectSize(left, have, needed) || isReadingCorrectValue(left, have, needed)) =>
-                (left, processed)
+                (left, Right(processed))
 
               case e =>
                 // Unexpected error, it can  be that messages were in wrong format, or we got some malicious peers.
                 // Reset the buffer
-                (BitVector.empty, processed)
+                (BitVector.empty, Left(e.message))
             }
         }
       }

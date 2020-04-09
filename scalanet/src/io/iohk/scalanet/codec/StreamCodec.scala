@@ -18,7 +18,7 @@ import scodec.bits.BitVector
   * means we need a fresh instance for every new channel created.
   */
 trait StreamCodec[T] extends Codec[T] {
-  def streamDecode(source: BitVector): Seq[T]
+  def streamDecode(source: BitVector): Either[String, Seq[T]]
 
   def cleanSlate: StreamCodec[T]
 }

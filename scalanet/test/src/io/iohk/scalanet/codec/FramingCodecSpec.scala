@@ -3,17 +3,18 @@ package io.iohk.scalanet.codec
 import scodec.Codec
 import org.scalacheck.Arbitrary.arbitrary
 import org.scalacheck.Gen
-import org.scalatest.FlatSpec
+import org.scalatest.{EitherValues, FlatSpec}
 import org.scalatest.Matchers._
 import scodec.bits.BitVector
 import scodec.codecs.implicits._
 import scodec.codecs._
+
 import scala.util.Random
 import org.scalatest.prop.GeneratorDrivenPropertyChecks._
 import FramingCodecSpec._
 import scodec.codecs.Discriminated
 
-class FramingCodecSpec extends FlatSpec {
+class FramingCodecSpec extends FlatSpec with EitherValues {
 
   behavior of "FramingCodec"
 
@@ -22,7 +23,7 @@ class FramingCodecSpec extends FlatSpec {
 
     forAll(genString()) { listOfString =>
       val enc = listOfString.map(encoder.encode(_).require).foldLeft(BitVector.empty)((acc, bit) => acc ++ bit)
-      val decoded = encoder.streamDecode(enc)
+      val decoded = encoder.streamDecode(enc).right.value
       decoded.toList shouldEqual listOfString
     }
   }
@@ -33,7 +34,7 @@ class FramingCodecSpec extends FlatSpec {
     forAll(genString(), Gen.choose(minPacketSize, maxPacketSize)) { (listOfString, packetSize) =>
       val enc = listOfString.map(encoder.encode(_).require).foldLeft(BitVector.empty)((acc, bit) => acc ++ bit)
       val encPacketed = enc.grouped(packetSize).toList
-      val decoded = encPacketed.foldLeft(List(): List[String])((acc, vec) => acc ++ encoder.streamDecode(vec))
+      val decoded = encPacketed.foldLeft(List(): List[String])((acc, vec) => acc ++ encoder.streamDecode(vec).right.value)
       decoded shouldEqual listOfString
     }
   }
@@ -45,7 +46,7 @@ class FramingCodecSpec extends FlatSpec {
       (listOfMessages: List[RandomMessage], packetSize) =>
         val enc = listOfMessages.map(encoder.encode(_).require).foldLeft(BitVector.empty)((acc, bit) => acc ++ bit)
         val encPacketed = enc.grouped(packetSize).toList
-        val decoded = encPacketed.foldLeft(List(): List[RandomMessage])((acc, vec) => acc ++ encoder.streamDecode(vec))
+        val decoded = encPacketed.foldLeft(List(): List[RandomMessage])((acc, vec) => acc ++ encoder.streamDecode(vec).right.value)
         decoded shouldEqual listOfMessages
     }
   }
@@ -56,11 +57,11 @@ class FramingCodecSpec extends FlatSpec {
     val sourceMessage = Random.nextString(9)
     val enc = longCodec.encode(sourceMessage).require
     val dec = shortCodec.streamDecode(enc)
-    dec shouldEqual Seq()
+    dec.isLeft shouldBe true
     val sourceMessage1 = Random.nextString(9)
     val enc1 = longCodec.encode(sourceMessage1).require
     val dec1 = longCodec.streamDecode(enc1)
-    dec1 shouldEqual List(sourceMessage1)
+    dec1 shouldEqual Right(List(sourceMessage1))
   }
 
 }
