@@ -6,6 +6,7 @@ import java.nio.channels.ClosedChannelException
 
 import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.monix_subject.ConnectableSubject
+import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived, UnexpectedError}
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, HandshakeException, ServerEvent}
@@ -36,7 +37,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
   }
 
   class MessageNotifier[M](
-      val messageSubject: ConnectableSubject[M],
+      val messageSubject: ConnectableSubject[ChannelEvent[M]],
       codec: StreamCodec[M]
   ) extends ChannelInboundHandlerAdapter {
 
@@ -57,10 +58,11 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
         codec.streamDecode(BitVector(byteBuf.nioBuffer())) match {
           case Left(value) =>
             log.debug("Unexpected decoding error {} from peer {}", value: Any, ctx.channel().remoteAddress(): Any)
+            messageSubject.onNext(DecodingError)
 
           case Right(value) =>
             log.debug("Decoded {} messages from peer {}", value.size, ctx.channel().remoteAddress())
-            value.foreach(messageSubject.onNext)
+            value.foreach(m => messageSubject.onNext(MessageReceived(m)))
         }
       } finally {
         byteBuf.release()
@@ -74,6 +76,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
         cause.getMessage: Any,
         ctx.channel().remoteAddress(): Any
       )
+      messageSubject.onNext(UnexpectedError(cause))
     }
   }
 
@@ -95,7 +98,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
     private val deactivation = Promise[Unit]()
     private val deactivationF = deactivation.future
 
-    private val messageSubject = ConnectableSubject[M]()
+    private val messageSubject = ConnectableSubject[ChannelEvent[M]]()
 
     private val bootstrap: Bootstrap = clientBootstrap
       .clone()
@@ -188,7 +191,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       }
     }
 
-    override def in: ConnectableObservable[M] = messageSubject
+    override def in: ConnectableObservable[ChannelEvent[M]] = messageSubject
 
     override def close(): Task[Unit] = {
       for {
@@ -211,7 +214,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
     private val log = LoggerFactory.getLogger(getClass)
     val sslHandler = sslServerCtx.newHandler(nettyChannel.alloc())
 
-    val messageSubject = ConnectableSubject[M]()
+    val messageSubject = ConnectableSubject[ChannelEvent[M]]()
     val sslEngine = sslHandler.engine()
 
     nettyChannel
@@ -253,7 +256,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       val nettyChannel: SocketChannel,
       peerId: BitVector,
       codec: StreamCodec[M],
-      messageSubject: ConnectableSubject[M]
+      messageSubject: ConnectableSubject[ChannelEvent[M]]
   )(implicit scheduler: Scheduler)
       extends Channel[PeerInfo, M] {
 
@@ -274,7 +277,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       }
     }
 
-    override def in: ConnectableObservable[M] = messageSubject
+    override def in: ConnectableObservable[ChannelEvent[M]] = messageSubject
 
     override def close(): Task[Unit] =
       for {

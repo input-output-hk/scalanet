@@ -4,8 +4,9 @@ import java.io.IOException
 import java.net.{InetSocketAddress, PortUnreachableException}
 import java.util.concurrent.ConcurrentHashMap
 
-import scodec.Codec
+import scodec.{Attempt, Codec}
 import io.iohk.scalanet.monix_subject.ConnectableSubject
+import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{ChannelId, getChannelId, toTask}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
@@ -65,6 +66,16 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
     }
   }
 
+  private def handleIncomingMessage(channel: ChannelImpl, datagramPacket: DatagramPacket): Unit = {
+    codec.decodeValue(BitVector(datagramPacket.content().nioBuffer())) match {
+      case Attempt.Successful(msg) =>
+        channel.messageSubject.onNext(MessageReceived(msg))
+      case Attempt.Failure(er) =>
+        log.debug("Message decoding failed due to {}", er)
+        channel.messageSubject.onNext(DecodingError)
+    }
+  }
+
   /**
     * 64 kilobytes is the theoretical maximum size of a complete IP datagram
     * https://stackoverflow.com/questions/9203403/java-datagrampacket-udp-maximum-send-recv-buffer-size
@@ -83,7 +94,6 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
               try {
                 val remoteAddress = datagram.sender()
                 val localAddress = datagram.recipient()
-                val messageE = codec.decodeValue(BitVector(datagram.content().nioBuffer())).toEither
                 log.info(s"Client channel read message with remote $remoteAddress and local $localAddress")
 
                 val channelId = (remoteAddress, localAddress)
@@ -95,7 +105,7 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
                   // not execute on this channel
                   throw new IllegalStateException(s"Missing channel instance for channelId $channelId")
                 } else {
-                  messageE.foreach(message => channel.messageSubject.onNext(message))
+                  handleIncomingMessage(channel, datagram)
                 }
               } finally {
                 datagram.content().release()
@@ -135,9 +145,7 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
                 val remoteAddress = datagram.sender()
                 val localAddress = processAddress.inetSocketAddress
 
-                val messageE = codec.decodeValue(BitVector(datagram.content().nioBuffer())).toEither
-
-                log.info(s"Server read $messageE")
+                log.info(s"Server from $remoteAddress")
                 val serverChannel: NioDatagramChannel = ctx.channel().asInstanceOf[NioDatagramChannel]
 
                 val channelId = getChannelId(remoteAddress, localAddress)
@@ -154,7 +162,7 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
                         serverChannel,
                         localAddress,
                         remoteAddress,
-                        ConnectableSubject[M](),
+                        ConnectableSubject[ChannelEvent[M]](),
                         UDPPeerGroupInternals.ServerChannel
                       )
                     } else {
@@ -168,7 +176,7 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
                           serverChannel,
                           localAddress,
                           remoteAddress,
-                          ConnectableSubject[M](),
+                          ConnectableSubject[ChannelEvent[M]](),
                           UDPPeerGroupInternals.ServerChannel
                         )
                       }
@@ -185,7 +193,7 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
                 // taking it from map but before server pushes message on to it, `onNext` would be called after `onComplete`
                 // which is breach of observer contract.
                 // It is worth investigating if it is only theoretical possibility or additional synchronization is needed
-                messageE.foreach(m => channel.messageSubject.onNext(m))
+                handleIncomingMessage(channel, datagram)
               } finally {
                 datagram.content().release()
               }
@@ -198,7 +206,7 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
       val nettyChannel: NioDatagramChannel,
       localAddress: InetSocketAddress,
       remoteAddress: InetSocketAddress,
-      val messageSubject: ConnectableSubject[M],
+      val messageSubject: ConnectableSubject[ChannelEvent[M]],
       channelType: UDPPeerGroupInternals.ChannelType
   ) extends Channel[InetMultiAddress, M] {
 
@@ -228,7 +236,7 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
       }
     }
 
-    override def in: ConnectableObservable[M] = messageSubject
+    override def in: ConnectableObservable[ChannelEvent[M]] = messageSubject
 
     private def closeNettyChannel(channelType: ChannelType): Task[Unit] = {
       channelType match {
@@ -294,7 +302,7 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
           nettyChannel,
           localAddress,
           to.inetSocketAddress,
-          ConnectableSubject[M](),
+          ConnectableSubject[ChannelEvent[M]](),
           UDPPeerGroupInternals.ClientChannel
         )
         activeChannels.put(channelId, channel)

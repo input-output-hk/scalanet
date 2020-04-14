@@ -7,6 +7,7 @@ import java.util.UUID
 import cats.effect.concurrent.Ref
 import io.iohk.scalanet.codec.FramingCodec
 import io.iohk.scalanet.crypto.CryptoUtils
+import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, MessageReceived}
 import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSPeerGroup, Secp256k1}
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.ChannelId
 import io.iohk.scalanet.peergroup.ReqResponseProtocol._
@@ -88,9 +89,12 @@ class ReqResponseProtocol[A, M](
         .timeout(timeOutDuration)
     } yield result
 
-  private def subscribeForResponse(source: ConnectableObservable[MessageEnvelope[M]], responseId: UUID) = {
+  private def subscribeForResponse(
+      source: ConnectableObservable[ChannelEvent[MessageEnvelope[M]]],
+      responseId: UUID
+  ): Task[MessageEnvelope[M]] = {
     source.collect {
-      case response if response.id == responseId => response
+      case MessageReceived(response) if response.id == responseId => response
     }.headL
   }
 
@@ -99,7 +103,9 @@ class ReqResponseProtocol[A, M](
       .server()
       .refCount
       .collectChannelCreated
-      .mergeMap(channel => channel.in.refCount.map(request => (channel, request)))
+      .mergeMap(
+        channel => channel.in.refCount.collect { case MessageReceived(msg) => msg }.map(request => (channel, request))
+      )
       .foreachL {
         case (ch, mes) =>
           ch.sendMessage(MessageEnvelope(mes.id, requestHandler(mes.m))).runAsyncAndForget

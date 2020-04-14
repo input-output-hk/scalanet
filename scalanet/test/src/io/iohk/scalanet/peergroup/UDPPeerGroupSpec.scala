@@ -8,10 +8,12 @@ import io.iohk.scalanet.NetUtils._
 
 import scala.concurrent.duration._
 import io.iohk.scalanet.NetUtils
+import io.iohk.scalanet.peergroup.Channel.{DecodingError, MessageReceived}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import org.scalatest.concurrent.ScalaFutures._
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelAlreadyClosedException, MessageMTUException}
 import io.iohk.scalanet.peergroup.StandardTestPack._
+import io.iohk.scalanet.peergroup.kademlia.KMessage
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.execution.schedulers.TestScheduler
@@ -77,7 +79,7 @@ class UDPPeerGroupSpec extends FlatSpec with EitherValues {
     val messageFromClients = "Hello server"
     val randomNonExistingPeer = InetMultiAddress(aRandomAddress())
     (for {
-      pg1 <- initUdpPeerGroup()
+      pg1 <- initUdpPeerGroup[String]()
       pg1Channel <- pg1.client(randomNonExistingPeer)
       _ <- pg1Channel.sendMessage(messageFromClients)
       _ <- pg1Channel.close()
@@ -91,15 +93,15 @@ class UDPPeerGroupSpec extends FlatSpec with EitherValues {
     import UDPPeerGroupSpecUtils._
     val messageFromClients = "Hello server"
     (for {
-      pg1 <- initUdpPeerGroup()
-      pg2 <- initUdpPeerGroup()
-      pg3 <- initUdpPeerGroup()
+      pg1 <- initUdpPeerGroup[String]()
+      pg2 <- initUdpPeerGroup[String]()
+      pg3 <- initUdpPeerGroup[String]()
       _ <- echoServer(pg2).startAndForget
-      response <- requestResponse(pg1, pg2.processAddress, messageFromClients, 2 seconds)
-      response1 <- requestResponse(pg3, pg2.processAddress, messageFromClients, 2 seconds)
+      response <- requestResponse(pg1, pg2.processAddress, messageFromClients)
+      response1 <- requestResponse(pg3, pg2.processAddress, messageFromClients)
       numOfServerChannelsAfter2Requests = pg2.activeChannels.size()
-      response2 <- requestResponse(pg1, pg2.processAddress, messageFromClients, 2 seconds)
-      response3 <- requestResponse(pg3, pg2.processAddress, messageFromClients, 2 seconds)
+      response2 <- requestResponse(pg1, pg2.processAddress, messageFromClients)
+      response3 <- requestResponse(pg3, pg2.processAddress, messageFromClients)
       numOfServerChannelsAfter4Requests = pg2.activeChannels.size()
       _ = testScheduler.tick(pg2.config.cleanUpInitialDelay)
       numOfServerChannelsAfterCleanup = pg2.activeChannels.size()
@@ -124,32 +126,32 @@ class UDPPeerGroupSpec extends FlatSpec with EitherValues {
 
     (for {
       result <- Task.parZip4(
-        initUdpPeerGroup(),
-        initUdpPeerGroup(),
-        initUdpPeerGroup(),
-        initUdpPeerGroup()
+        initUdpPeerGroup[String](),
+        initUdpPeerGroup[String](),
+        initUdpPeerGroup[String](),
+        initUdpPeerGroup[String]()
       )
       (pg1, pg2, pg3, pg4) = result
       _ <- echoServer(pg4).startAndForget
       responses <- Task.parZip3(
-        requestResponse(pg1, pg4.processAddress, messageFromClients, 2 seconds),
-        requestResponse(pg2, pg4.processAddress, messageFromClients, 2 seconds),
-        requestResponse(pg3, pg4.processAddress, messageFromClients, 2 seconds)
+        requestResponse(pg1, pg4.processAddress, messageFromClients),
+        requestResponse(pg2, pg4.processAddress, messageFromClients),
+        requestResponse(pg3, pg4.processAddress, messageFromClients)
       )
       numOfServerChannelsAfter1Round = pg4.activeChannels.size()
       (pg1Response, pg2Response, pg3Response) = responses
       _ <- Task.parZip3(
-        requestResponse(pg1, pg4.processAddress, messageFromClients, 2 seconds),
-        requestResponse(pg2, pg4.processAddress, messageFromClients, 2 seconds),
-        requestResponse(pg3, pg4.processAddress, messageFromClients, 2 seconds)
+        requestResponse(pg1, pg4.processAddress, messageFromClients),
+        requestResponse(pg2, pg4.processAddress, messageFromClients),
+        requestResponse(pg3, pg4.processAddress, messageFromClients)
       )
       numOfServerChannelsAfter2Round = pg4.activeChannels.size()
       _ = testScheduler.tick(pg4.config.cleanUpInitialDelay)
       numOfServerChannelsAfterCleanUp = pg4.activeChannels.size()
       responses1 <- Task.parZip3(
-        requestResponse(pg1, pg4.processAddress, messageFromClients, 2 seconds),
-        requestResponse(pg2, pg4.processAddress, messageFromClients, 2 seconds),
-        requestResponse(pg3, pg4.processAddress, messageFromClients, 2 seconds)
+        requestResponse(pg1, pg4.processAddress, messageFromClients),
+        requestResponse(pg2, pg4.processAddress, messageFromClients),
+        requestResponse(pg3, pg4.processAddress, messageFromClients)
       )
       (pg1Response1, pg2Response1, pg3Response1) = responses1
       numOfServerChannelsAfter3Round = pg4.activeChannels.size()
@@ -177,7 +179,7 @@ class UDPPeerGroupSpec extends FlatSpec with EitherValues {
     val randomNonExistingPeer = InetMultiAddress(aRandomAddress())
 
     (for {
-      pg1 <- initUdpPeerGroup()
+      pg1 <- initUdpPeerGroup[String]()
       pg1Channel <- pg1.client(randomNonExistingPeer)
       _ <- pg1Channel.sendMessage(messageFromClients)
       _ <- pg1Channel.close()
@@ -187,16 +189,34 @@ class UDPPeerGroupSpec extends FlatSpec with EitherValues {
     }).runSyncUnsafe()
   }
 
+  it should "inform user if there was decoding error on the channel" in {
+    import UDPPeerGroupSpecUtils._
+    import io.iohk.scalanet.codec.DefaultCodecs.KademliaMessages._
+    import io.iohk.scalanet.codec.DefaultCodecs.General._
+    import scodec.codecs.implicits._
+    (for {
+      pg1 <- initUdpPeerGroup[String]()
+      pg2 <- initUdpPeerGroup[KMessage[String]]()
+      ch1 <- pg1.client(pg2.processAddress)
+      result <- Task.parZip2(
+        ch1.sendMessage("Helllo wrong server"),
+        pg2.server().refCount.collectChannelCreated.mergeMap(_.in.refCount).headL
+      )
+      (_, receivedEvent) = result
+    } yield {
+      assert(receivedEvent == DecodingError)
+    }).runSyncUnsafe()
+  }
 }
 
 object UDPPeerGroupSpecUtils {
   val testScheduler = TestScheduler()
-  def requestResponse(
-      peerGroup: PeerGroup[InetMultiAddress, String],
+  def requestResponse[M](
+      peerGroup: PeerGroup[InetMultiAddress, M],
       to: InetMultiAddress,
-      message: String,
-      requestTimeout: FiniteDuration
-  ): Task[String] = {
+      message: M,
+      requestTimeout: FiniteDuration = 2.seconds
+  ): Task[M] = {
     peerGroup
       .client(to)
       .bracket { clientChannel =>
@@ -206,26 +226,28 @@ object UDPPeerGroupSpecUtils {
       }
   }
 
-  def sendRequest(
-      message: String,
-      clientChannel: Channel[InetMultiAddress, String],
+  def sendRequest[M](
+      message: M,
+      clientChannel: Channel[InetMultiAddress, M],
       requestTimeout: FiniteDuration
-  ): Task[String] = {
+  ): Task[M] = {
     for {
       _ <- clientChannel.sendMessage(message).timeout(requestTimeout)
-      response <- clientChannel.in.refCount.headL
+      response <- clientChannel.in.refCount
+        .collect { case MessageReceived(m) => m }
+        .headL
         .timeout(requestTimeout)
     } yield response
   }
 
-  def echoServer(peerGroup: PeerGroup[InetMultiAddress, String])(implicit s: Scheduler) = {
+  def echoServer[M](peerGroup: PeerGroup[InetMultiAddress, M])(implicit s: Scheduler) = {
     // echo server which closes every incoming channel after response
     peerGroup
       .server()
       .refCount
       .collectChannelCreated
       .mergeMap { channel =>
-        channel.in.refCount.map(request => (channel, request))
+        channel.in.refCount.collect { case MessageReceived(m) => m }.map(request => (channel, request))
       }
       .foreachL {
         case (channel, msg) =>
@@ -238,10 +260,10 @@ object UDPPeerGroupSpecUtils {
       }
   }
 
-  def initUdpPeerGroup(
+  def initUdpPeerGroup[M](
       address: InetSocketAddress = aRandomAddress()
-  )(implicit s: Scheduler): Task[UDPPeerGroup[String]] = {
-    val pg = new UDPPeerGroup[String](UDPPeerGroup.Config(address), cleanupScheduler = testScheduler)
+  )(implicit s: Scheduler, c: Codec[M]): Task[UDPPeerGroup[M]] = {
+    val pg = new UDPPeerGroup[M](UDPPeerGroup.Config(address), cleanupScheduler = testScheduler)
     pg.initialize().map(_ => pg)
   }
 

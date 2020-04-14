@@ -1,5 +1,6 @@
 package io.iohk.scalanet.peergroup.kademlia
 
+import io.iohk.scalanet.peergroup.Channel.MessageReceived
 import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
@@ -54,7 +55,7 @@ object KNetwork {
         .collectChannelCreated
         .mapEval { channel: Channel[A, KMessage[A]] =>
           channel.in.refCount
-            .collect { case r: KRequest[A] => r }
+            .collect { case MessageReceived(req: KRequest[A]) => req }
             .map(request => Some((request, sendOptionalResponse(channel))))
             .headL
             .timeout(requestTimeout)
@@ -93,7 +94,9 @@ object KNetwork {
       for {
         _ <- clientChannel.sendMessage(message).timeout(requestTimeout)
         response <- clientChannel.in.refCount
-          .collect(pf)
+          .collect {
+            case MessageReceived(m) if pf.isDefinedAt(m) => pf(m)
+          }
           .headL
           .timeout(requestTimeout)
       } yield response

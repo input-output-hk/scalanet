@@ -1,5 +1,6 @@
 package io.iohk.scalanet.peergroup
 
+import io.iohk.scalanet.peergroup.Channel.ChannelEvent
 import scodec.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
@@ -47,7 +48,7 @@ trait Channel[A, M] {
   /**
     * The inbound stream of messages coming from the remote peer.
     */
-  def in: ConnectableObservable[M]
+  def in: ConnectableObservable[ChannelEvent[M]]
 
   /**
     * Terminate the Channel and clean up any resources.
@@ -56,6 +57,13 @@ trait Channel[A, M] {
     *         and return a successful Task.
     */
   def close(): Task[Unit]
+}
+
+object Channel {
+  sealed abstract class ChannelEvent[+M]
+  final case class MessageReceived[M](m: M) extends ChannelEvent[M]
+  final case class UnexpectedError(e: Throwable) extends ChannelEvent[Nothing]
+  final case object DecodingError extends ChannelEvent[Nothing]
 }
 
 /**

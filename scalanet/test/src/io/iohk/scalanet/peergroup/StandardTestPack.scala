@@ -1,6 +1,7 @@
 package io.iohk.scalanet.peergroup
 
 import io.iohk.scalanet.TaskValues._
+import io.iohk.scalanet.peergroup.Channel.MessageReceived
 import io.iohk.scalanet.peergroup.PeerGroup.ChannelSetupException
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
 import monix.execution.Scheduler
@@ -19,11 +20,17 @@ object StandardTestPack {
 
     bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runToFuture)
     val aliceClient = alice.client(bob.processAddress).evaluated
-    val aliceReceived = aliceClient.in.headL.runToFuture
+    val aliceReceived = aliceClient.in.collect { case MessageReceived(m) => m }.headL.runToFuture
 
     aliceClient.sendMessage(alicesMessage).runToFuture
     val bobReceived: Future[String] =
-      bob.server().collectChannelCreated.mergeMap(channel => channel.in).headL.runToFuture
+      bob
+        .server()
+        .collectChannelCreated
+        .mergeMap(channel => channel.in)
+        .collect { case MessageReceived(m) => m }
+        .headL
+        .runToFuture
     aliceClient.in.connect()
     bob.server().collectChannelCreated.foreach(_.in.connect())
     bob.server().connect()
@@ -43,8 +50,8 @@ object StandardTestPack {
     val aliceClient1 = alice.client(bob.processAddress).evaluated
     val aliceClient2 = alice.client(bob.processAddress).evaluated
 
-    val aliceReceived1 = aliceClient1.in.headL.runToFuture
-    val aliceReceived2 = aliceClient2.in.headL.runToFuture
+    val aliceReceived1 = aliceClient1.in.collect { case MessageReceived(m) => m }.headL.runToFuture
+    val aliceReceived2 = aliceClient2.in.collect { case MessageReceived(m) => m }.headL.runToFuture
     aliceClient1.sendMessage(alicesMessage).runToFuture
     aliceClient2.sendMessage(alicesMessage).runToFuture
 

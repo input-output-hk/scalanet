@@ -7,12 +7,14 @@ import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.codec.FramingCodec
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
+import io.iohk.scalanet.peergroup.Channel.{DecodingError, MessageReceived}
 import io.iohk.scalanet.peergroup.DynamicTLSPeerGroupSpec._
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, HandshakeException}
 import io.iohk.scalanet.peergroup.ReqResponseProtocol.DynamicTLS
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.SignedKey
 import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSExtension, DynamicTLSPeerGroup, Secp256k1}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{Config, PeerInfo}
+import io.iohk.scalanet.peergroup.kademlia.KMessage
 import io.iohk.scalanet.testutils.GeneratorUtils
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -46,7 +48,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       _ <- ch1.sendMessage("Hello enc server")
       rec <- server.server().refCount.collectChannelCreated.mergeMap(ch => ch.in.refCount).headL
     } yield {
-      rec shouldEqual "Hello enc server"
+      rec shouldEqual MessageReceived("Hello enc server")
     }
   }
 
@@ -130,6 +132,29 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       ch1.isLeft shouldEqual true
       ch1.left.get shouldBe a[HandshakeException[_]]
       serverHandshake shouldBe a[HandshakeException[_]]
+    }
+  }
+
+  it should "handle inform user about decoding error" in taskTestCase {
+    import io.iohk.scalanet.codec.DefaultCodecs.KademliaMessages._
+    import io.iohk.scalanet.codec.DefaultCodecs.General._
+    import scodec.codecs.implicits._
+
+    implicit val s = new FramingCodec[KMessage[String]](Codec[KMessage[String]])
+    val client = new DynamicTLSPeerGroup[String](getCorrectConfig())
+    val server = new DynamicTLSPeerGroup[KMessage[String]](getCorrectConfig())
+
+    for {
+      _ <- client.initialize()
+      _ <- server.initialize()
+      ch1 <- client.client(server.processAddress)
+      result <- Task.parZip2(
+        ch1.sendMessage("Hello server, do not process this message"),
+        server.server().refCount.collectChannelCreated.mergeMap(_.in.refCount).headL
+      )
+      (_, eventReceived) = result
+    } yield {
+      assert(eventReceived == DecodingError)
     }
   }
 }
