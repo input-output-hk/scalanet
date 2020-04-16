@@ -26,6 +26,7 @@ import scodec.bits.BitVector
 
 import scala.collection.JavaConverters._
 import scala.concurrent.Promise
+import scala.util.control.NonFatal
 
 private[dynamictls] object DynamicTLSPeerGroupInternals {
   implicit class ChannelOps(val channel: io.netty.channel.Channel) {
@@ -64,6 +65,8 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
             log.debug("Decoded {} messages from peer {}", value.size, ctx.channel().remoteAddress())
             value.foreach(m => messageSubject.onNext(MessageReceived(m)))
         }
+      } catch {
+        case NonFatal(e) => messageSubject.onNext(UnexpectedError(e))
       } finally {
         byteBuf.release()
       }
