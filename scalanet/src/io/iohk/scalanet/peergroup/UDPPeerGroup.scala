@@ -4,22 +4,14 @@ import java.io.IOException
 import java.net.{InetSocketAddress, PortUnreachableException}
 import java.util.concurrent.ConcurrentHashMap
 
-import scodec.{Attempt, Codec}
 import io.iohk.scalanet.monix_subject.ConnectableSubject
-import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived}
+import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived, UnexpectedError}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{ChannelId, getChannelId, toTask}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import io.iohk.scalanet.peergroup.PeerGroup.{
-  ChannelAlreadyClosedException,
-  ChannelSetupException,
-  MessageMTUException,
-  ServerEvent,
-  TerminalPeerGroup
-}
-import io.iohk.scalanet.peergroup.UDPPeerGroup._
-import io.iohk.scalanet.peergroup.UDPPeerGroup.UDPPeerGroupInternals
+import io.iohk.scalanet.peergroup.PeerGroup._
 import io.iohk.scalanet.peergroup.UDPPeerGroup.UDPPeerGroupInternals.ChannelType
+import io.iohk.scalanet.peergroup.UDPPeerGroup.{UDPPeerGroupInternals, _}
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel
@@ -33,9 +25,10 @@ import monix.execution.atomic.AtomicBoolean
 import monix.reactive.observables.ConnectableObservable
 import org.slf4j.LoggerFactory
 import scodec.bits.BitVector
+import scodec.{Attempt, Codec}
 
-import scala.util.control.NonFatal
 import scala.concurrent.duration._
+import scala.util.control.NonFatal
 
 /**
   * PeerGroup implementation on top of UDP.
@@ -76,6 +69,20 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
     }
   }
 
+  private def handleError(ctx: ChannelHandlerContext, error: Throwable): Unit = {
+    val remoteAddress = ctx.channel.remoteAddress().asInstanceOf[InetSocketAddress]
+    val localAddress = ctx.channel.localAddress().asInstanceOf[InetSocketAddress]
+    val channelId = getChannelId(remoteAddress, localAddress)
+    val channel = Option(activeChannels.get(channelId))
+    // Inform about error only if channel is available and open
+    channel.foreach { ch =>
+      if (ch.isOpen) {
+        log.debug("Unexpected error {} on channel {}", error.getMessage: Any, channelId: Any)
+        ch.messageSubject.onNext(UnexpectedError(error))
+      }
+    }
+  }
+
   /**
     * 64 kilobytes is the theoretical maximum size of a complete IP datagram
     * https://stackoverflow.com/questions/9203403/java-datagrampacket-udp-maximum-send-recv-buffer-size
@@ -107,6 +114,8 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
                 } else {
                   handleIncomingMessage(channel, datagram)
                 }
+              } catch {
+                case NonFatal(e) => handleError(ctx, e)
               } finally {
                 datagram.content().release()
               }
@@ -123,6 +132,7 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
                 case _ =>
                   super.exceptionCaught(ctx, cause)
               }
+              handleError(ctx, cause)
             }
           })
       }
@@ -194,9 +204,15 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
                 // which is breach of observer contract.
                 // It is worth investigating if it is only theoretical possibility or additional synchronization is needed
                 handleIncomingMessage(channel, datagram)
+              } catch {
+                case NonFatal(e) => handleError(ctx, e)
               } finally {
                 datagram.content().release()
               }
+            }
+
+            override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
+              handleError(ctx, cause)
             }
           })
       }
