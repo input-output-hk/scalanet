@@ -1,7 +1,6 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
-
 import org.scalatest.{EitherValues, FlatSpec}
 import org.scalatest.Matchers._
 import io.iohk.scalanet.NetUtils._
@@ -16,18 +15,16 @@ import io.iohk.scalanet.peergroup.StandardTestPack._
 import io.iohk.scalanet.peergroup.kademlia.KMessage
 import monix.eval.Task
 import monix.execution.Scheduler
-import monix.execution.schedulers.TestScheduler
 import org.scalatest.RecoverMethods._
+import org.scalatest.concurrent.Eventually
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs.implicits._
 
-import scala.concurrent.Await
-
-class UDPPeerGroupSpec extends FlatSpec with EitherValues {
+class UDPPeerGroupSpec extends FlatSpec with EitherValues with Eventually {
   implicit val scheduler = Scheduler.fixedPool("test", 16)
 
-  implicit val patienceConfig = PatienceConfig(5 seconds)
+  implicit val pc: PatienceConfig = PatienceConfig(5 seconds)
 
   behavior of "UDPPeerGroup"
 
@@ -54,27 +51,33 @@ class UDPPeerGroupSpec extends FlatSpec with EitherValues {
     }
 
   it should "shutdown cleanly" in {
-    val pg1 = randomUDPPeerGroup[String]
-    isListeningUDP(pg1.config.bindAddress) shouldBe true
+    import UDPPeerGroupSpecUtils._
 
-    pg1.shutdown().runToFuture.futureValue
-
-    isListeningUDP(pg1.config.bindAddress) shouldBe false
+    (for {
+      pg1 <- initUdpPeerGroup[String]()
+      isListeningAfterStart <- Task.now(isListeningUDP(pg1.config.bindAddress))
+      _ <- pg1.shutdown()
+      isListeningAfterShutdown <- Task.now(isListeningUDP(pg1.config.bindAddress))
+    } yield {
+      assert(isListeningAfterStart)
+      assert(!isListeningAfterShutdown)
+    }).runSyncUnsafe()
   }
 
   it should "throw InitializationError when port already in use" in {
+    import UDPPeerGroupSpecUtils._
     val address = aRandomAddress()
-    val pg1 = new UDPPeerGroup[String](UDPPeerGroup.Config(address))
-    val pg2 = new UDPPeerGroup[String](UDPPeerGroup.Config(address))
 
-    Await.result(pg1.initialize().runToFuture, 10 seconds)
-    assertThrows[InitializationError] {
-      Await.result(pg2.initialize().runToFuture, 10 seconds)
-    }
-    pg1.shutdown().runToFuture.futureValue
+    (for {
+      pg1 <- initUdpPeerGroup[String](address)
+      pg2Result <- initUdpPeerGroup[String](address).attempt
+    } yield {
+      assert(pg2Result.isLeft)
+      assert(pg2Result.left.get.isInstanceOf[InitializationError])
+    }).runSyncUnsafe()
   }
 
-  it should "clean up closed channels in background" in {
+  it should "clean up closed channels" in {
     import UDPPeerGroupSpecUtils._
     val messageFromClients = "Hello server"
     val randomNonExistingPeer = InetMultiAddress(aRandomAddress())
@@ -83,9 +86,10 @@ class UDPPeerGroupSpec extends FlatSpec with EitherValues {
       pg1Channel <- pg1.client(randomNonExistingPeer)
       _ <- pg1Channel.sendMessage(messageFromClients)
       _ <- pg1Channel.close()
-      _ = testScheduler.tick(pg1.config.cleanUpInitialDelay)
     } yield {
-      pg1.activeChannels.size() shouldEqual 0
+      eventually {
+        pg1.activeChannels.size() shouldEqual 0
+      }
     }).runSyncUnsafe()
   }
 
@@ -99,24 +103,18 @@ class UDPPeerGroupSpec extends FlatSpec with EitherValues {
       _ <- echoServer(pg2).startAndForget
       response <- requestResponse(pg1, pg2.processAddress, messageFromClients)
       response1 <- requestResponse(pg3, pg2.processAddress, messageFromClients)
-      numOfServerChannelsAfter2Requests = pg2.activeChannels.size()
       response2 <- requestResponse(pg1, pg2.processAddress, messageFromClients)
       response3 <- requestResponse(pg3, pg2.processAddress, messageFromClients)
-      numOfServerChannelsAfter4Requests = pg2.activeChannels.size()
-      _ = testScheduler.tick(pg2.config.cleanUpInitialDelay)
-      numOfServerChannelsAfterCleanup = pg2.activeChannels.size()
-      numOfClient1ChannelsAfterCleanup = pg1.activeChannels.size()
-      numOfClient2ChannelsAfterCleanup = pg3.activeChannels.size()
     } yield {
       response shouldEqual messageFromClients
       response1 shouldEqual messageFromClients
       response2 shouldEqual messageFromClients
       response3 shouldEqual messageFromClients
-      numOfServerChannelsAfter2Requests shouldEqual 2
-      numOfServerChannelsAfter4Requests shouldEqual 4
-      numOfServerChannelsAfterCleanup shouldEqual 0
-      numOfClient1ChannelsAfterCleanup shouldEqual 0
-      numOfClient2ChannelsAfterCleanup shouldEqual 0
+      eventually {
+        assert(pg1.activeChannels.isEmpty)
+        assert(pg2.activeChannels.isEmpty)
+        assert(pg3.activeChannels.isEmpty)
+      }
     }).runSyncUnsafe()
   }
 
@@ -138,38 +136,33 @@ class UDPPeerGroupSpec extends FlatSpec with EitherValues {
         requestResponse(pg2, pg4.processAddress, messageFromClients),
         requestResponse(pg3, pg4.processAddress, messageFromClients)
       )
-      numOfServerChannelsAfter1Round = pg4.activeChannels.size()
       (pg1Response, pg2Response, pg3Response) = responses
       _ <- Task.parZip3(
         requestResponse(pg1, pg4.processAddress, messageFromClients),
         requestResponse(pg2, pg4.processAddress, messageFromClients),
         requestResponse(pg3, pg4.processAddress, messageFromClients)
       )
-      numOfServerChannelsAfter2Round = pg4.activeChannels.size()
-      _ = testScheduler.tick(pg4.config.cleanUpInitialDelay)
-      numOfServerChannelsAfterCleanUp = pg4.activeChannels.size()
       responses1 <- Task.parZip3(
         requestResponse(pg1, pg4.processAddress, messageFromClients),
         requestResponse(pg2, pg4.processAddress, messageFromClients),
         requestResponse(pg3, pg4.processAddress, messageFromClients)
       )
       (pg1Response1, pg2Response1, pg3Response1) = responses1
-      numOfServerChannelsAfter3Round = pg4.activeChannels.size()
-      _ = testScheduler.tick(pg4.config.cleanUpPeriod)
-      numOfServerChannelsAfter2CleanUp = pg4.activeChannels.size()
-
     } yield {
       pg1Response shouldEqual messageFromClients
       pg2Response shouldEqual messageFromClients
       pg3Response shouldEqual messageFromClients
-      numOfServerChannelsAfter1Round shouldEqual 3
-      numOfServerChannelsAfter2Round shouldEqual 6
-      numOfServerChannelsAfterCleanUp shouldEqual 0
       pg1Response1 shouldEqual messageFromClients
       pg2Response1 shouldEqual messageFromClients
       pg3Response1 shouldEqual messageFromClients
-      numOfServerChannelsAfter3Round shouldEqual 3
-      numOfServerChannelsAfter2CleanUp shouldEqual 0
+
+      eventually {
+        assert(pg1.activeChannels.isEmpty)
+        assert(pg2.activeChannels.isEmpty)
+        assert(pg3.activeChannels.isEmpty)
+        assert(pg4.activeChannels.isEmpty)
+      }
+
     }).runSyncUnsafe()
   }
 
@@ -210,7 +203,6 @@ class UDPPeerGroupSpec extends FlatSpec with EitherValues {
 }
 
 object UDPPeerGroupSpecUtils {
-  val testScheduler = TestScheduler()
   def requestResponse[M](
       peerGroup: PeerGroup[InetMultiAddress, M],
       to: InetMultiAddress,
@@ -263,7 +255,7 @@ object UDPPeerGroupSpecUtils {
   def initUdpPeerGroup[M](
       address: InetSocketAddress = aRandomAddress()
   )(implicit s: Scheduler, c: Codec[M]): Task[UDPPeerGroup[M]] = {
-    val pg = new UDPPeerGroup[M](UDPPeerGroup.Config(address), cleanupScheduler = testScheduler)
+    val pg = new UDPPeerGroup[M](UDPPeerGroup.Config(address))
     pg.initialize().map(_ => pg)
   }
 

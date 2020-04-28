@@ -7,10 +7,10 @@ import java.util.concurrent.ConcurrentHashMap
 import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived, UnexpectedError}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
-import io.iohk.scalanet.peergroup.InetPeerGroupUtils.{ChannelId, getChannelId, toTask}
+import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup._
-import io.iohk.scalanet.peergroup.UDPPeerGroup.UDPPeerGroupInternals.ChannelType
+import io.iohk.scalanet.peergroup.UDPPeerGroup.UDPPeerGroupInternals.{ChannelType, UdpChannelId}
 import io.iohk.scalanet.peergroup.UDPPeerGroup.{UDPPeerGroupInternals, _}
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
@@ -19,15 +19,13 @@ import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
+import io.netty.util.concurrent.{Future, GenericFutureListener, Promise}
 import monix.eval.Task
 import monix.execution.Scheduler
-import monix.execution.atomic.AtomicBoolean
 import monix.reactive.observables.ConnectableObservable
 import org.slf4j.LoggerFactory
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec}
-
-import scala.concurrent.duration._
 import scala.util.control.NonFatal
 
 /**
@@ -37,7 +35,7 @@ import scala.util.control.NonFatal
   * @param codec a scodec codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Scheduler.singleThread("cleanup-thread"))(
+class UDPPeerGroup[M](val config: Config)(
     implicit codec: Codec[M],
     scheduler: Scheduler
 ) extends TerminalPeerGroup[InetMultiAddress, M]() {
@@ -48,14 +46,19 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
 
   private val workerGroup = new NioEventLoopGroup()
 
-  private[peergroup] val activeChannels = new ConcurrentHashMap[ChannelId, ChannelImpl]()
+  private[peergroup] val activeChannels = new ConcurrentHashMap[UdpChannelId, ChannelImpl]()
 
-  // We keep up reference so it will be possible to cancel this infinite task during shutdown
-  private val cleanUp = cleanupScheduler.scheduleWithFixedDelay(config.cleanUpInitialDelay, config.cleanUpPeriod) {
-    activeChannels.forEach { (key, channel) =>
-      if (!channel.isOpen) {
-        activeChannels.remove(key)
-      }
+  /**
+    * Listener will run when ChannelImp closed promise will be completed. Channel close promise will run on underlying netty chanel
+    * scheduler - which means single thread for each channel. This guarantees that after removing channel from the
+    * map and calling onComplete, there won't be onNext called in either client or server handler
+    *
+    */
+  private val closeChannelListener = new GenericFutureListener[Future[ChannelImpl]] {
+    override def operationComplete(future: Future[ChannelImpl]): Unit = {
+      val closedChannel = future.getNow
+      activeChannels.remove(closedChannel.channelId)
+      closedChannel.messageSubject.onComplete()
     }
   }
 
@@ -69,17 +72,11 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
     }
   }
 
-  private def handleError(ctx: ChannelHandlerContext, error: Throwable): Unit = {
-    val remoteAddress = ctx.channel.remoteAddress().asInstanceOf[InetSocketAddress]
-    val localAddress = ctx.channel.localAddress().asInstanceOf[InetSocketAddress]
-    val channelId = getChannelId(remoteAddress, localAddress)
-    val channel = Option(activeChannels.get(channelId))
+  private def handleError(channelId: UdpChannelId, error: Throwable): Unit = {
     // Inform about error only if channel is available and open
-    channel.foreach { ch =>
-      if (ch.isOpen) {
-        log.debug("Unexpected error {} on channel {}", error.getMessage: Any, channelId: Any)
-        ch.messageSubject.onNext(UnexpectedError(error))
-      }
+    Option(activeChannels.get(channelId)).foreach { ch =>
+      log.debug("Unexpected error {} on channel {}", error: Any, channelId: Any)
+      ch.messageSubject.onNext(UnexpectedError(error))
     }
   }
 
@@ -98,31 +95,25 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
           .addLast(new channel.ChannelInboundHandlerAdapter() {
             override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
               val datagram = msg.asInstanceOf[DatagramPacket]
+              val remoteAddress = datagram.sender()
+              val localAddress = datagram.recipient()
+              log.info(s"Client channel read message with remote $remoteAddress and local $localAddress")
+              val udpChannelId = UdpChannelId(ctx.channel().id(), remoteAddress, localAddress)
               try {
-                val remoteAddress = datagram.sender()
-                val localAddress = datagram.recipient()
-                log.info(s"Client channel read message with remote $remoteAddress and local $localAddress")
-
-                val channelId = (remoteAddress, localAddress)
-
-                val channel = activeChannels.get(channelId)
-
-                if (channel == null || !channel.isOpen) {
-                  // It should never happen as closing client channel closes underlying netty channel, so channelRead should
-                  // not execute on this channel
-                  throw new IllegalStateException(s"Missing channel instance for channelId $channelId")
-                } else {
-                  handleIncomingMessage(channel, datagram)
-                }
+                println(s"Received message from channel ${udpChannelId}")
+                Option(activeChannels.get(udpChannelId)).foreach(handleIncomingMessage(_, datagram))
               } catch {
-                case NonFatal(e) => handleError(ctx, e)
+                case NonFatal(e) => handleError(udpChannelId, e)
               } finally {
                 datagram.content().release()
               }
             }
 
             override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
+              val channelId = ctx.channel().id()
+              val localAddress = ctx.channel().localAddress().asInstanceOf[InetSocketAddress]
               val remoteAddress = ctx.channel.remoteAddress().asInstanceOf[InetSocketAddress]
+              val udpChannelId = UdpChannelId(channelId, remoteAddress, localAddress)
               cause match {
                 case _: PortUnreachableException =>
                   // we do not want ugly exception, but we do not close the channel, it is entirely up to user to close not
@@ -132,7 +123,7 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
                 case _ =>
                   super.exceptionCaught(ctx, cause)
               }
-              handleError(ctx, cause)
+              handleError(udpChannelId, cause)
             }
           })
       }
@@ -148,71 +139,40 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
           .pipeline()
           .addLast(new ChannelInboundHandlerAdapter() {
             override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-
               val datagram = msg.asInstanceOf[DatagramPacket]
-
+              val remoteAddress = datagram.sender()
+              val localAddress = datagram.recipient()
+              log.info(s"Server from $remoteAddress")
+              val serverChannel: NioDatagramChannel = ctx.channel().asInstanceOf[NioDatagramChannel]
+              val potentialNewChannel = new ChannelImpl(
+                serverChannel,
+                localAddress,
+                remoteAddress,
+                ConnectableSubject[ChannelEvent[M]](),
+                UDPPeerGroupInternals.ServerChannel
+              )
               try {
-                val remoteAddress = datagram.sender()
-                val localAddress = processAddress.inetSocketAddress
-
-                log.info(s"Server from $remoteAddress")
-                val serverChannel: NioDatagramChannel = ctx.channel().asInstanceOf[NioDatagramChannel]
-
-                val channelId = getChannelId(remoteAddress, localAddress)
-
-                var newChannel = false
-
-                val channel = activeChannels.compute(
-                  channelId,
-                  (k, v) => {
-                    if (v == null) {
-                      // there is no proper channel to push this message, new one needs to be created and user informed
-                      newChannel = true
-                      new ChannelImpl(
-                        serverChannel,
-                        localAddress,
-                        remoteAddress,
-                        ConnectableSubject[ChannelEvent[M]](),
-                        UDPPeerGroupInternals.ServerChannel
-                      )
-                    } else {
-                      if (v.isOpen) {
-                        // there is proper open channel to push this message on to
-                        v
-                      } else {
-                        // there is proper channel but it is closed by user, new one needs to be created and user informed
-                        newChannel = true
-                        new ChannelImpl(
-                          serverChannel,
-                          localAddress,
-                          remoteAddress,
-                          ConnectableSubject[ChannelEvent[M]](),
-                          UDPPeerGroupInternals.ServerChannel
-                        )
-                      }
-                    }
-                  }
-                )
-
-                if (newChannel) {
-                  log.debug(s"Channel with id $channelId NOT found in active channels table. Creating a new one")
-                  serverSubject.onNext(ChannelCreated(channel))
+                Option(activeChannels.putIfAbsent(potentialNewChannel.channelId, potentialNewChannel)) match {
+                  case Some(existingChannel) =>
+                    handleIncomingMessage(existingChannel, datagram)
+                  case None =>
+                    log.debug(
+                      s"Channel with id ${potentialNewChannel.channelId}. NOT found in active channels table. Creating a new one"
+                    )
+                    potentialNewChannel.closePromise.addListener(closeChannelListener)
+                    serverSubject.onNext(ChannelCreated(potentialNewChannel))
+                    handleIncomingMessage(potentialNewChannel, datagram)
                 }
-
-                // There is still little possibility for misuse. If user decided to close re-used channel after
-                // taking it from map but before server pushes message on to it, `onNext` would be called after `onComplete`
-                // which is breach of observer contract.
-                // It is worth investigating if it is only theoretical possibility or additional synchronization is needed
-                handleIncomingMessage(channel, datagram)
               } catch {
-                case NonFatal(e) => handleError(ctx, e)
+                case NonFatal(e) => handleError(potentialNewChannel.channelId, e)
               } finally {
                 datagram.content().release()
               }
             }
 
             override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
-              handleError(ctx, cause)
+              // We cannot create UdpChannelId as on udp netty server channel there is no remote peer address.
+              log.info(s"Unexpected server error ${cause.getMessage}")
             }
           })
       }
@@ -226,18 +186,20 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
       channelType: UDPPeerGroupInternals.ChannelType
   ) extends Channel[InetMultiAddress, M] {
 
-    private val open = AtomicBoolean(true)
+    val closePromise: Promise[ChannelImpl] = nettyChannel.eventLoop().newPromise[ChannelImpl]()
+
+    val channelId = UdpChannelId(nettyChannel.id(), remoteAddress, localAddress)
 
     log.debug(
       s"Setting up new channel from local address $localAddress " +
         s"to remote address $remoteAddress. Netty channelId is ${nettyChannel.id()}. " +
-        s"My channelId is ${getChannelId(remoteAddress, localAddress)}"
+        s"My channelId is ${channelId}"
     )
 
     override val to: InetMultiAddress = InetMultiAddress(remoteAddress)
 
     override def sendMessage(message: M): Task[Unit] = {
-      if (!open.get) {
+      if (closePromise.isDone) {
 
         /**
           *
@@ -266,13 +228,20 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
       }
     }
 
-    override def close(): Task[Unit] = {
+    private def closeChannel(): Task[Unit] = {
       for {
         _ <- Task.now(log.debug("Closing channel from {} to {}", localAddress: Any, remoteAddress: Any))
-        _ <- Task.parZip2(Task(open.flip(false)), closeNettyChannel(channelType))
-        _ <- Task(messageSubject.onComplete())
+        _ <- closeNettyChannel(channelType)
         _ <- Task.now(log.debug("Channel from {} to {} closed", localAddress: Any, remoteAddress: Any))
       } yield ()
+    }
+
+    override def close(): Task[Unit] = {
+      if (closePromise.isDone) {
+        Task.now(())
+      } else {
+        closeChannel().doOnFinish(_ => Task(closePromise.trySuccess(this)))
+      }
     }
 
     private def sendMessage(
@@ -291,8 +260,6 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
           }
       }
     }
-
-    def isOpen: Boolean = open.get()
   }
 
   private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
@@ -310,10 +277,6 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
     ct.map { nettyChannel =>
         val localAddress = nettyChannel.localAddress()
         log.debug(s"Generated local address for new client is $localAddress")
-        val channelId = getChannelId(to.inetSocketAddress, localAddress)
-
-        assert(!activeChannels.containsKey(channelId), s"HOUSTON, WE HAVE A MULTIPLEXING PROBLEM")
-
         val channel = new ChannelImpl(
           nettyChannel,
           localAddress,
@@ -321,7 +284,10 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
           ConnectableSubject[ChannelEvent[M]](),
           UDPPeerGroupInternals.ClientChannel
         )
-        activeChannels.put(channelId, channel)
+        // By using netty channel id as part of our channel id, we make sure that each client channel is unique
+        // therefore the won't such channels in active channels map already.
+        activeChannels.put(channel.channelId, channel)
+        channel.closePromise.addListener(closeChannelListener)
         channel
       }
       .onErrorRecoverWith {
@@ -335,7 +301,6 @@ class UDPPeerGroup[M](val config: Config, cleanupScheduler: Scheduler = Schedule
 
   override def shutdown(): Task[Unit] = {
     for {
-      _ <- Task.eval(cleanUp.cancel())
       _ <- Task(serverSubject.onComplete())
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
@@ -349,9 +314,7 @@ object UDPPeerGroup {
 
   case class Config(
       bindAddress: InetSocketAddress,
-      processAddress: InetMultiAddress,
-      cleanUpInitialDelay: FiniteDuration = 1 minute,
-      cleanUpPeriod: FiniteDuration = 1 minute
+      processAddress: InetMultiAddress
   )
 
   object Config {
@@ -362,5 +325,11 @@ object UDPPeerGroup {
     sealed abstract class ChannelType
     case object ServerChannel extends ChannelType
     case object ClientChannel extends ChannelType
+
+    final case class UdpChannelId(
+        nettyChannelId: io.netty.channel.ChannelId,
+        remoteAddress: InetSocketAddress,
+        localAddress: InetSocketAddress
+    )
   }
 }

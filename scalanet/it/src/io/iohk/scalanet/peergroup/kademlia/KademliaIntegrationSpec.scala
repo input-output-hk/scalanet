@@ -113,6 +113,26 @@ class KademliaIntegrationSpec extends AsyncFlatSpec with BeforeAndAfterAll with 
     }
   }
 
+  it should "refresh table with many nodes in the network " in taskTestCase {
+    val lowRefConfig = defaultConfig.copy(refreshRate = 1.seconds)
+    val randomNode = generateNodeRecord()
+    for {
+      node1 <- startNode(initialNodes = Set(randomNode), testConfig = lowRefConfig)
+      node2 <- startNode(initialNodes = Set(), testConfig = lowRefConfig)
+      node3 <- startNode(initialNodes = Set(node2.self), testConfig = lowRefConfig)
+      node4 <- startNode(initialNodes = Set(node3.self), testConfig = lowRefConfig)
+      node5 <- startNode(
+        selfRecord = randomNode,
+        initialNodes = Set(node2.self, node3.self, node4.self),
+        testConfig = lowRefConfig
+      ).delayExecution(10.seconds).startAndForget
+    } yield {
+      eventually {
+        node1.getPeers.runSyncUnsafe().size shouldEqual 5
+      }
+    }
+  }
+
   it should "add to routing table multiple concurrent nodes" in taskTestCase {
     val nodesRound1 = (0 until 5).map(_ => generateNodeRecord()).toSeq
     val nodesRound2 = (0 until 5).map(_ => generateNodeRecord()).toSeq
