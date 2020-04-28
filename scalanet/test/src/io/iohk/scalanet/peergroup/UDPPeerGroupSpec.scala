@@ -73,7 +73,7 @@ class UDPPeerGroupSpec extends FlatSpec with EitherValues with Eventually {
       pg2Result <- initUdpPeerGroup[String](address).attempt
     } yield {
       assert(pg2Result.isLeft)
-      assert(pg2Result.left.get.isInstanceOf[InitializationError])
+      pg2Result.left.get shouldBe a[InitializationError]
     }).runSyncUnsafe()
   }
 

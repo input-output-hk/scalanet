@@ -49,7 +49,7 @@ class UDPPeerGroup[M](val config: Config)(
   private[peergroup] val activeChannels = new ConcurrentHashMap[UdpChannelId, ChannelImpl]()
 
   /**
-    * Listener will run when ChannelImp closed promise will be completed. Channel close promise will run on underlying netty chanel
+    * Listener will run when ChannelImpl closed promise will be completed. Channel close promise will run on underlying netty channel
     * scheduler - which means single thread for each channel. This guarantees that after removing channel from the
     * map and calling onComplete, there won't be onNext called in either client or server handler
     *
@@ -57,9 +57,14 @@ class UDPPeerGroup[M](val config: Config)(
   private val closeChannelListener = new GenericFutureListener[Future[ChannelImpl]] {
     override def operationComplete(future: Future[ChannelImpl]): Unit = {
       val closedChannel = future.getNow
-      activeChannels.remove(closedChannel.channelId)
-      closedChannel.messageSubject.onComplete()
+      removeChannel(closedChannel)
     }
+  }
+
+  private def removeChannel(channel: ChannelImpl): Unit = {
+    activeChannels.remove(channel.channelId)
+    channel.messageSubject.onComplete()
+    channel.closePromise.removeListener(closeChannelListener)
   }
 
   private def handleIncomingMessage(channel: ChannelImpl, datagramPacket: DatagramPacket): Unit = {
@@ -97,10 +102,9 @@ class UDPPeerGroup[M](val config: Config)(
               val datagram = msg.asInstanceOf[DatagramPacket]
               val remoteAddress = datagram.sender()
               val localAddress = datagram.recipient()
-              log.info(s"Client channel read message with remote $remoteAddress and local $localAddress")
               val udpChannelId = UdpChannelId(ctx.channel().id(), remoteAddress, localAddress)
               try {
-                println(s"Received message from channel ${udpChannelId}")
+                log.info(s"Client channel read message with remote $remoteAddress and local $localAddress")
                 Option(activeChannels.get(udpChannelId)).foreach(handleIncomingMessage(_, datagram))
               } catch {
                 case NonFatal(e) => handleError(udpChannelId, e)
@@ -285,7 +289,7 @@ class UDPPeerGroup[M](val config: Config)(
           UDPPeerGroupInternals.ClientChannel
         )
         // By using netty channel id as part of our channel id, we make sure that each client channel is unique
-        // therefore the won't such channels in active channels map already.
+        // therefore there won't be such channels in active channels map already.
         activeChannels.put(channel.channelId, channel)
         channel.closePromise.addListener(closeChannelListener)
         channel

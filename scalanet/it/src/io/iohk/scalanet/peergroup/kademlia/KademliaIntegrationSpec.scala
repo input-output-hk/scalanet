@@ -125,10 +125,14 @@ class KademliaIntegrationSpec extends AsyncFlatSpec with BeforeAndAfterAll with 
         selfRecord = randomNode,
         initialNodes = Set(node2.self, node3.self, node4.self),
         testConfig = lowRefConfig
-      ).delayExecution(10.seconds).startAndForget
+      ).delayExecution(10.seconds)
     } yield {
       eventually {
         node1.getPeers.runSyncUnsafe().size shouldEqual 5
+        node2.getPeers.runSyncUnsafe().size shouldEqual 5
+        node3.getPeers.runSyncUnsafe().size shouldEqual 5
+        node4.getPeers.runSyncUnsafe().size shouldEqual 5
+        node5.getPeers.runSyncUnsafe().size shouldEqual 5
       }
     }
   }
