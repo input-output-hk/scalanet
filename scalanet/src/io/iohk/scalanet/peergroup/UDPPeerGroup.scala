@@ -46,6 +46,7 @@ class UDPPeerGroup[M](val config: Config)(
 
   private val workerGroup = new NioEventLoopGroup()
 
+  // all channels in the map are open and active, as upon closing channels are removed from the map
   private[peergroup] val activeChannels = new ConcurrentHashMap[UdpChannelId, ChannelImpl]()
 
   /**
@@ -176,7 +177,7 @@ class UDPPeerGroup[M](val config: Config)(
 
             override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
               // We cannot create UdpChannelId as on udp netty server channel there is no remote peer address.
-              log.info(s"Unexpected server error ${cause.getMessage}")
+              log.error(s"Unexpected server error ${cause.getMessage}")
             }
           })
       }
