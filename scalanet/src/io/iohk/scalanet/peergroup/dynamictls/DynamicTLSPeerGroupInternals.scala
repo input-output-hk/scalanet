@@ -52,18 +52,16 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
       val byteBuf = msg.asInstanceOf[ByteBuf]
       try {
-        log.info(
-          s"Processing inbound message from remote address ${ctx.channel().remoteAddress()} " +
-            s"to local address ${ctx.channel().localAddress()}"
-        )
         codec.streamDecode(BitVector(byteBuf.nioBuffer())) match {
           case Left(value) =>
-            log.debug("Unexpected decoding error {} from peer {}", value: Any, ctx.channel().remoteAddress(): Any)
+            log.info("Unexpected decoding error {} from peer {}", value: Any, ctx.channel().remoteAddress(): Any)
             messageSubject.onNext(DecodingError)
 
           case Right(value) =>
-            log.debug("Decoded {} messages from peer {}", value.size, ctx.channel().remoteAddress())
-            value.foreach(m => messageSubject.onNext(MessageReceived(m)))
+            value.foreach { m =>
+              log.info("Decoded new message from peer {}", ctx.channel().remoteAddress())
+              messageSubject.onNext(MessageReceived(m))
+            }
         }
       } catch {
         case NonFatal(e) => messageSubject.onNext(UnexpectedError(e))
