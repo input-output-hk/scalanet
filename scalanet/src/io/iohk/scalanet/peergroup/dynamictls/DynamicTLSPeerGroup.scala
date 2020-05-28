@@ -7,7 +7,6 @@ import java.security.cert.X509Certificate
 import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
-import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.{ServerEvent, TerminalPeerGroup}
@@ -23,9 +22,10 @@ import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.logging.{LogLevel, LoggingHandler}
 import io.netty.handler.ssl.SslContext
+import monix.catnap.ConcurrentQueue
 import monix.eval.Task
-import monix.execution.Scheduler
-import monix.reactive.observables.ConnectableObservable
+import monix.execution.{BufferCapacity, ChannelType, Scheduler}
+import monix.reactive.{Observable}
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair
 import org.slf4j.LoggerFactory
 import scodec.bits.BitVector
@@ -43,16 +43,14 @@ import scala.util.control.NonFatal
   * @param codec  a decco codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class DynamicTLSPeerGroup[M](val config: Config)(
-    implicit codec: StreamCodec[M],
-    scheduler: Scheduler
-) extends TerminalPeerGroup[PeerInfo, M]() {
-
+class DynamicTLSPeerGroup[M](val config: Config)(implicit codec: StreamCodec[M])
+    extends TerminalPeerGroup[PeerInfo, M]() {
+  import DynamicTLSPeerGroup._
   private val log = LoggerFactory.getLogger(getClass)
 
   private val sslServerCtx: SslContext = DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForServer, config)
 
-  private val serverSubject = ConnectableSubject[ServerEvent[PeerInfo, M]]()
+  private val serverQueue = getMessageQueue[ServerEvent[PeerInfo, M]]()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -69,7 +67,7 @@ class DynamicTLSPeerGroup[M](val config: Config)(
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
-        new ServerChannelBuilder[M](serverSubject, ch, sslServerCtx, codec.cleanSlate)
+        new ServerChannelBuilder[M](serverQueue, ch, sslServerCtx, codec.cleanSlate)
         log.info(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })
@@ -79,6 +77,8 @@ class DynamicTLSPeerGroup[M](val config: Config)(
 
   private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
 
+  // FIXME We could probably delete this funcion as it all peer groups it just start a server and there is already `server` function
+  // it could return Task[Observable[ServerEvent[PeerInfo, M]]]
   override def initialize(): Task[Unit] =
     toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}")).onErrorRecoverWith {
       case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
@@ -99,12 +99,13 @@ class DynamicTLSPeerGroup[M](val config: Config)(
     ).initialize
   }
 
-  override def server(): ConnectableObservable[ServerEvent[PeerInfo, M]] = serverSubject
+  override def server(): Observable[ServerEvent[PeerInfo, M]] = {
+    Observable.repeatEvalF(serverQueue.poll)
+  }
 
   override def shutdown(): Task[Unit] = {
     for {
       _ <- Task.now(log.debug("Start shutdown of tls peer group for peer {}", processAddress))
-      _ <- Task(serverSubject.onComplete())
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
       _ <- Task.now(log.debug("Tls peer group shutdown for peer {}", processAddress))
@@ -113,6 +114,15 @@ class DynamicTLSPeerGroup[M](val config: Config)(
 }
 
 object DynamicTLSPeerGroup {
+  def getMessageQueue[M](typeOf: ChannelType = monix.execution.ChannelType.SPMC) = {
+    ConcurrentQueue.unsafe[Task, M](BufferCapacity.Unbounded(None), typeOf)
+  }
+
+  def pushEventOnNettyScheduler[M](queue: ConcurrentQueue[Task, M], ev: M)(implicit s: Scheduler): Unit = {
+    println("Push messages on")
+    queue.offer(ev).runSyncUnsafe()
+  }
+
   case class PeerInfo(id: BitVector, address: InetMultiAddress)
   object PeerInfo {
     implicit val peerInfoAddressable = new Addressable[PeerInfo] {

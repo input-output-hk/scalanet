@@ -51,10 +51,9 @@ object KNetwork {
     override lazy val kRequests: Observable[(KRequest[A], Option[KResponse[A]] => Task[Unit])] = {
       peerGroup
         .server()
-        .refCount
         .collectChannelCreated
         .mapEval { channel: Channel[A, KMessage[A]] =>
-          channel.in.refCount
+          channel.in
             .collect { case MessageReceived(req: KRequest[A]) => req }
             .map(request => Some((request, sendOptionalResponse(channel))))
             .headL
@@ -93,7 +92,7 @@ object KNetwork {
     ): Task[Response] = {
       for {
         _ <- clientChannel.sendMessage(message).timeout(requestTimeout)
-        response <- clientChannel.in.refCount
+        response <- clientChannel.in
           .collect {
             case MessageReceived(m) if pf.isDefinedAt(m) => pf(m)
           }

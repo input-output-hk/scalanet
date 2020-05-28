@@ -5,7 +5,6 @@ import ammonite.ops._
 import coursier.maven.MavenRepository
 import mill.scalalib.{PublishModule, ScalaModule}
 import mill.scalalib.publish.{Developer, License, PomSettings, VersionControl}
-import $ivy.`com.lihaoyi::mill-contrib-buildinfo:0.4.1`
 
 // ScoverageModule creates bug when using custom repositories:
 // https://github.com/lihaoyi/mill/issues/620

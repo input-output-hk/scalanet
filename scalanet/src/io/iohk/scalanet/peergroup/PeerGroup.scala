@@ -1,13 +1,12 @@
 package io.iohk.scalanet.peergroup
 
 import io.iohk.scalanet.peergroup.Channel.ChannelEvent
-import scodec.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
-import monix.reactive.observables.ConnectableObservable
+import scodec.Codec
 
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
@@ -48,7 +47,7 @@ trait Channel[A, M] {
   /**
     * The inbound stream of messages coming from the remote peer.
     */
-  def in: ConnectableObservable[ChannelEvent[M]]
+  def in: Observable[ChannelEvent[M]]
 
   /**
     * Terminate the Channel and clean up any resources.
@@ -119,7 +118,7 @@ trait PeerGroup[A, M] {
     *
     * @return the stream of server events received by this peer.
     */
-  def server(): ConnectableObservable[ServerEvent[A, M]]
+  def server(): Observable[ServerEvent[A, M]]
 
   /**
     * This methods clean resources of the current instance of a PeerGroup.

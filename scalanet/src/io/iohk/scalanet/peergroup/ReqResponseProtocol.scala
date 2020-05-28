@@ -8,13 +8,13 @@ import cats.effect.concurrent.Ref
 import io.iohk.scalanet.codec.FramingCodec
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, MessageReceived}
-import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSPeerGroup, Secp256k1}
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.ChannelId
 import io.iohk.scalanet.peergroup.ReqResponseProtocol._
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.PeerInfo
+import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSPeerGroup, Secp256k1}
 import monix.eval.Task
 import monix.execution.Scheduler
-import monix.reactive.observables.ConnectableObservable
+import monix.reactive.Observable
 import scodec.Codec
 
 import scala.concurrent.duration.{FiniteDuration, _}
@@ -52,7 +52,6 @@ class ReqResponseProtocol[A, M](
         newCh <- group.client(to)
         // start publishing incoming messages to any subscriber
         // in normal circumstances we should keep cancellation token to clear up resources
-        canc = newCh.in.connect()
         // Keep in mind that stream is back pressured for all subscribers so in case of many parallel requests to one client
         // waiting for response on first request can influence result of second request
         _ <- state.set(st.updated(chId, newCh))
@@ -83,14 +82,14 @@ class ReqResponseProtocol[A, M](
       // sending and subsription are done in parallel to not miss response message by chance
       // alse in case of send failure, any resource will be cleaned
       result <- Task
-        .parMap2(c.sendMessage(messageToSend), subscribeForResponse(c.in, messageToSend.id))(
+        .parMap2(c.sendMessage(messageToSend), subscribeForResponse(c.in.share, messageToSend.id))(
           (_, response) => response.m
         )
         .timeout(timeOutDuration)
     } yield result
 
   private def subscribeForResponse(
-      source: ConnectableObservable[ChannelEvent[MessageEnvelope[M]]],
+      source: Observable[ChannelEvent[MessageEnvelope[M]]],
       responseId: UUID
   ): Task[MessageEnvelope[M]] = {
     source.collect {
@@ -101,10 +100,9 @@ class ReqResponseProtocol[A, M](
   def startHandling(requestHandler: M => M) = {
     group
       .server()
-      .refCount
       .collectChannelCreated
       .mergeMap(
-        channel => channel.in.refCount.collect { case MessageReceived(msg) => msg }.map(request => (channel, request))
+        channel => channel.in.collect { case MessageReceived(msg) => msg }.map(request => (channel, request))
       )
       .foreachL {
         case (ch, mes) =>

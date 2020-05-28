@@ -4,7 +4,6 @@ import java.io.IOException
 import java.net.{InetSocketAddress, PortUnreachableException}
 import java.util.concurrent.ConcurrentHashMap
 
-import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived, UnexpectedError}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
@@ -20,12 +19,14 @@ import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
 import io.netty.util.concurrent.{Future, GenericFutureListener, Promise}
+import monix.catnap.ConcurrentQueue
 import monix.eval.Task
-import monix.execution.Scheduler
-import monix.reactive.observables.ConnectableObservable
+import monix.execution.{BufferCapacity}
+import monix.reactive.Observable
 import org.slf4j.LoggerFactory
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec}
+
 import scala.util.control.NonFatal
 
 /**
@@ -35,14 +36,11 @@ import scala.util.control.NonFatal
   * @param codec a scodec codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class UDPPeerGroup[M](val config: Config)(
-    implicit codec: Codec[M],
-    scheduler: Scheduler
-) extends TerminalPeerGroup[InetMultiAddress, M]() {
+class UDPPeerGroup[M](val config: Config)(implicit codec: Codec[M]) extends TerminalPeerGroup[InetMultiAddress, M]() {
 
   private val log = LoggerFactory.getLogger(getClass)
 
-  val serverSubject = ConnectableSubject[ServerEvent[InetMultiAddress, M]]()
+  val serverQueue = getMessageQueue[ServerEvent[InetMultiAddress, M]]()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -64,17 +62,16 @@ class UDPPeerGroup[M](val config: Config)(
 
   private def removeChannel(channel: ChannelImpl): Unit = {
     activeChannels.remove(channel.channelId)
-    channel.messageSubject.onComplete()
     channel.closePromise.removeListener(closeChannelListener)
   }
 
   private def handleIncomingMessage(channel: ChannelImpl, datagramPacket: DatagramPacket): Unit = {
     codec.decodeValue(BitVector(datagramPacket.content().nioBuffer())) match {
       case Attempt.Successful(msg) =>
-        channel.messageSubject.onNext(MessageReceived(msg))
+        channel.pushEventOnNettyScheduler(MessageReceived(msg))
       case Attempt.Failure(er) =>
         log.debug("Message decoding failed due to {}", er)
-        channel.messageSubject.onNext(DecodingError)
+        channel.pushEventOnNettyScheduler(DecodingError)
     }
   }
 
@@ -82,7 +79,7 @@ class UDPPeerGroup[M](val config: Config)(
     // Inform about error only if channel is available and open
     Option(activeChannels.get(channelId)).foreach { ch =>
       log.debug("Unexpected error {} on channel {}", error: Any, channelId: Any)
-      ch.messageSubject.onNext(UnexpectedError(error))
+      ch.pushEventOnNettyScheduler(UnexpectedError(error))
     }
   }
 
@@ -153,7 +150,7 @@ class UDPPeerGroup[M](val config: Config)(
                 serverChannel,
                 localAddress,
                 remoteAddress,
-                ConnectableSubject[ChannelEvent[M]](),
+                getMessageQueue(),
                 UDPPeerGroupInternals.ServerChannel
               )
               try {
@@ -165,7 +162,9 @@ class UDPPeerGroup[M](val config: Config)(
                       s"Channel with id ${potentialNewChannel.channelId}. NOT found in active channels table. Creating a new one"
                     )
                     potentialNewChannel.closePromise.addListener(closeChannelListener)
-                    serverSubject.onNext(ChannelCreated(potentialNewChannel))
+                    serverQueue
+                      .offer(ChannelCreated(potentialNewChannel))
+                      .runSyncStep(potentialNewChannel.eventLoopAsScheduler)
                     handleIncomingMessage(potentialNewChannel, datagram)
                 }
               } catch {
@@ -187,13 +186,19 @@ class UDPPeerGroup[M](val config: Config)(
       val nettyChannel: NioDatagramChannel,
       localAddress: InetSocketAddress,
       remoteAddress: InetSocketAddress,
-      val messageSubject: ConnectableSubject[ChannelEvent[M]],
+      val messageQueue: ConcurrentQueue[Task, ChannelEvent[M]],
       channelType: UDPPeerGroupInternals.ChannelType
   ) extends Channel[InetMultiAddress, M] {
+    val eventLoopAsScheduler = monix.execution.Scheduler(nettyChannel.eventLoop())
 
     val closePromise: Promise[ChannelImpl] = nettyChannel.eventLoop().newPromise[ChannelImpl]()
 
     val channelId = UdpChannelId(nettyChannel.id(), remoteAddress, localAddress)
+
+    def pushEventOnNettyScheduler(ev: ChannelEvent[M]): Unit = {
+      println("Push messages on")
+      messageQueue.offer(ev).runSyncStep(eventLoopAsScheduler)
+    }
 
     log.debug(
       s"Setting up new channel from local address $localAddress " +
@@ -219,7 +224,10 @@ class UDPPeerGroup[M](val config: Config)(
       }
     }
 
-    override def in: ConnectableObservable[ChannelEvent[M]] = messageSubject
+    //TODO how to finish stream from queue?
+    override def in: Observable[ChannelEvent[M]] = {
+      Observable.repeatEvalF(messageQueue.poll)
+    }
 
     private def closeNettyChannel(channelType: ChannelType): Task[Unit] = {
       channelType match {
@@ -286,7 +294,7 @@ class UDPPeerGroup[M](val config: Config)(
           nettyChannel,
           localAddress,
           to.inetSocketAddress,
-          ConnectableSubject[ChannelEvent[M]](),
+          getMessageQueue(),
           UDPPeerGroupInternals.ClientChannel
         )
         // By using netty channel id as part of our channel id, we make sure that each client channel is unique
@@ -302,11 +310,11 @@ class UDPPeerGroup[M](val config: Config)(
       }
   }
 
-  override def server(): ConnectableObservable[ServerEvent[InetMultiAddress, M]] = serverSubject
+  override def server(): Observable[ServerEvent[InetMultiAddress, M]] =
+    Observable.repeatEvalF(serverQueue.poll).cache
 
   override def shutdown(): Task[Unit] = {
     for {
-      _ <- Task(serverSubject.onComplete())
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
     } yield ()
@@ -314,6 +322,10 @@ class UDPPeerGroup[M](val config: Config)(
 }
 
 object UDPPeerGroup {
+
+  def getMessageQueue[M]() = {
+    ConcurrentQueue.unsafe[Task, M](BufferCapacity.Unbounded(None), monix.execution.ChannelType.SPMC)
+  }
 
   val mtu: Int = 16384
 

@@ -46,7 +46,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       _ <- server.initialize()
       ch1 <- client.client(server.processAddress)
       _ <- ch1.sendMessage("Hello enc server")
-      rec <- server.server().refCount.collectChannelCreated.mergeMap(ch => ch.in.refCount).headL
+      rec <- server.server().collectChannelCreated.mergeMap(ch => ch.in).headL
     } yield {
       rec shouldEqual MessageReceived("Hello enc server")
     }
@@ -111,7 +111,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       _ <- client.initialize()
       _ <- server.initialize()
       ch1 <- client.client(server.processAddress).attempt
-      serverHandshake <- server.server().refCount.collectHandshakeFailure.headL
+      serverHandshake <- server.server().collectHandshakeFailure.headL
     } yield {
       ch1.isLeft shouldEqual true
       ch1.left.get shouldBe a[HandshakeException[_]]
@@ -127,7 +127,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       _ <- client.initialize()
       _ <- server.initialize()
       ch1 <- client.client(server.processAddress).attempt
-      serverHandshake <- server.server().refCount.collectHandshakeFailure.headL
+      serverHandshake <- server.server().collectHandshakeFailure.headL
     } yield {
       ch1.isLeft shouldEqual true
       ch1.left.get shouldBe a[HandshakeException[_]]
@@ -150,7 +150,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       ch1 <- client.client(server.processAddress)
       result <- Task.parZip2(
         ch1.sendMessage("Hello server, do not process this message"),
-        server.server().refCount.collectChannelCreated.mergeMap(_.in.refCount).headL
+        server.server().collectChannelCreated.mergeMap(_.in).headL
       )
       (_, eventReceived) = result
     } yield {

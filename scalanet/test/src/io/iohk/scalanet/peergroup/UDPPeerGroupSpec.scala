@@ -193,7 +193,7 @@ class UDPPeerGroupSpec extends FlatSpec with EitherValues with Eventually {
       ch1 <- pg1.client(pg2.processAddress)
       result <- Task.parZip2(
         ch1.sendMessage("Helllo wrong server"),
-        pg2.server().refCount.collectChannelCreated.mergeMap(_.in.refCount).headL
+        pg2.server().collectChannelCreated.mergeMap(_.in).headL
       )
       (_, receivedEvent) = result
     } yield {
@@ -225,7 +225,7 @@ object UDPPeerGroupSpecUtils {
   ): Task[M] = {
     for {
       _ <- clientChannel.sendMessage(message).timeout(requestTimeout)
-      response <- clientChannel.in.refCount
+      response <- clientChannel.in
         .collect { case MessageReceived(m) => m }
         .headL
         .timeout(requestTimeout)
@@ -236,10 +236,9 @@ object UDPPeerGroupSpecUtils {
     // echo server which closes every incoming channel after response
     peerGroup
       .server()
-      .refCount
       .collectChannelCreated
       .mergeMap { channel =>
-        channel.in.refCount.collect { case MessageReceived(m) => m }.map(request => (channel, request))
+        channel.in.collect { case MessageReceived(m) => m }.map(request => (channel, request))
       }
       .foreachL {
         case (channel, msg) =>
