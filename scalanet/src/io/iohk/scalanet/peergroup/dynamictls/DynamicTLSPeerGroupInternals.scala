@@ -54,12 +54,12 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       try {
         codec.streamDecode(BitVector(byteBuf.nioBuffer())) match {
           case Left(value) =>
-            log.info("Unexpected decoding error {} from peer {}", value: Any, ctx.channel().remoteAddress(): Any)
+            log.error("Unexpected decoding error {} from peer {}", value: Any, ctx.channel().remoteAddress(): Any)
             messageSubject.onNext(DecodingError)
 
           case Right(value) =>
             value.foreach { m =>
-              log.info("Decoded new message from peer {}", ctx.channel().remoteAddress())
+              log.debug("Decoded new message from peer {}", ctx.channel().remoteAddress())
               messageSubject.onNext(MessageReceived(m))
             }
         }
