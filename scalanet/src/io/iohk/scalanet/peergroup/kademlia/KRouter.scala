@@ -139,19 +139,23 @@ class KRouter[A](
 
   def add(nodeRecord: NodeRecord[A]): Task[Unit] = {
     info(s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord)")
-    for {
-      toPing <- routerState.modify { current =>
-        val (_, bucket) = current.kBuckets.getBucket(nodeRecord.id)
-        if (bucket.size < config.k) {
-          (current.addNodeRecord(nodeRecord), None)
-        } else {
-          // the bucket is full, not update it but ping least recently seen node (i.e. the one at the head) to see what to do
-          val nodeToPing = current.nodeRecords(bucket.head)
-          (current, Some(nodeToPing))
+    if (myself(nodeRecord.id)) {
+      Task.now(())
+    } else {
+      for {
+        toPing <- routerState.modify { current =>
+          val (_, bucket) = current.kBuckets.getBucket(nodeRecord.id)
+          if (bucket.size < config.k) {
+            (current.addNodeRecord(nodeRecord), None)
+          } else {
+            // the bucket is full, not update it but ping least recently seen node (i.e. the one at the head) to see what to do
+            val nodeToPing = current.nodeRecords(bucket.head)
+            (current, Some(nodeToPing))
+          }
         }
-      }
-      result <- pingAndUpdateState(toPing, nodeRecord)
-    } yield result
+        result <- pingAndUpdateState(toPing, nodeRecord)
+      } yield result
+    }
   }
 
   private def pingAndUpdateState(recordToPing: Option[NodeRecord[A]], nodeRecord: NodeRecord[A]): Task[Unit] = {
