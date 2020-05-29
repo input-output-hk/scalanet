@@ -52,6 +52,12 @@ class KRouterSpec extends FreeSpec with Eventually {
       krouter.get(bootstrapRecord.id).runSyncUnsafe() shouldBe bootstrapRecord
     }
 
+    "should not fail when adding self to the table" in {
+      val selfNode = aRandomNodeRecord()
+      val krouter = aKRouter(nodeRecord = selfNode)
+      krouter.add(selfNode).attempt.runSyncUnsafe() shouldBe Right(())
+    }
+
     "should not locate an unknown node - no bootstrap" in {
       val krouter = aKRouter()
       val someNodeId = aRandomBitVector()
