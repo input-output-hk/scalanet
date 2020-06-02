@@ -24,7 +24,6 @@ import monix.reactive.observables.ConnectableObservable
 import org.slf4j.LoggerFactory
 import scodec.bits.BitVector
 
-import scala.collection.JavaConverters._
 import scala.concurrent.Promise
 import scala.util.control.NonFatal
 
@@ -228,10 +227,10 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
               val localAddress = InetMultiAddress(ctx.channel().localAddress().asInstanceOf[InetSocketAddress])
               val remoteAddress = InetMultiAddress(ctx.channel().remoteAddress().asInstanceOf[InetSocketAddress])
               if (e.isSuccess) {
-                // Hacky way of getting id of incoming peer from ssl engine. Only works because we have new engine for
-                // each connection
-                val params = sslEngine.getSSLParameters.getServerNames.asScala.head
-                val peerId = BitVector(params.getEncoded)
+                // after handshake handshake session becomes session, so during handshake sslEngine.getHandshakeSession needs
+                // to be called to put value in session, but after handshake sslEngine.getSession needs to be called
+                // get the same session with value
+                val peerId = sslEngine.getSession.getValue(DynamicTLSPeerGroupUtils.peerIdKey).asInstanceOf[BitVector]
                 log.debug(
                   s"Ssl Handshake server channel from $localAddress " +
                     s"to $remoteAddress with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"

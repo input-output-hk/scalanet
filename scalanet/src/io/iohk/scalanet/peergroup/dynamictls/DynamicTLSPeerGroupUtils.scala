@@ -19,9 +19,8 @@ private[scalanet] object DynamicTLSPeerGroupUtils {
     "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
   )
 
-  val typeOfIdentificaiton = 0
-
-  class IdIdentification(bytes: Array[Byte]) extends SNIServerName(typeOfIdentificaiton, bytes)
+  // key for peerId passed in Handshake session, used in sslEngine
+  val peerIdKey = "peerId"
 
   /**
     *
@@ -50,11 +49,7 @@ private[scalanet] object DynamicTLSPeerGroupUtils {
         case Left(er) => throw er
         case Right(value) =>
           val id = value.publicKey.getNodeId
-          val params = sslEngine.getSSLParameters
-          val listPars: List[SNIServerName] = List(new IdIdentification(id.toByteArray))
-          // A little hack to pass client id to DynamicTlsPeerGroup.
-          params.setServerNames(listPars.asJava)
-          sslEngine.setSSLParameters(params)
+          sslEngine.getHandshakeSession.putValue(peerIdKey, id)
       }
     }
 
