@@ -95,9 +95,6 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
     private val activation = Promise[io.netty.channel.Channel]()
     private val activationF = activation.future
 
-    private val deactivation = Promise[Unit]()
-    private val deactivationF = deactivation.future
-
     private val messageSubject = ConnectableSubject[ChannelEvent[M]]()
 
     private val bootstrap: Bootstrap = clientBootstrap
@@ -111,11 +108,6 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
           pipeline
             .addLast("ssl", sslHandler) //This needs to be first
             .addLast(new ChannelInboundHandlerAdapter() {
-
-              override def channelInactive(ctx: ChannelHandlerContext): Unit = {
-                deactivation.success(())
-              }
-
               override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
                 evt match {
                   case e: SslHandshakeCompletionEvent =>
@@ -196,10 +188,9 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
     override def close(): Task[Unit] = {
       for {
         _ <- Task.now(log.debug("Closing client channel to peer {}", peerInfo))
-        _ <- Task(messageSubject.onComplete())
         ctx <- Task.fromFuture(activationF)
         _ <- toTask(ctx.close())
-        _ <- Task.fromFuture(deactivationF)
+        _ <- toTask(ctx.closeFuture())
         _ <- Task.now(log.debug("Client channel to peer {} closed", peerInfo))
       } yield ()
     }
@@ -246,6 +237,11 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
                       .HandshakeFailed(new HandshakeException(PeerInfo(BitVector.empty, remoteAddress), e.cause()))
                   )
               }
+            case _ =>
+              log.info(
+                s"User Event server channel from ${ctx.channel().localAddress()} " +
+                  s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
+              )
           }
         }
       })
@@ -281,9 +277,9 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
 
     override def close(): Task[Unit] =
       for {
-        _ <- Task.now(log.debug("Closing client channel to peer {}", to))
-        _ <- Task(messageSubject.onComplete())
+        _ <- Task.now(log.debug("Closing server channel to peer {}", to))
         _ <- toTask(nettyChannel.close())
+        _ <- toTask(nettyChannel.closeFuture())
         _ <- Task.now(log.debug("Server channel to peer {} closed", to))
       } yield ()
   }

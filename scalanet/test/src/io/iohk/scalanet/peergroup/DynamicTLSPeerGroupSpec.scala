@@ -3,6 +3,7 @@ package io.iohk.scalanet.peergroup
 import java.net.InetSocketAddress
 import java.security.SecureRandom
 
+import cats.effect.concurrent.Deferred
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.codec.FramingCodec
 import io.iohk.scalanet.crypto.CryptoUtils
@@ -31,7 +32,8 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
-  implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5 seconds)
+  val timeOutConfig = 5.seconds
+  implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5.seconds)
   implicit val codec = new FramingCodec(Codec[String])
   implicit val scheduler = Scheduler.fixedPool("test", 16)
 
@@ -49,6 +51,42 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       rec <- server.server().refCount.collectChannelCreated.mergeMap(ch => ch.in.refCount).headL
     } yield {
       rec shouldEqual MessageReceived("Hello enc server")
+    }
+  }
+
+  it should "closing client should inform server about closeup" in taskTestCase {
+    val client = new DynamicTLSPeerGroup[String](getCorrectConfig())
+    val server = new DynamicTLSPeerGroup[String](getCorrectConfig())
+
+    for {
+      d <- Deferred[Task, Boolean]
+      _ <- client.initialize()
+      _ <- server.initialize()
+      clientChannel <- client.client(server.processAddress)
+      serverChannel <- server.server().refCount.collectChannelCreated.headL
+      _ <- serverChannel.in.refCount.guarantee(d.complete(true)).foreachL(a => ()).startAndForget
+      _ <- clientChannel.close()
+      closed <- d.get.timeout(timeOutConfig).onErrorHandle(_ => false)
+    } yield {
+      assert(closed)
+    }
+  }
+
+  it should "closing server should inform client about closeup" in taskTestCase {
+    val client = new DynamicTLSPeerGroup[String](getCorrectConfig())
+    val server = new DynamicTLSPeerGroup[String](getCorrectConfig())
+
+    for {
+      d <- Deferred[Task, Boolean]
+      _ <- client.initialize()
+      _ <- server.initialize()
+      ch1 <- client.client(server.processAddress)
+      serverCh <- server.server().refCount.collectChannelCreated.headL
+      _ <- ch1.in.refCount.guarantee(d.complete(true)).foreachL(a => ()).startAndForget
+      _ <- serverCh.close()
+      closed <- d.get.timeout(timeOutConfig).onErrorHandle(_ => false)
+    } yield {
+      assert(closed)
     }
   }
 
