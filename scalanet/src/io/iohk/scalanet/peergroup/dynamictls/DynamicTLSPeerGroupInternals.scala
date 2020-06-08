@@ -124,7 +124,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
                     }
 
                   case _ =>
-                    log.info(
+                    log.debug(
                       s"User Event client channel from ${ctx.channel().localAddress()} " +
                         s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
                     )
@@ -238,7 +238,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
                   )
               }
             case _ =>
-              log.info(
+              log.debug(
                 s"User Event server channel from ${ctx.channel().localAddress()} " +
                   s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
               )
