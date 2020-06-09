@@ -123,9 +123,9 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
                       activation.failure(e.cause())
                     }
 
-                  case _ =>
+                  case ev =>
                     log.debug(
-                      s"User Event client channel from ${ctx.channel().localAddress()} " +
+                      s"User Event $ev on client channel from ${ctx.channel().localAddress()} " +
                         s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
                     )
                 }
@@ -237,9 +237,9 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
                       .HandshakeFailed(new HandshakeException(PeerInfo(BitVector.empty, remoteAddress), e.cause()))
                   )
               }
-            case _ =>
+            case ev =>
               log.debug(
-                s"User Event server channel from ${ctx.channel().localAddress()} " +
+                s"User Event $ev on server channel from ${ctx.channel().localAddress()} " +
                   s"to ${ctx.channel().remoteAddress()} with channel id ${ctx.channel().id}"
               )
           }
