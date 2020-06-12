@@ -185,6 +185,10 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
 
     override def in: ConnectableObservable[ChannelEvent[M]] = messageSubject
 
+    /**
+      * To be sure that `channelInactive` had run before returning from close, we are also waiting for ctx.closeFuture() after
+      * ctx.close()
+      */
     override def close(): Task[Unit] = {
       for {
         _ <- Task.now(log.debug("Closing client channel to peer {}", peerInfo))
@@ -275,6 +279,10 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
 
     override def in: ConnectableObservable[ChannelEvent[M]] = messageSubject
 
+    /**
+      * To be sure that `channelInactive` had run before returning from close, we are also waiting for nettyChannel.closeFuture() after
+      * nettyChannel.close()
+      */
     override def close(): Task[Unit] =
       for {
         _ <- Task.now(log.debug("Closing server channel to peer {}", to))
