@@ -13,7 +13,7 @@ object scalanet extends ScalaModule with PublishModule {
 
   def scalaVersion = "2.12.10"
 
-  def publishVersion = "0.1.15-SNAPSHOT"
+  def publishVersion = "0.3"
 
   override def repositories =
     super.repositories ++ Seq(
@@ -61,7 +61,9 @@ object scalanet extends ScalaModule with PublishModule {
     url = "https://github.com/input-output-hk/scalanet",
     licenses = Seq(License.`Apache-2.0`),
     versionControl = VersionControl.github("input-output-hk", "scalanet"),
-    developers = Seq()
+    developers = Seq(
+      Developer("KonradStaniec", "Konrad Staniec", "https://github.com/KonradStaniec")
+    )
   )
 
   def scoverageVersion = "1.3.1"
