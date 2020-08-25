@@ -175,18 +175,19 @@ class KRouter[A](
     recordToPing match {
       case None => Task.unit
       case Some(nodeToPing) =>
-        ping(nodeToPing).ifM(
-          // if it does respond, it is moved to the tail and the other node record discarded.
-          Task(
-            logger.info(
-              s"Moving ${nodeToPing.id} to head of bucket. Discarding (${nodeRecord.id.toHex}, $nodeRecord) as routing table candidate."
-            )
-          ) *>
-            routerState.update(_.touchNodeRecord(nodeToPing)),
-          // if that node fails to respond, it is evicted from the bucket and the other node inserted (at the tail)
-          Task(logger.info(s"Replacing ${nodeToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord).")) *>
-            routerState.update(_.replaceNodeRecord(nodeToPing, nodeRecord))
-        )
+        Task(logger.debug(s"Pinging ${nodeToPing.id.toHex} to check if it needs to be replaced.")) *>
+          ping(nodeToPing).ifM(
+            // if it does respond, it is moved to the tail and the other node record discarded.
+            Task(
+              logger.info(
+                s"Moving ${nodeToPing.id} to head of bucket. Discarding (${nodeRecord.id.toHex}, $nodeRecord) as routing table candidate."
+              )
+            ) *>
+              routerState.update(_.touchNodeRecord(nodeToPing)),
+            // if that node fails to respond, it is evicted from the bucket and the other node inserted (at the tail)
+            Task(logger.info(s"Replacing ${nodeToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord).")) *>
+              routerState.update(_.replaceNodeRecord(nodeToPing, nodeRecord))
+          )
     }
   }
 
@@ -256,11 +257,8 @@ class KRouter[A](
         case Left(_) =>
           Task.now(QueryResult.failed(to))
         case Right(nodes) =>
-          for {
-            // Adding node to kbuckets in background to not block lookup process
-            _ <- add(to).startAndForget
-            result <- Task.now(QueryResult.succeed(to, nodes))
-          } yield result
+          // Adding node to kbuckets in background to not block lookup process
+          add(to).startAndForget.as(QueryResult.succeed(to, nodes))
       }
     }
 
@@ -354,20 +352,20 @@ class KRouter[A](
       }
     }
 
-    closestKnownNodesTask.flatMap { closestKnownNodes =>
-      if (closestKnownNodes.isEmpty) {
+    closestKnownNodesTask.map(NonEmptyList.fromList).flatMap {
+      case None =>
         Task(logger.debug("Lookup finished without any nodes, as bootstrap nodes ")).as(Set.empty)
-      } else {
-        val initalRequestState = closestKnownNodes.foldLeft(Map.empty[BitVector, RequestResult]) { (map, node) =>
-          map + (node.id -> RequestScheduled)
-        }
+
+      case Some(closestKnownNodes) =>
+        val initalRequestState: Map[BitVector, RequestResult] =
+          closestKnownNodes.toList.map(_.id -> RequestScheduled).toMap
         // All initial nodes are scheduled to request
         val lookUpTask: Task[Set[NodeRecord[A]]] = for {
           // All initial nodes are scheduled to request
           state <- Ref.of[Task, Map[BitVector, RequestResult]](initalRequestState)
           // closestKnownNodes are constrained by alpha, it means there will be at most alpha independent recursive tasks
-          results <- Task.parTraverse(closestKnownNodes) { knownNode =>
-            recLookUp(List(knownNode), NonEmptyList.fromListUnsafe(closestKnownNodes.toList), state)
+          results <- Task.parTraverse(closestKnownNodes.toList) { knownNode =>
+            recLookUp(List(knownNode), closestKnownNodes, state)
           }
           records = results.flatMap(_.toList).toSet
         } yield records
@@ -375,7 +373,6 @@ class KRouter[A](
         lookUpTask flatTap { records =>
           Task(logger.debug(lookupReport(targetNodeId, records)))
         }
-      }
     }
   }
 

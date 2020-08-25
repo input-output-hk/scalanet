@@ -27,7 +27,9 @@ class KademliaIntegrationSpec extends AsyncFlatSpec with BeforeAndAfterAll with 
     threadPool.awaitTermination(60, TimeUnit.SECONDS)
   }
 
-  "Kademlia" should "only find self node when there are no bootstrap nodes" in taskTestCase {
+  behavior of "Kademlia"
+
+  it should "only find self node when there are no bootstrap nodes" in taskTestCase {
     for {
       node <- startNode()
       knownNodes <- node.router.nodeRecords
@@ -173,8 +175,8 @@ class KademliaIntegrationSpec extends AsyncFlatSpec with BeforeAndAfterAll with 
 
       eventually {
         val peers = rootNode.getPeers.runSyncUnsafe()
-        peers.contains(rest.last) shouldBe false
-        peers.size shouldEqual 4
+        peers should have size 4
+        peers should not contain rest.last
       }
     }
   }
