@@ -48,7 +48,7 @@ class KRouter[A](
     Observable
       .intervalWithFixedDelay(config.refreshRate, config.refreshRate)
       .consumeWith(Consumer.foreachTask { _ =>
-        lookup(KBuckets.generateRandomId(config.nodeRecord.id.length, rnd)).as(())
+        lookup(KBuckets.generateRandomId(config.nodeRecord.id.length, rnd)).void
       })
   }
 
@@ -99,15 +99,16 @@ class KRouter[A](
     *
     * @return
     */
-  private def enroll(): Task[Seq[NodeRecord[A]]] = {
+  private def enroll(): Task[Set[NodeRecord[A]]] = {
     val loadKnownPeers = Task.traverse(config.knownPeers)(add)
-    loadKnownPeers.flatMap(_ => lookup(config.nodeRecord.id)).attempt.flatMap {
+    loadKnownPeers >> lookup(config.nodeRecord.id).attempt.flatMap {
       case Left(t) =>
         Task {
-          logger.info(s"Enrolment lookup failed with exception: $t")
+          logger.error(s"Enrolment lookup failed with exception: $t")
           logger.debug(s"Enrolment failure stacktrace: ${t.getStackTrace.mkString("\n")}")
-          Seq()
+          Set.empty
         }
+
       case Right(nodes) =>
         Task {
           logger.debug(s"Enrolment looked completed with network nodes ${nodes.mkString(",")}")
@@ -151,7 +152,7 @@ class KRouter[A](
   def add(nodeRecord: NodeRecord[A]): Task[Unit] = {
     Task(logger.info(s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord)")) *> {
       if (myself(nodeRecord.id)) {
-        Task.now(())
+        Task.unit
       } else {
         for {
           toPing <- routerState.modify { current =>
@@ -172,7 +173,7 @@ class KRouter[A](
 
   private def pingAndUpdateState(recordToPing: Option[NodeRecord[A]], nodeRecord: NodeRecord[A]): Task[Unit] = {
     recordToPing match {
-      case None => Task.now(())
+      case None => Task.unit
       case Some(nodeToPing) =>
         ping(nodeToPing).ifM(
           // if it does respond, it is moved to the tail and the other node record discarded.
@@ -190,12 +191,11 @@ class KRouter[A](
   }
 
   private def getRemotely(key: BitVector): Task[NodeRecord[A]] = {
-    lookup(key).flatMap { _ =>
-      getLocally(key) flatMap {
-        case Some(value) => Task.now(value)
-        case None => Task.raiseError(new Exception(s"Target node id ${key.toHex} not found"))
-      }
+    lookup(key) *> getLocally(key) flatMap {
+      case Some(value) => Task.now(value)
+      case None => Task.raiseError(new Exception(s"Target node id ${key.toHex} not found"))
     }
+
   }
 
   private def getLocally(key: BitVector): Task[Option[NodeRecord[A]]] = {
@@ -208,7 +208,7 @@ class KRouter[A](
 
   // lookup process, from page 6 of the kademlia paper
   // Lookup terminates when initiator queried and got response from the k closest nodes it has seen
-  private def lookup(targetNodeId: BitVector): Task[Seq[NodeRecord[A]]] = {
+  private def lookup(targetNodeId: BitVector): Task[Set[NodeRecord[A]]] = {
     // Starting lookup process with alpha known nodes from our kbuckets
     val closestKnownNodesTask = routerState.get.map { state =>
       state.kBuckets
@@ -356,20 +356,20 @@ class KRouter[A](
 
     closestKnownNodesTask.flatMap { closestKnownNodes =>
       if (closestKnownNodes.isEmpty) {
-        Task(logger.debug("Lookup finished without any nodes, as bootstrap nodes ")).as(Seq.empty)
+        Task(logger.debug("Lookup finished without any nodes, as bootstrap nodes ")).as(Set.empty)
       } else {
         val initalRequestState = closestKnownNodes.foldLeft(Map.empty[BitVector, RequestResult]) { (map, node) =>
           map + (node.id -> RequestScheduled)
         }
         // All initial nodes are scheduled to request
-        val lookUpTask: Task[Seq[NodeRecord[A]]] = for {
+        val lookUpTask: Task[Set[NodeRecord[A]]] = for {
           // All initial nodes are scheduled to request
           state <- Ref.of[Task, Map[BitVector, RequestResult]](initalRequestState)
           // closestKnownNodes are constrained by alpha, it means there will be at most alpha independent recursive tasks
           results <- Task.parTraverse(closestKnownNodes) { knownNode =>
             recLookUp(List(knownNode), NonEmptyList.fromListUnsafe(closestKnownNodes.toList), state)
           }
-          records = results.flatMap(_.toList)
+          records = results.flatMap(_.toList).toSet
         } yield records
 
         lookUpTask flatTap { records =>
@@ -383,12 +383,12 @@ class KRouter[A](
     _ == config.nodeRecord.id
   }
 
-  private def lookupReport(targetNodeId: BitVector, nodeRecords: Seq[KRouter.NodeRecord[A]]): String = {
+  private def lookupReport(targetNodeId: BitVector, nodeRecords: Set[KRouter.NodeRecord[A]]): String = {
 
     if (nodeRecords.isEmpty) {
       s"Lookup to ${targetNodeId.toHex} returned no results."
     } else {
-      val ids = nodeRecords.map(_.id).sorted(new XorOrdering(targetNodeId)).reverse
+      val ids = nodeRecords.toSeq.map(_.id).sorted(new XorOrdering(targetNodeId)).reverse
 
       val ds: Map[BitVector, (NodeRecord[A], BigInt)] =
         nodeRecords.map(nodeRecord => (nodeRecord.id, (nodeRecord, Xor.d(nodeRecord.id, targetNodeId)))).toMap
