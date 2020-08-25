@@ -157,7 +157,11 @@ class KRouter[A](
         for {
           toPing <- routerState.modify { current =>
             val (_, bucket) = current.kBuckets.getBucket(nodeRecord.id)
-            if (bucket.size < config.k) {
+            if (bucket.contains(nodeRecord.id)) {
+              // The bucket is full but here we're handling a node we already have, perhaps as a side effect of an incoming request.
+              // In this case it's enough to update the timestamp.
+              (current.touchNodeRecord(nodeRecord), None)
+            } else if (bucket.size < config.k) {
               (current.addNodeRecord(nodeRecord), None)
             } else {
               // the bucket is full, not update it but ping least recently seen node (i.e. the one at the head) to see what to do
@@ -165,14 +169,17 @@ class KRouter[A](
               (current, Some(nodeToPing))
             }
           }
-          result <- pingAndUpdateState(toPing, nodeRecord)
+          result <- maybePingAndUpdateState(toPing, nodeRecord)
         } yield result
       }
     }
   }
 
-  private def pingAndUpdateState(recordToPing: Option[NodeRecord[A]], nodeRecord: NodeRecord[A]): Task[Unit] = {
-    recordToPing match {
+  private def maybePingAndUpdateState(
+      maybeRecordToPing: Option[NodeRecord[A]],
+      nodeRecord: NodeRecord[A]
+  ): Task[Unit] = {
+    maybeRecordToPing match {
       case None => Task.unit
       case Some(nodeToPing) =>
         Task(logger.debug(s"Pinging ${nodeToPing.id.toHex} to check if it needs to be replaced.")) *>
@@ -180,7 +187,7 @@ class KRouter[A](
             // if it does respond, it is moved to the tail and the other node record discarded.
             Task(
               logger.info(
-                s"Moving ${nodeToPing.id} to head of bucket. Discarding (${nodeRecord.id.toHex}, $nodeRecord) as routing table candidate."
+                s"Moving ${nodeToPing.id.toHex} to head of bucket. Discarding (${nodeRecord.id.toHex}, $nodeRecord) as routing table candidate."
               )
             ) *>
               routerState.update(_.touchNodeRecord(nodeToPing)),
