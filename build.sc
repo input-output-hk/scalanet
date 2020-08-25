@@ -39,9 +39,10 @@ object scalanet extends ScalaModule with PublishModule {
   )
 
   override def ivyDeps = Agg(
-    ivy"io.monix::monix:3.0.0",
+    ivy"io.monix::monix:3.1.0",
     ivy"com.github.nscala-time::nscala-time:2.22.0",
     ivy"com.chuusai::shapeless:2.3.3",
+    ivy"com.typesafe.scala-logging::scala-logging:3.9.2",
     ivy"org.slf4j:slf4j-api:1.7.25",
     ivy"io.netty:netty-all:4.1.31.Final",
     ivy"org.eclipse.californium:scandium:2.0.0-M15",

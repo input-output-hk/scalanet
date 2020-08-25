@@ -4,8 +4,10 @@ import java.security.SecureRandom
 import java.time.Clock
 import java.util.{Random, UUID}
 
+import cats.syntax.all._
 import cats.data.NonEmptyList
 import cats.effect.concurrent.Ref
+import com.typesafe.scalalogging.{CanLog, Logger}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
@@ -13,7 +15,6 @@ import io.iohk.scalanet.peergroup.kademlia.KRouter.KRouterInternals._
 import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
 import monix.eval.Task
 import monix.reactive.{Consumer, Observable, OverflowStrategy}
-import org.slf4j.LoggerFactory
 import scodec.bits.BitVector
 
 class KRouter[A](
@@ -24,8 +25,11 @@ class KRouter[A](
     val uuidSource: () => UUID = () => UUID.randomUUID(),
     val rnd: Random = new SecureRandom()
 ) {
+  import KRouter.NodeId
 
-  private val log = LoggerFactory.getLogger(getClass)
+  private implicit val nodeId = NodeId(config.nodeRecord.id.toHex)
+
+  private val logger = Logger.takingImplicit[NodeId](getClass)
 
   /**
     * Start refresh cycle i.e periodically performs lookup for random node id
@@ -44,7 +48,7 @@ class KRouter[A](
     Observable
       .intervalWithFixedDelay(config.refreshRate, config.refreshRate)
       .consumeWith(Consumer.foreachTask { _ =>
-        lookup(KBuckets.generateRandomId(config.nodeRecord.id.length, rnd)).map(_ => ())
+        lookup(KBuckets.generateRandomId(config.nodeRecord.id.length, rnd)).as(())
       })
   }
 
@@ -52,7 +56,7 @@ class KRouter[A](
   private val responseTaskConsumer =
     Consumer.foreachParallelTask[(KRequest[A], Option[KResponse[A]] => Task[Unit])](parallelism = 4) {
       case (FindNodes(uuid, nodeRecord, targetNodeId), responseHandler) =>
-        debug(
+        logger.debug(
           s"Received request FindNodes(${nodeRecord.id.toHex}, $nodeRecord, ${targetNodeId.toHex})"
         )
 
@@ -65,7 +69,7 @@ class KRouter[A](
         } yield responseTask
 
       case (Ping(uuid, nodeRecord), responseHandler) =>
-        debug(
+        logger.debug(
           s"Received request Ping(${nodeRecord.id.toHex}, $nodeRecord)"
         )
         val response = Pong(uuid, config.nodeRecord)
@@ -96,12 +100,12 @@ class KRouter[A](
     val loadKnownPeers = Task.traverse(config.knownPeers)(add)
     loadKnownPeers.flatMap(_ => lookup(config.nodeRecord.id)).attempt.map {
       case Left(t) =>
-        info(s"Enrolment lookup failed with exception: $t")
-        debug(s"Enrolment failure stacktrace: ${t.getStackTrace.mkString("\n")}")
+        logger.info(s"Enrolment lookup failed with exception: $t")
+        logger.debug(s"Enrolment failure stacktrace: ${t.getStackTrace.mkString("\n")}")
         Seq()
       case Right(nodes) =>
-        debug(s"Enrolment looked completed with network nodes ${nodes.mkString(",")}")
-        info(
+        logger.debug(s"Enrolment looked completed with network nodes ${nodes.mkString(",")}")
+        logger.info(
           s"Initialization complete. ${nodes.size} peers identified " +
             s"(of which 1 is myself and ${config.knownPeers.size} are preconfigured bootstrap peers)."
         )
@@ -110,8 +114,8 @@ class KRouter[A](
   }
 
   def get(key: BitVector): Task[NodeRecord[A]] = {
-    debug(s"get(${key.toHex})")
-    getLocally(key) flatMap {
+    Task.delay(logger.debug(s"get(${key.toHex})")) *>
+      getLocally(key) flatMap {
       case Some(value) => Task.now(value)
       case None => getRemotely(key)
     }
@@ -132,29 +136,30 @@ class KRouter[A](
   def ping(recToPing: NodeRecord[A]): Task[Boolean] = {
     network
       .ping(recToPing, Ping(uuidSource(), config.nodeRecord))
-      .map(_ => true)
+      .as(true)
       .onErrorHandle(_ => false)
 
   }
 
   def add(nodeRecord: NodeRecord[A]): Task[Unit] = {
-    info(s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord)")
-    if (myself(nodeRecord.id)) {
-      Task.now(())
-    } else {
-      for {
-        toPing <- routerState.modify { current =>
-          val (_, bucket) = current.kBuckets.getBucket(nodeRecord.id)
-          if (bucket.size < config.k) {
-            (current.addNodeRecord(nodeRecord), None)
-          } else {
-            // the bucket is full, not update it but ping least recently seen node (i.e. the one at the head) to see what to do
-            val nodeToPing = current.nodeRecords(bucket.head)
-            (current, Some(nodeToPing))
+    Task.delay(logger.info(s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord)")) *> {
+      if (myself(nodeRecord.id)) {
+        Task.now(())
+      } else {
+        for {
+          toPing <- routerState.modify { current =>
+            val (_, bucket) = current.kBuckets.getBucket(nodeRecord.id)
+            if (bucket.size < config.k) {
+              (current.addNodeRecord(nodeRecord), None)
+            } else {
+              // the bucket is full, not update it but ping least recently seen node (i.e. the one at the head) to see what to do
+              val nodeToPing = current.nodeRecords(bucket.head)
+              (current, Some(nodeToPing))
+            }
           }
-        }
-        result <- pingAndUpdateState(toPing, nodeRecord)
-      } yield result
+          result <- pingAndUpdateState(toPing, nodeRecord)
+        } yield result
+      }
     }
   }
 
@@ -162,28 +167,20 @@ class KRouter[A](
     recordToPing match {
       case None => Task.now(())
       case Some(nodeToPing) =>
-        for {
-          pingResult <- ping(nodeToPing)
-          _ <- routerState.update { current =>
-            if (pingResult) {
-              // if it does respond, it is moved to the tail and the other node record discarded.
-              current.touchNodeRecord(nodeToPing)
-            } else {
-              // if that node fails to respond, it is evicted from the bucket and the other node inserted (at the tail)
-              current.replaceNodeRecord(nodeToPing, nodeRecord)
-            }
-          }
-
-          _ <- Task.eval {
-            if (pingResult) {
-              info(
-                s"Moving ${nodeToPing.id} to head of bucket. Discarding (${nodeRecord.id.toHex}, $nodeRecord) as routing table candidate."
-              )
-            } else {
-              info(s"Replacing ${nodeToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord).")
-            }
-          }
-        } yield ()
+        ping(nodeToPing).ifM(
+          // if it does respond, it is moved to the tail and the other node record discarded.
+          Task.eval(
+            logger.info(
+              s"Moving ${nodeToPing.id} to head of bucket. Discarding (${nodeRecord.id.toHex}, $nodeRecord) as routing table candidate."
+            )
+          ) *>
+            routerState.update(_.touchNodeRecord(nodeToPing)),
+          // if that node fails to respond, it is evicted from the bucket and the other node inserted (at the tail)
+          Task.eval(
+            logger.info(s"Replacing ${nodeToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord).")
+          ) *>
+            routerState.update(_.replaceNodeRecord(nodeToPing, nodeRecord))
+        )
     }
   }
 
@@ -228,25 +225,25 @@ class KRouter[A](
         targetNodeId = targetNodeId
       )
 
-      debug(
-        s"Issuing " +
-          s"findNodes request to (${knownNodeRecord.id.toHex}, $knownNodeRecord). " +
-          s"RequestId = ${findNodesRequest.requestId}, " +
-          s"Target = ${targetNodeId.toHex}."
-      )
-
-      network
-        .findNodes(knownNodeRecord, findNodesRequest)
-        .map { kNodesResponse: Nodes[A] =>
-          debug(
+      for {
+        _ <- Task.delay(
+          logger.debug(
+            s"Issuing " +
+              s"findNodes request to (${knownNodeRecord.id.toHex}, $knownNodeRecord). " +
+              s"RequestId = ${findNodesRequest.requestId}, " +
+              s"Target = ${targetNodeId.toHex}."
+          )
+        )
+        kNodesResponse <- network.findNodes(knownNodeRecord, findNodesRequest)
+        _ <- Task.delay(
+          logger.debug(
             s"Received Nodes response " +
               s"RequestId = ${kNodesResponse.requestId}, " +
               s"From = (${kNodesResponse.nodeRecord.id.toHex}, ${kNodesResponse.nodeRecord})," +
               s"Results = ${kNodesResponse.nodes.map(_.id.toHex).mkString(",")}."
           )
-
-          kNodesResponse.nodes
-        }
+        )
+      } yield kNodesResponse.nodes
     }
 
     def handleQuery(to: NodeRecord[A]): Task[QueryResult[A]] = {
@@ -354,8 +351,8 @@ class KRouter[A](
 
     closestKnownNodesTask.flatMap { closestKnownNodes =>
       if (closestKnownNodes.isEmpty) {
-        debug("Lookup finished without any nodes, as bootstrap nodes ")
-        Task.now(Seq.empty)
+        Task.delay(logger.debug("Lookup finished without any nodes, as bootstrap nodes ")) *>
+          Task.now(Seq.empty)
       } else {
         val initalRequestState = closestKnownNodes.foldLeft(Map.empty[BitVector, RequestResult]) { (map, node) =>
           map + (node.id -> RequestScheduled)
@@ -368,11 +365,11 @@ class KRouter[A](
           results <- Task.wander(closestKnownNodes) { knownNode =>
             recLookUp(List(knownNode), NonEmptyList.fromListUnsafe(closestKnownNodes.toList), state)
           }
-        } yield results.flatMap(_.toList)
+          records = results.flatMap(_.toList)
+        } yield records
 
-        lookUpTask.map { records =>
-          debug(lookupReport(targetNodeId, records))
-          records
+        lookUpTask flatTap { records =>
+          Task.delay(logger.debug(lookupReport(targetNodeId, records)))
         }
       }
     }
@@ -399,16 +396,6 @@ class KRouter[A](
          | $rep
          |""".stripMargin
     }
-  }
-
-  private def debug(msg: => String): Unit = {
-    if (log.isDebugEnabled) {
-      log.debug(s"${config.nodeRecord.id.toHex} $msg")
-    }
-  }
-
-  private def info(msg: String): Unit = {
-    log.info(s"${config.nodeRecord.id.toHex} $msg")
   }
 }
 
@@ -507,6 +494,15 @@ object KRouter {
   case class NodeRecord[A](id: BitVector, routingAddress: A, messagingAddress: A) {
     override def toString: String =
       s"NodeRecord(id = ${id.toHex}, routingAddress = $routingAddress, messagingAddress = $messagingAddress)"
+  }
+
+  private case class NodeId(val value: String) extends AnyVal
+  private object NodeId {
+
+    /** Prepend the node ID to each log message. */
+    implicit val CanLogNodeId: CanLog[NodeId] = new CanLog[NodeId] {
+      override def logMessage(originalMsg: String, a: NodeId): String = s"${a.value} $originalMsg"
+    }
   }
 
   private[scalanet] object KRouterInternals {
