@@ -151,10 +151,10 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
 
     def initialize: Task[ClientChannelImpl[M]] = {
       val connectTask = for {
-        _ <- Task.delay(logger.debug("Initiating connection to peer {}", peerInfo))
+        _ <- Task(logger.debug("Initiating connection to peer {}", peerInfo))
         _ <- toTask(bootstrap.connect(peerInfo.address.inetSocketAddress))
         _ <- Task.fromFuture(activationF)
-        _ <- Task.delay(logger.debug("Connection to peer {} finished successfully", peerInfo))
+        _ <- Task(logger.debug("Connection to peer {} finished successfully", peerInfo))
       } yield this
 
       connectTask.onErrorRecoverWith {
@@ -166,7 +166,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
     override def sendMessage(message: M): Task[Unit] = {
       val sendTask = for {
         channel <- Task.fromFuture(activationF)
-        _ <- Task.delay(
+        _ <- Task(
           logger.debug(
             s"Processing outbound message from local address ${channel.localAddress()} " +
               s"to remote address ${channel.remoteAddress()} via channel id ${channel.id()}"
@@ -177,7 +177,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
 
       sendTask.onErrorRecoverWith {
         case e: IOException =>
-          Task.delay(logger.debug("Sending message to {} failed due to {}", peerInfo: Any, e: Any)) *>
+          Task(logger.debug("Sending message to {} failed due to {}", peerInfo: Any, e: Any)) *>
             Task.raiseError(new ChannelBrokenException[PeerInfo](to, e))
       }
     }
@@ -190,11 +190,11 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       */
     override def close(): Task[Unit] = {
       for {
-        _ <- Task.delay(logger.debug("Closing client channel to peer {}", peerInfo))
+        _ <- Task(logger.debug("Closing client channel to peer {}", peerInfo))
         ctx <- Task.fromFuture(activationF)
         _ <- toTask(ctx.close())
         _ <- toTask(ctx.closeFuture())
-        _ <- Task.delay(logger.debug("Client channel to peer {} closed", peerInfo))
+        _ <- Task(logger.debug("Client channel to peer {} closed", peerInfo))
       } yield ()
     }
   }
@@ -283,10 +283,10 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       */
     override def close(): Task[Unit] =
       for {
-        _ <- Task.delay(logger.debug("Closing server channel to peer {}", to))
+        _ <- Task(logger.debug("Closing server channel to peer {}", to))
         _ <- toTask(nettyChannel.close())
         _ <- toTask(nettyChannel.closeFuture())
-        _ <- Task.delay(logger.debug("Server channel to peer {} closed", to))
+        _ <- Task(logger.debug("Server channel to peer {} closed", to))
       } yield ()
   }
 

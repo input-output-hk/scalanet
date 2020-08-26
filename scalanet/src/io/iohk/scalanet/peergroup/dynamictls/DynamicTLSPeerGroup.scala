@@ -82,7 +82,7 @@ class DynamicTLSPeerGroup[M](val config: Config)(
   override def initialize(): Task[Unit] =
     toTask(serverBind).onErrorRecoverWith {
       case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
-    } *> Task.delay(logger.info(s"Server bound to address ${config.bindAddress}"))
+    } *> Task(logger.info(s"Server bound to address ${config.bindAddress}"))
 
   override def processAddress: PeerInfo = config.peerInfo
 
@@ -103,11 +103,11 @@ class DynamicTLSPeerGroup[M](val config: Config)(
 
   override def shutdown(): Task[Unit] = {
     for {
-      _ <- Task.delay(logger.debug("Start shutdown of tls peer group for peer {}", processAddress))
+      _ <- Task(logger.debug("Start shutdown of tls peer group for peer {}", processAddress))
       _ <- Task(serverSubject.onComplete())
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
-      _ <- Task.delay(logger.debug("Tls peer group shutdown for peer {}", processAddress))
+      _ <- Task(logger.debug("Tls peer group shutdown for peer {}", processAddress))
     } yield ()
   }
 }

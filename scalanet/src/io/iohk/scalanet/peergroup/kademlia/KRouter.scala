@@ -56,11 +56,12 @@ class KRouter[A](
   private val responseTaskConsumer =
     Consumer.foreachParallelTask[(KRequest[A], Option[KResponse[A]] => Task[Unit])](parallelism = 4) {
       case (FindNodes(uuid, nodeRecord, targetNodeId), responseHandler) =>
-        logger.debug(
-          s"Received request FindNodes(${nodeRecord.id.toHex}, $nodeRecord, ${targetNodeId.toHex})"
-        )
-
         for {
+          _ <- Task(
+            logger.debug(
+              s"Received request FindNodes(${nodeRecord.id.toHex}, $nodeRecord, ${targetNodeId.toHex})"
+            )
+          )
           state <- routerState.get
           closestNodes = state.kBuckets.closestNodes(targetNodeId, config.k).map(state.nodeRecords(_))
           response = Nodes(uuid, config.nodeRecord, closestNodes)
@@ -69,12 +70,14 @@ class KRouter[A](
         } yield responseTask
 
       case (Ping(uuid, nodeRecord), responseHandler) =>
-        logger.debug(
-          s"Received request Ping(${nodeRecord.id.toHex}, $nodeRecord)"
-        )
-        val response = Pong(uuid, config.nodeRecord)
         for {
+          _ <- Task(
+            logger.debug(
+              s"Received request Ping(${nodeRecord.id.toHex}, $nodeRecord)"
+            )
+          )
           _ <- add(nodeRecord).startAndForget
+          response = Pong(uuid, config.nodeRecord)
           responseTask <- responseHandler(Some(response))
         } yield responseTask
     }
@@ -98,23 +101,27 @@ class KRouter[A](
     */
   private def enroll(): Task[Seq[NodeRecord[A]]] = {
     val loadKnownPeers = Task.traverse(config.knownPeers)(add)
-    loadKnownPeers.flatMap(_ => lookup(config.nodeRecord.id)).attempt.map {
+    loadKnownPeers.flatMap(_ => lookup(config.nodeRecord.id)).attempt.flatMap {
       case Left(t) =>
-        logger.info(s"Enrolment lookup failed with exception: $t")
-        logger.debug(s"Enrolment failure stacktrace: ${t.getStackTrace.mkString("\n")}")
-        Seq()
+        Task {
+          logger.info(s"Enrolment lookup failed with exception: $t")
+          logger.debug(s"Enrolment failure stacktrace: ${t.getStackTrace.mkString("\n")}")
+          Seq()
+        }
       case Right(nodes) =>
-        logger.debug(s"Enrolment looked completed with network nodes ${nodes.mkString(",")}")
-        logger.info(
-          s"Initialization complete. ${nodes.size} peers identified " +
-            s"(of which 1 is myself and ${config.knownPeers.size} are preconfigured bootstrap peers)."
-        )
-        nodes
+        Task {
+          logger.debug(s"Enrolment looked completed with network nodes ${nodes.mkString(",")}")
+          logger.info(
+            s"Initialization complete. ${nodes.size} peers identified " +
+              s"(of which 1 is myself and ${config.knownPeers.size} are preconfigured bootstrap peers)."
+          )
+          nodes
+        }
     }
   }
 
   def get(key: BitVector): Task[NodeRecord[A]] = {
-    Task.delay(logger.debug(s"get(${key.toHex})")) *>
+    Task(logger.debug(s"get(${key.toHex})")) *>
       getLocally(key) flatMap {
       case Some(value) => Task.now(value)
       case None => getRemotely(key)
@@ -142,7 +149,7 @@ class KRouter[A](
   }
 
   def add(nodeRecord: NodeRecord[A]): Task[Unit] = {
-    Task.delay(logger.info(s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord)")) *> {
+    Task(logger.info(s"Handling potential addition of candidate (${nodeRecord.id.toHex}, $nodeRecord)")) *> {
       if (myself(nodeRecord.id)) {
         Task.now(())
       } else {
@@ -169,16 +176,14 @@ class KRouter[A](
       case Some(nodeToPing) =>
         ping(nodeToPing).ifM(
           // if it does respond, it is moved to the tail and the other node record discarded.
-          Task.eval(
+          Task(
             logger.info(
               s"Moving ${nodeToPing.id} to head of bucket. Discarding (${nodeRecord.id.toHex}, $nodeRecord) as routing table candidate."
             )
           ) *>
             routerState.update(_.touchNodeRecord(nodeToPing)),
           // if that node fails to respond, it is evicted from the bucket and the other node inserted (at the tail)
-          Task.eval(
-            logger.info(s"Replacing ${nodeToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord).")
-          ) *>
+          Task(logger.info(s"Replacing ${nodeToPing.id.toHex} with new entry (${nodeRecord.id.toHex}, $nodeRecord).")) *>
             routerState.update(_.replaceNodeRecord(nodeToPing, nodeRecord))
         )
     }
@@ -226,7 +231,7 @@ class KRouter[A](
       )
 
       for {
-        _ <- Task.delay(
+        _ <- Task(
           logger.debug(
             s"Issuing " +
               s"findNodes request to (${knownNodeRecord.id.toHex}, $knownNodeRecord). " +
@@ -235,7 +240,7 @@ class KRouter[A](
           )
         )
         kNodesResponse <- network.findNodes(knownNodeRecord, findNodesRequest)
-        _ <- Task.delay(
+        _ <- Task(
           logger.debug(
             s"Received Nodes response " +
               s"RequestId = ${kNodesResponse.requestId}, " +
@@ -351,8 +356,7 @@ class KRouter[A](
 
     closestKnownNodesTask.flatMap { closestKnownNodes =>
       if (closestKnownNodes.isEmpty) {
-        Task.delay(logger.debug("Lookup finished without any nodes, as bootstrap nodes ")) *>
-          Task.now(Seq.empty)
+        Task(logger.debug("Lookup finished without any nodes, as bootstrap nodes ")).as(Seq.empty)
       } else {
         val initalRequestState = closestKnownNodes.foldLeft(Map.empty[BitVector, RequestResult]) { (map, node) =>
           map + (node.id -> RequestScheduled)
@@ -369,7 +373,7 @@ class KRouter[A](
         } yield records
 
         lookUpTask flatTap { records =>
-          Task.delay(logger.debug(lookupReport(targetNodeId, records)))
+          Task(logger.debug(lookupReport(targetNodeId, records)))
         }
       }
     }

@@ -236,9 +236,9 @@ class UDPPeerGroup[M](val config: Config)(
 
     private def closeChannel(): Task[Unit] = {
       for {
-        _ <- Task.delay(logger.debug("Closing channel from {} to {}", localAddress: Any, remoteAddress: Any))
+        _ <- Task(logger.debug("Closing channel from {} to {}", localAddress: Any, remoteAddress: Any))
         _ <- closeNettyChannel(channelType)
-        _ <- Task.delay(logger.debug("Channel from {} to {} closed", localAddress: Any, remoteAddress: Any))
+        _ <- Task(logger.debug("Channel from {} to {} closed", localAddress: Any, remoteAddress: Any))
       } yield ()
     }
 
@@ -256,7 +256,7 @@ class UDPPeerGroup[M](val config: Config)(
         recipient: InetSocketAddress,
         nettyChannel: NioDatagramChannel
     ): Task[Unit] = {
-      Task.delay(logger.debug("Sending message {} to peer {}", message, recipient)) *>
+      Task(logger.debug("Sending message {} to peer {}", message, recipient)) *>
         Task.fromTry(codec.encode(message).toTry).flatMap { encodedMessage =>
           val asBuffer = encodedMessage.toByteBuffer
           toTask(nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(asBuffer), recipient, sender)))
@@ -273,7 +273,7 @@ class UDPPeerGroup[M](val config: Config)(
   override def initialize(): Task[Unit] =
     toTask(serverBind).onErrorRecoverWith {
       case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
-    } *> Task.delay(logger.info(s"Server bound to address ${config.bindAddress}"))
+    } *> Task(logger.info(s"Server bound to address ${config.bindAddress}"))
 
   override def processAddress: InetMultiAddress = config.processAddress
 
@@ -298,7 +298,7 @@ class UDPPeerGroup[M](val config: Config)(
       }
       .onErrorRecoverWith {
         case e: Throwable =>
-          Task.delay(logger.debug("Udp channel setup failed due to {}", e)) *>
+          Task(logger.debug("Udp channel setup failed due to {}", e)) *>
             Task.raiseError(new ChannelSetupException[InetMultiAddress](to, e))
       }
   }
