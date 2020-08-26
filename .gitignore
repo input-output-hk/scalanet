@@ -7,3 +7,6 @@ target/
 *.iml
 scalafmt
 .DS_Store
+.metals
+.bloop
+mill.isGc

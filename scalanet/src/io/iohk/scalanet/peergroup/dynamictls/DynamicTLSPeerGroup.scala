@@ -4,6 +4,7 @@ import java.net.InetSocketAddress
 import java.security._
 import java.security.cert.X509Certificate
 
+import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
@@ -27,7 +28,6 @@ import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.observables.ConnectableObservable
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair
-import org.slf4j.LoggerFactory
 import scodec.bits.BitVector
 
 import scala.util.Try
@@ -46,9 +46,8 @@ import scala.util.control.NonFatal
 class DynamicTLSPeerGroup[M](val config: Config)(
     implicit codec: StreamCodec[M],
     scheduler: Scheduler
-) extends TerminalPeerGroup[PeerInfo, M]() {
-
-  private val log = LoggerFactory.getLogger(getClass)
+) extends TerminalPeerGroup[PeerInfo, M]()
+    with StrictLogging {
 
   private val sslServerCtx: SslContext = DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForServer, config)
 
@@ -70,7 +69,7 @@ class DynamicTLSPeerGroup[M](val config: Config)(
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
         new ServerChannelBuilder[M](serverSubject, ch, sslServerCtx, codec.cleanSlate)
-        log.info(s"$processAddress received inbound from ${ch.remoteAddress()}.")
+        logger.info(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })
     .option[Integer](ChannelOption.SO_BACKLOG, 128)
@@ -80,9 +79,9 @@ class DynamicTLSPeerGroup[M](val config: Config)(
   private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
 
   override def initialize(): Task[Unit] =
-    toTask(serverBind).map(_ => log.info(s"Server bound to address ${config.bindAddress}")).onErrorRecoverWith {
+    toTask(serverBind).onErrorRecoverWith {
       case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
-    }
+    } *> Task(logger.info(s"Server bound to address ${config.bindAddress}"))
 
   override def processAddress: PeerInfo = config.peerInfo
 
@@ -103,11 +102,11 @@ class DynamicTLSPeerGroup[M](val config: Config)(
 
   override def shutdown(): Task[Unit] = {
     for {
-      _ <- Task.now(log.debug("Start shutdown of tls peer group for peer {}", processAddress))
+      _ <- Task(logger.debug("Start shutdown of tls peer group for peer {}", processAddress))
       _ <- Task(serverSubject.onComplete())
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
-      _ <- Task.now(log.debug("Tls peer group shutdown for peer {}", processAddress))
+      _ <- Task(logger.debug("Tls peer group shutdown for peer {}", processAddress))
     } yield ()
   }
 }

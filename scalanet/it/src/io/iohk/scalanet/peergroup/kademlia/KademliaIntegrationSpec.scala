@@ -145,8 +145,8 @@ class KademliaIntegrationSpec extends AsyncFlatSpec with BeforeAndAfterAll with 
     println(nodesRound2)
     for {
       node <- startNode()
-      node1 <- Task.wanderUnordered(nodesRound1)(n => startNode(n, initialNodes = Set(node.self)))
-      node2 <- Task.wanderUnordered(nodesRound2)(n => startNode(n, initialNodes = Set(node.self)))
+      node1 <- Task.parTraverseUnordered(nodesRound1)(n => startNode(n, initialNodes = Set(node.self)))
+      node2 <- Task.parTraverseUnordered(nodesRound2)(n => startNode(n, initialNodes = Set(node.self)))
     } yield {
       eventually {
         node.getPeers.runSyncUnsafe().size shouldEqual 11

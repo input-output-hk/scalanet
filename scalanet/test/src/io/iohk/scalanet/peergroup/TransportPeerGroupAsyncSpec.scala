@@ -73,7 +73,7 @@ class TransportPeerGroupAsyncSpec extends AsyncFlatSpec with BeforeAndAfterAll {
           client3.send(k, client1.processAddress)
         )
         (r1, r2, r3) = responses
-        responses <- Task.gather((1 to 4).map { req =>
+        responses <- Task.parSequence((1 to 4).map { req =>
           if (req % 2 == 0) {
             client1.send(req, client3.processAddress)
           } else {
