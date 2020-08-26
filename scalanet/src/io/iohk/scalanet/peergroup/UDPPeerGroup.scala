@@ -4,7 +4,6 @@ import java.io.IOException
 import java.net.{InetSocketAddress, PortUnreachableException}
 import java.util.concurrent.ConcurrentHashMap
 
-import cats.syntax.apply._
 import cats.syntax.functor._
 import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.monix_subject.ConnectableSubject

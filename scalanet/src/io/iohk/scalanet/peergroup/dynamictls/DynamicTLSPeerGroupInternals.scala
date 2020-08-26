@@ -4,7 +4,6 @@ import java.io.IOException
 import java.net.{ConnectException, InetSocketAddress}
 import java.nio.channels.ClosedChannelException
 
-import cats.syntax.apply._
 import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.monix_subject.ConnectableSubject

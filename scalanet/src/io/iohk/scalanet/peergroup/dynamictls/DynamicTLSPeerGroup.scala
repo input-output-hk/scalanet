@@ -4,7 +4,6 @@ import java.net.InetSocketAddress
 import java.security._
 import java.security.cert.X509Certificate
 
-import cats.syntax.apply._
 import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.crypto.CryptoUtils
