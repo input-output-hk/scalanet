@@ -44,7 +44,7 @@ object scalanet extends ScalaModule with PublishModule {
     ivy"com.chuusai::shapeless:2.3.3",
     ivy"com.typesafe.scala-logging::scala-logging:3.9.2",
     ivy"org.slf4j:slf4j-api:1.7.25",
-    ivy"io.netty:netty-all:4.1.31.Final",
+    ivy"io.netty:netty-all:4.1.51.Final",
     ivy"org.eclipse.californium:scandium:2.0.0-M15",
     ivy"org.eclipse.californium:element-connector:2.0.0-M15",
     ivy"org.scodec::scodec-bits:1.1.12",
