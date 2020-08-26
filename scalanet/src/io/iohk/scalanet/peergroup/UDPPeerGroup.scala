@@ -256,15 +256,16 @@ class UDPPeerGroup[M](val config: Config)(
         recipient: InetSocketAddress,
         nettyChannel: NioDatagramChannel
     ): Task[Unit] = {
-      Task(logger.debug("Sending message {} to peer {}", message, recipient)) *>
-        Task.fromTry(codec.encode(message).toTry).flatMap { encodedMessage =>
-          val asBuffer = encodedMessage.toByteBuffer
-          toTask(nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(asBuffer), recipient, sender)))
-            .onErrorRecoverWith {
-              case _: IOException =>
-                Task.raiseError(new MessageMTUException[InetMultiAddress](to, asBuffer.capacity()))
-            }
-        }
+      for {
+        _ <- Task(logger.debug("Sending message {} to peer {}", message, recipient))
+        encodedMessage <- Task.fromTry(codec.encode(message).toTry)
+        asBuffer = encodedMessage.toByteBuffer
+        _ <- toTask(nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(asBuffer), recipient, sender)))
+          .onErrorRecoverWith {
+            case _: IOException =>
+              Task.raiseError(new MessageMTUException[InetMultiAddress](to, asBuffer.capacity()))
+          }
+      } yield ()
     }
   }
 
