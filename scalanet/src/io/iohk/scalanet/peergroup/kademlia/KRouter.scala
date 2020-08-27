@@ -16,6 +16,7 @@ import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
 import monix.eval.Task
 import monix.reactive.{Consumer, Observable, OverflowStrategy}
 import scodec.bits.BitVector
+import scala.collection.immutable.SortedSet
 
 class KRouter[A](
     val config: Config[A],
@@ -216,7 +217,7 @@ class KRouter[A](
 
   // lookup process, from page 6 of the kademlia paper
   // Lookup terminates when initiator queried and got response from the k closest nodes it has seen
-  private def lookup(targetNodeId: BitVector): Task[Set[NodeRecord[A]]] = {
+  private def lookup(targetNodeId: BitVector): Task[SortedSet[NodeRecord[A]]] = {
     // Starting lookup process with alpha known nodes from our kbuckets
     val closestKnownNodesTask = routerState.get.map { state =>
       state.kBuckets
@@ -226,7 +227,8 @@ class KRouter[A](
         .map(id => state.nodeRecords(id))
     }.memoizeOnSuccess
 
-    val xorOrder = new XorOrder[A](targetNodeId)
+    implicit val xorOrder = new XorOrder[A](targetNodeId)
+    implicit val xorOrdering = xorOrder.xorNodeOrder
 
     def query(knownNodeRecord: NodeRecord[A]): Task[Seq[NodeRecord[A]]] = {
 
@@ -362,25 +364,25 @@ class KRouter[A](
 
     closestKnownNodesTask
       .map {
-        case h :: t => NonEmptySet.of(h, t: _*)(xorOrder).some
+        case h :: t => NonEmptySet.of(h, t: _*).some
         case Nil => none
       }
       .flatMap {
         case None =>
-          Task(logger.debug("Lookup finished without any nodes, as bootstrap nodes ")).as(Set.empty)
+          Task(logger.debug("Lookup finished without any nodes, as bootstrap nodes ")).as(SortedSet.empty)
 
         case Some(closestKnownNodes) =>
           val initalRequestState: Map[BitVector, RequestResult] =
             closestKnownNodes.toList.map(_.id -> RequestScheduled).toMap
           // All initial nodes are scheduled to request
-          val lookUpTask: Task[Set[NodeRecord[A]]] = for {
+          val lookUpTask: Task[SortedSet[NodeRecord[A]]] = for {
             // All initial nodes are scheduled to request
             state <- Ref.of[Task, Map[BitVector, RequestResult]](initalRequestState)
             // closestKnownNodes are constrained by alpha, it means there will be at most alpha independent recursive tasks
             results <- Task.parTraverse(closestKnownNodes.toList) { knownNode =>
               recLookUp(List(knownNode), closestKnownNodes, state)
             }
-            records = results.flatMap(_.toList).toSet
+            records = results.reduce(_ ++ _).toSortedSet
           } yield records
 
           lookUpTask flatTap { records =>
@@ -393,12 +395,12 @@ class KRouter[A](
     _ == config.nodeRecord.id
   }
 
-  private def lookupReport(targetNodeId: BitVector, nodeRecords: Set[KRouter.NodeRecord[A]]): String = {
+  private def lookupReport(targetNodeId: BitVector, nodeRecords: SortedSet[KRouter.NodeRecord[A]]): String = {
 
     if (nodeRecords.isEmpty) {
       s"Lookup to ${targetNodeId.toHex} returned no results."
     } else {
-      val ids = nodeRecords.toSeq.map(_.id).sorted(new XorOrdering(targetNodeId)).reverse
+      val ids = nodeRecords.toSeq.map(_.id).reverse
 
       val ds: Map[BitVector, (NodeRecord[A], BigInt)] =
         nodeRecords.map(nodeRecord => (nodeRecord.id, (nodeRecord, Xor.d(nodeRecord.id, targetNodeId)))).toMap
