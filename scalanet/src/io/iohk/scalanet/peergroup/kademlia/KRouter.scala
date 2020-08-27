@@ -400,7 +400,8 @@ class KRouter[A](
     if (nodeRecords.isEmpty) {
       s"Lookup to ${targetNodeId.toHex} returned no results."
     } else {
-      val rep = nodeRecords.toSeq
+      // Print distances in descending order.
+      val rep = nodeRecords.toSeq.reverse
         .map { node =>
           node -> Xor.d(node.id, targetNodeId)
         }
