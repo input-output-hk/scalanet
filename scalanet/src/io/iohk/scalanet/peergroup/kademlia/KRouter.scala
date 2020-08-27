@@ -400,12 +400,11 @@ class KRouter[A](
     if (nodeRecords.isEmpty) {
       s"Lookup to ${targetNodeId.toHex} returned no results."
     } else {
-      val ids = nodeRecords.toSeq.map(_.id).reverse
-
-      val ds: Map[BitVector, (NodeRecord[A], BigInt)] =
-        nodeRecords.map(nodeRecord => (nodeRecord.id, (nodeRecord, Xor.d(nodeRecord.id, targetNodeId)))).toMap
-
-      val rep = ids.map(nodeId => ds(nodeId)).mkString("\n| ")
+      val rep = nodeRecords.toSeq
+        .map { node =>
+          node -> Xor.d(node.id, targetNodeId)
+        }
+        .mkString("\n| ")
 
       s"""
          | Lookup to target ${targetNodeId.toHex} returned
