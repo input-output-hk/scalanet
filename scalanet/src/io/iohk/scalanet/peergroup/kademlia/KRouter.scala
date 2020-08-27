@@ -5,7 +5,7 @@ import java.time.Clock
 import java.util.{Random, UUID}
 
 import cats.syntax.all._
-import cats.data.NonEmptyList
+import cats.data.NonEmptySet
 import cats.effect.concurrent.Ref
 import com.typesafe.scalalogging.{CanLog, Logger}
 import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
@@ -271,12 +271,12 @@ class KRouter[A](
 
     def shouldFinishLookup(
         nodesLeftToQuery: Seq[NodeRecord[A]],
-        nodesFound: NonEmptyList[NodeRecord[A]],
+        nodesFound: NonEmptySet[NodeRecord[A]],
         lookupState: Ref[Task, Map[BitVector, RequestResult]]
     ): Task[Boolean] = {
       for {
         currentState <- lookupState.get
-        closestKnodes = nodesFound.toList
+        closestKnodes = nodesFound.toSortedSet
           .take(config.k)
           .filter(node => currentState.get(node.id).contains(RequestSuccess))
         shouldFinish = nodesLeftToQuery.isEmpty || closestKnodes.size == config.k
@@ -286,7 +286,7 @@ class KRouter[A](
     def getNodesToQuery(
         currentClosestNode: NodeRecord[A],
         receivedNodes: Seq[NodeRecord[A]],
-        nodesFound: NonEmptyList[NodeRecord[A]],
+        nodesFound: NonEmptySet[NodeRecord[A]],
         lookupState: Ref[Task, Map[BitVector, RequestResult]]
     ): Task[Seq[NodeRecord[A]]] = {
 
@@ -297,7 +297,7 @@ class KRouter[A](
       // k nodes from already found or
       // alpha nodes from closest nodes received
       val (nodesToQueryFrom, nodesToTake) =
-        if (closestNodes.isEmpty) (nodesFound.toList, config.k) else (closestNodes, config.alpha)
+        if (closestNodes.isEmpty) (nodesFound.toIterable, config.k) else (closestNodes.toIterable, config.alpha)
 
       for {
         nodesToQuery <- lookupState.modify { currentState =>
@@ -306,6 +306,7 @@ class KRouter[A](
               case node if !currentState.contains(node.id) => node
             }
             .take(nodesToTake)
+            .toList
 
           val updatedMap = unqueriedNodes.foldLeft(currentState)((map, node) => map + (node.id -> RequestScheduled))
           (updatedMap, unqueriedNodes)
@@ -327,9 +328,9 @@ class KRouter[A](
     // Due to threading recursive function through flatmap and using Task, this is entirely stack safe
     def recLookUp(
         nodesToQuery: Seq[NodeRecord[A]],
-        nodesFound: NonEmptyList[NodeRecord[A]],
+        nodesFound: NonEmptySet[NodeRecord[A]],
         lookupState: Ref[Task, Map[BitVector, RequestResult]]
-    ): Task[NonEmptyList[NodeRecord[A]]] = {
+    ): Task[NonEmptySet[NodeRecord[A]]] = {
       shouldFinishLookup(nodesToQuery, nodesFound, lookupState).flatMap {
         case true =>
           Task.now(nodesFound)
@@ -350,7 +351,7 @@ class KRouter[A](
               .filterNot(node => myself(node.id))
               .toList
 
-            updatedFoundNodes = (nodesFound ++ receivedNodes).distinct(xorOrder).sorted(xorOrder)
+            updatedFoundNodes = receivedNodes.foldLeft(nodesFound)(_ add _)
 
             newNodesToQuery <- getNodesToQuery(nodesFound.head, receivedNodes, updatedFoundNodes, lookupState)
 
@@ -359,28 +360,33 @@ class KRouter[A](
       }
     }
 
-    closestKnownNodesTask.map(NonEmptyList.fromList).flatMap {
-      case None =>
-        Task(logger.debug("Lookup finished without any nodes, as bootstrap nodes ")).as(Set.empty)
+    closestKnownNodesTask
+      .map {
+        case h :: t => NonEmptySet.of(h, t: _*)(xorOrder).some
+        case Nil => none
+      }
+      .flatMap {
+        case None =>
+          Task(logger.debug("Lookup finished without any nodes, as bootstrap nodes ")).as(Set.empty)
 
-      case Some(closestKnownNodes) =>
-        val initalRequestState: Map[BitVector, RequestResult] =
-          closestKnownNodes.toList.map(_.id -> RequestScheduled).toMap
-        // All initial nodes are scheduled to request
-        val lookUpTask: Task[Set[NodeRecord[A]]] = for {
+        case Some(closestKnownNodes) =>
+          val initalRequestState: Map[BitVector, RequestResult] =
+            closestKnownNodes.toList.map(_.id -> RequestScheduled).toMap
           // All initial nodes are scheduled to request
-          state <- Ref.of[Task, Map[BitVector, RequestResult]](initalRequestState)
-          // closestKnownNodes are constrained by alpha, it means there will be at most alpha independent recursive tasks
-          results <- Task.parTraverse(closestKnownNodes.toList) { knownNode =>
-            recLookUp(List(knownNode), closestKnownNodes, state)
-          }
-          records = results.flatMap(_.toList).toSet
-        } yield records
+          val lookUpTask: Task[Set[NodeRecord[A]]] = for {
+            // All initial nodes are scheduled to request
+            state <- Ref.of[Task, Map[BitVector, RequestResult]](initalRequestState)
+            // closestKnownNodes are constrained by alpha, it means there will be at most alpha independent recursive tasks
+            results <- Task.parTraverse(closestKnownNodes.toList) { knownNode =>
+              recLookUp(List(knownNode), closestKnownNodes, state)
+            }
+            records = results.flatMap(_.toList).toSet
+          } yield records
 
-        lookUpTask flatTap { records =>
-          Task(logger.debug(lookupReport(targetNodeId, records)))
-        }
-    }
+          lookUpTask flatTap { records =>
+            Task(logger.debug(lookupReport(targetNodeId, records)))
+          }
+      }
   }
 
   private def myself: BitVector => Boolean = {
