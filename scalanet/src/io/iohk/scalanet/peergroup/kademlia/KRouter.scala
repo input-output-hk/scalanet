@@ -104,16 +104,20 @@ class KRouter[A](
     loadKnownPeers.flatMap(_ => lookup(config.nodeRecord.id)).attempt.flatMap {
       case Left(t) =>
         Task {
-          logger.info(s"Enrolment lookup failed with exception: $t")
+          logger.error(s"Enrolment lookup failed with exception: $t")
           logger.debug(s"Enrolment failure stacktrace: ${t.getStackTrace.mkString("\n")}")
           Seq()
         }
       case Right(nodes) =>
         Task {
+          val nodeIds = nodes.map(_.id)
+          val bootIds = config.knownPeers.map(_.id)
+          val countSelf = nodeIds.count(myself)
+          val countBoot = nodeIds.count(bootIds)
           logger.debug(s"Enrolment looked completed with network nodes ${nodes.mkString(",")}")
           logger.info(
             s"Initialization complete. ${nodes.size} peers identified " +
-              s"(of which 1 is myself and ${config.knownPeers.size} are preconfigured bootstrap peers)."
+              s"(of which ${countSelf} is myself and ${countBoot} are among the ${bootIds.size} preconfigured bootstrap peers)."
           )
           nodes
         }
