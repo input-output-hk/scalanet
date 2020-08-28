@@ -339,7 +339,7 @@ class KRouter[A](
         case false =>
           val (toQuery, rest) = nodesToQuery.splitAt(config.alpha)
           for {
-            queryResults <- Task.parTraverse(toQuery) { knownNode =>
+            queryResults <- Task.parTraverseUnordered(toQuery) { knownNode =>
               handleQuery(knownNode)
             }
 
@@ -379,7 +379,7 @@ class KRouter[A](
             // All initial nodes are scheduled to request
             state <- Ref.of[Task, Map[BitVector, RequestResult]](initalRequestState)
             // closestKnownNodes are constrained by alpha, it means there will be at most alpha independent recursive tasks
-            results <- Task.parTraverse(closestKnownNodes.toList) { knownNode =>
+            results <- Task.parTraverseUnordered(closestKnownNodes.toList) { knownNode =>
               recLookUp(List(knownNode), closestKnownNodes, state)
             }
             records = results.reduce(_ ++ _).toSortedSet
