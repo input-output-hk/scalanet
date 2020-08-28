@@ -10,3 +10,4 @@ scalafmt
 .metals
 .bloop
 mill.isGc
+.vscode
