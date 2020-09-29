@@ -4,7 +4,7 @@ import java.nio.file.Path
 
 import io.iohk.scalanet.kconsole.Utils.{configToStr, generateRandomConfig}
 import io.iohk.scalanet.peergroup.InetMultiAddress
-import io.iohk.scalanet.peergroup.kademlia.KRouter
+import io.iohk.scalanet.kademlia.KRouter
 import monix.execution.Scheduler.Implicits.global
 import scopt.OptionParser
 

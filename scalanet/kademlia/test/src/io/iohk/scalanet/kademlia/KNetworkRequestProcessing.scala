@@ -1,8 +1,8 @@
-package io.iohk.scalanet.peergroup.kademlia
+package io.iohk.scalanet.kademlia
 
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
-import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
+import io.iohk.scalanet.kademlia.KMessage.KRequest.{FindNodes, Ping}
+import io.iohk.scalanet.kademlia.KMessage.KResponse.{Nodes, Pong}
+import io.iohk.scalanet.kademlia.KMessage.{KRequest, KResponse}
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable

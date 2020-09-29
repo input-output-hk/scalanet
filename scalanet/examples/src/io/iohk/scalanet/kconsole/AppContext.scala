@@ -1,14 +1,14 @@
 package io.iohk.scalanet.kconsole
 
 import io.iohk.scalanet.peergroup.{InetMultiAddress, PeerGroup, UDPPeerGroup}
-import io.iohk.scalanet.peergroup.kademlia.KNetwork.KNetworkScalanetImpl
-import io.iohk.scalanet.peergroup.kademlia.{KMessage, KRouter}
+import io.iohk.scalanet.kademlia.KNetwork.KNetworkScalanetImpl
+import io.iohk.scalanet.kademlia.{KMessage, KRouter}
 import monix.execution.Scheduler
 
 class AppContext(nodeConfig: KRouter.Config[InetMultiAddress])(implicit scheduler: Scheduler) {
   import scodec.codecs.implicits._
-  import io.iohk.scalanet.codec.DefaultCodecs.KademliaMessages._
-  import io.iohk.scalanet.codec.DefaultCodecs.General._
+  import io.iohk.scalanet.codec.DefaultCodecs._
+  import io.iohk.scalanet.kademlia.codec.DefaultCodecs._
 
   val kRouter: KRouter[InetMultiAddress] = {
 

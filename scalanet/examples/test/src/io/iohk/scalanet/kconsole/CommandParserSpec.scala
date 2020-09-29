@@ -11,7 +11,7 @@ import io.iohk.scalanet.kconsole.CommandParser.Command.{
   RemoveCommand
 }
 import io.iohk.scalanet.peergroup.InetMultiAddress
-import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
+import io.iohk.scalanet.kademlia.KRouter.NodeRecord
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.prop.TableDrivenPropertyChecks._

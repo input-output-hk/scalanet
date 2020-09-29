@@ -2,8 +2,8 @@ package io.iohk.scalanet.kconsole
 
 import io.iohk.scalanet.kconsole.Utils.parseRecord
 import io.iohk.scalanet.peergroup.InetMultiAddress
-import io.iohk.scalanet.peergroup.kademlia.KRouter
-import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
+import io.iohk.scalanet.kademlia.KRouter
+import io.iohk.scalanet.kademlia.KRouter.NodeRecord
 import scodec.bits.BitVector
 
 import scala.concurrent.{Await, Promise}

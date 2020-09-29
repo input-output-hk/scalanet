@@ -3,7 +3,7 @@ package io.iohk.scalanet.kconsole
 import java.net.{InetSocketAddress, URI}
 
 import io.iohk.scalanet.peergroup.InetMultiAddress
-import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
+import io.iohk.scalanet.kademlia.KRouter.NodeRecord
 import pureconfig.{ConfigReader, ConfigWriter}
 import pureconfig.ConvertHelpers.catchReadError
 import pureconfig.configurable.{genericMapReader, genericMapWriter}

@@ -1,4 +1,4 @@
-package io.iohk.scalanet.peergroup.kademlia
+package io.iohk.scalanet.kademlia
 
 import java.security.SecureRandom
 import java.time.Clock
@@ -8,11 +8,11 @@ import cats.syntax.all._
 import cats.data.NonEmptySet
 import cats.effect.concurrent.Ref
 import com.typesafe.scalalogging.{CanLog, Logger}
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
-import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
-import io.iohk.scalanet.peergroup.kademlia.KRouter.KRouterInternals._
-import io.iohk.scalanet.peergroup.kademlia.KRouter.{Config, NodeRecord}
+import io.iohk.scalanet.kademlia.KMessage.KRequest.{FindNodes, Ping}
+import io.iohk.scalanet.kademlia.KMessage.KResponse.{Nodes, Pong}
+import io.iohk.scalanet.kademlia.KMessage.{KRequest, KResponse}
+import io.iohk.scalanet.kademlia.KRouter.KRouterInternals._
+import io.iohk.scalanet.kademlia.KRouter.{Config, NodeRecord}
 import monix.eval.Task
 import monix.reactive.{Consumer, Observable, OverflowStrategy}
 import scodec.bits.BitVector

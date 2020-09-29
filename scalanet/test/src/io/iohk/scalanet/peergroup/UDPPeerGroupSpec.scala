@@ -12,7 +12,6 @@ import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import org.scalatest.concurrent.ScalaFutures._
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelAlreadyClosedException, MessageMTUException}
 import io.iohk.scalanet.peergroup.StandardTestPack._
-import io.iohk.scalanet.peergroup.kademlia.KMessage
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.scalatest.RecoverMethods._
@@ -184,12 +183,10 @@ class UDPPeerGroupSpec extends FlatSpec with EitherValues with Eventually {
 
   it should "inform user if there was decoding error on the channel" in {
     import UDPPeerGroupSpecUtils._
-    import io.iohk.scalanet.codec.DefaultCodecs.KademliaMessages._
-    import io.iohk.scalanet.codec.DefaultCodecs.General._
     import scodec.codecs.implicits._
     (for {
       pg1 <- initUdpPeerGroup[String]()
-      pg2 <- initUdpPeerGroup[KMessage[String]]()
+      pg2 <- initUdpPeerGroup[TestMessage[String]]()
       ch1 <- pg1.client(pg2.processAddress)
       result <- Task.parZip2(
         ch1.sendMessage("Helllo wrong server"),

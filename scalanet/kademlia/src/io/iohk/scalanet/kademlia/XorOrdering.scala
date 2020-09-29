@@ -1,7 +1,7 @@
-package io.iohk.scalanet.peergroup.kademlia
+package io.iohk.scalanet.kademlia
 
 import cats.Order
-import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
+import io.iohk.scalanet.kademlia.KRouter.NodeRecord
 import scodec.bits.BitVector
 
 class XorOrdering(val base: BitVector) extends Ordering[BitVector] {

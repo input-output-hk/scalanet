@@ -1,7 +1,7 @@
-package io.iohk.scalanet.peergroup.kademlia
+package io.iohk.scalanet.kademlia
 
-import io.iohk.scalanet.peergroup.kademlia.Generators._
-import io.iohk.scalanet.peergroup.kademlia.Xor._
+import io.iohk.scalanet.kademlia.Generators._
+import io.iohk.scalanet.kademlia.Xor._
 import org.scalacheck.Gen.posNum
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._

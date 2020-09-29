@@ -1,10 +1,10 @@
-package io.iohk.scalanet.peergroup.kademlia
+package io.iohk.scalanet.kademlia
 
 import java.security.SecureRandom
 import java.time.Clock
 
-import io.iohk.scalanet.peergroup.kademlia.Generators._
-import io.iohk.scalanet.peergroup.kademlia.KBucketsSpec._
+import io.iohk.scalanet.kademlia.Generators._
+import io.iohk.scalanet.kademlia.KBucketsSpec._
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.prop.GeneratorDrivenPropertyChecks._

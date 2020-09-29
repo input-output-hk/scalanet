@@ -1,7 +1,7 @@
 package io.iohk.scalanet.kconsole
 
 import io.iohk.scalanet.peergroup.InetMultiAddress
-import io.iohk.scalanet.peergroup.kademlia.KRouter
+import io.iohk.scalanet.kademlia.KRouter
 
 import scala.io.StdIn
 
