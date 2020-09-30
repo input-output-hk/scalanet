@@ -5,7 +5,8 @@ import java.nio.ByteBuffer
 import java.security.KeyStore
 import java.security.cert.Certificate
 
-import io.iohk.scalanet.peergroup._
+import io.iohk.scalanet.peergroup.InetPeerGroupUtils
+import io.iohk.scalanet.peergroup.udp.DynamicUDPPeerGroup
 import monix.execution.Scheduler
 import scodec.Codec
 
@@ -84,14 +85,14 @@ object NetUtils {
   def randomUDPPeerGroup[M](
       implicit scheduler: Scheduler,
       codec: Codec[M]
-  ): UDPPeerGroup[M] = {
-    val pg = new UDPPeerGroup(UDPPeerGroup.Config(aRandomAddress()))
+  ): DynamicUDPPeerGroup[M] = {
+    val pg = new DynamicUDPPeerGroup(DynamicUDPPeerGroup.Config(aRandomAddress()))
     Await.result(pg.initialize().runToFuture, 10 seconds)
     pg
   }
 
   def withTwoRandomUDPPeerGroups[M](
-      testCode: (UDPPeerGroup[M], UDPPeerGroup[M]) => Any
+      testCode: (DynamicUDPPeerGroup[M], DynamicUDPPeerGroup[M]) => Any
   )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
     val pg1 = randomUDPPeerGroup
     val pg2 = randomUDPPeerGroup
@@ -104,7 +105,7 @@ object NetUtils {
   }
 
   def withARandomUDPPeerGroup[M](
-      testCode: UDPPeerGroup[M] => Any
+      testCode: DynamicUDPPeerGroup[M] => Any
   )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
     val pg = randomUDPPeerGroup
     try {

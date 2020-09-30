@@ -8,10 +8,11 @@ import cats.effect.concurrent.Ref
 import io.iohk.scalanet.codec.FramingCodec
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, MessageReceived}
-import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSPeerGroup, Secp256k1}
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.ChannelId
 import io.iohk.scalanet.peergroup.ReqResponseProtocol._
+import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSPeerGroup, Secp256k1}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.PeerInfo
+import io.iohk.scalanet.peergroup.udp.DynamicUDPPeerGroup
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.observables.ConnectableObservable
@@ -175,7 +176,7 @@ object ReqResponseProtocol {
   def getUdpReqResponseProtocolClient[M](
       address: InetSocketAddress
   )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[InetMultiAddress, M]] = {
-    val pg1 = new UDPPeerGroup[MessageEnvelope[M]](UDPPeerGroup.Config(address))
+    val pg1 = new DynamicUDPPeerGroup[MessageEnvelope[M]](DynamicUDPPeerGroup.Config(address))
     buildProtocol(pg1)
   }
 

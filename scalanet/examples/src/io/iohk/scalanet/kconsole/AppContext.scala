@@ -1,6 +1,7 @@
 package io.iohk.scalanet.kconsole
 
-import io.iohk.scalanet.peergroup.{InetMultiAddress, PeerGroup, UDPPeerGroup}
+import io.iohk.scalanet.peergroup.{InetMultiAddress, PeerGroup}
+import io.iohk.scalanet.peergroup.udp.DynamicUDPPeerGroup
 import io.iohk.scalanet.kademlia.KNetwork.KNetworkScalanetImpl
 import io.iohk.scalanet.kademlia.{KMessage, KRouter}
 import monix.execution.Scheduler
@@ -14,11 +15,11 @@ class AppContext(nodeConfig: KRouter.Config[InetMultiAddress])(implicit schedule
 
     try {
       val routingConfig =
-        UDPPeerGroup.Config(
+        DynamicUDPPeerGroup.Config(
           nodeConfig.nodeRecord.routingAddress.inetSocketAddress
         )
       val routingPeerGroup = PeerGroup.createOrThrow(
-        new UDPPeerGroup[KMessage[InetMultiAddress]](routingConfig),
+        new DynamicUDPPeerGroup[KMessage[InetMultiAddress]](routingConfig),
         routingConfig
       )
       val kNetwork =
