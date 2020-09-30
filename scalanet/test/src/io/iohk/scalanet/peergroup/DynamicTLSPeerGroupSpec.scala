@@ -2,7 +2,7 @@ package io.iohk.scalanet.peergroup
 
 import java.net.InetSocketAddress
 import java.security.SecureRandom
-
+import cats.implicits._
 import cats.effect.concurrent.Deferred
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.codec.FramingCodec
@@ -39,53 +39,60 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
   behavior of "Dynamic TLSPeerGroup"
 
   it should "handshake successfully" in taskTestCase {
-    val client = new DynamicTLSPeerGroup[String](getCorrectConfig())
-    val server = new DynamicTLSPeerGroup[String](getCorrectConfig())
-
-    for {
-      _ <- client.initialize()
-      _ <- server.initialize()
+    (for {
+      client <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      server <- DynamicTLSPeerGroup[String](getCorrectConfig())
       ch1 <- client.client(server.processAddress)
-      _ <- ch1.sendMessage("Hello enc server")
-      rec <- server.server().refCount.collectChannelCreated.mergeMap(ch => ch.in.refCount).headL
-    } yield {
-      rec shouldEqual MessageReceived("Hello enc server")
+    } yield (server, ch1)).use {
+      case (server, ch1) =>
+        for {
+          _ <- ch1.sendMessage("Hello enc server")
+          rec <- server.server.refCount.collectChannelCreated.mergeMap {
+            case (ch, release) => ch.in.refCount.guarantee(release)
+          }.headL
+        } yield {
+          rec shouldEqual MessageReceived("Hello enc server")
+        }
     }
   }
 
   it should "closing client should inform server about closeup" in taskTestCase {
-    val client = new DynamicTLSPeerGroup[String](getCorrectConfig())
-    val server = new DynamicTLSPeerGroup[String](getCorrectConfig())
-
-    for {
-      d <- Deferred[Task, Boolean]
-      _ <- client.initialize()
-      _ <- server.initialize()
-      clientChannel <- client.client(server.processAddress)
-      serverChannel <- server.server().refCount.collectChannelCreated.headL
-      _ <- serverChannel.in.refCount.guarantee(d.complete(true)).foreachL(a => ()).startAndForget
-      _ <- clientChannel.close()
-      closed <- d.get.timeout(timeOutConfig).onErrorHandle(_ => false)
-    } yield {
-      assert(closed)
+    (for {
+      client <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      server <- DynamicTLSPeerGroup[String](getCorrectConfig())
+    } yield (client, server)).use {
+      case (client, server) =>
+        for {
+          d <- Deferred[Task, Boolean]
+          clientChannel <- client.client(server.processAddress).allocated
+          serverChannel <- server.server.refCount.collectChannelCreated.headL
+          _ <- serverChannel._1.in.refCount.guarantee(d.complete(true)).foreachL(_ => ()).startAndForget
+          _ <- clientChannel._2
+          closed <- d.get.timeout(timeOutConfig).onErrorHandle(_ => false)
+          _ <- serverChannel._2
+        } yield {
+          assert(closed)
+        }
     }
   }
 
   it should "closing server should inform client about closeup" in taskTestCase {
-    val client = new DynamicTLSPeerGroup[String](getCorrectConfig())
-    val server = new DynamicTLSPeerGroup[String](getCorrectConfig())
-
-    for {
-      d <- Deferred[Task, Boolean]
-      _ <- client.initialize()
-      _ <- server.initialize()
-      ch1 <- client.client(server.processAddress)
-      serverCh <- server.server().refCount.collectChannelCreated.headL
-      _ <- ch1.in.refCount.guarantee(d.complete(true)).foreachL(a => ()).startAndForget
-      _ <- serverCh.close()
-      closed <- d.get.timeout(timeOutConfig).onErrorHandle(_ => false)
-    } yield {
-      assert(closed)
+    (for {
+      client <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      server <- DynamicTLSPeerGroup[String](getCorrectConfig())
+    } yield (client, server)).use {
+      case (client, server) =>
+        for {
+          d <- Deferred[Task, Boolean]
+          clientChannel <- client.client(server.processAddress).allocated
+          serverChannel <- server.server.refCount.collectChannelCreated.headL
+          _ <- clientChannel._1.in.refCount.guarantee(d.complete(true)).foreachL(_ => ()).startAndForget
+          _ <- serverChannel._2
+          closed <- d.get.timeout(timeOutConfig).onErrorHandle(_ => false)
+          _ <- clientChannel._2
+        } yield {
+          assert(closed)
+        }
     }
   }
 
@@ -94,100 +101,105 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
     val randomString2 = Random.nextString(50000)
     val randomString3 = Random.nextString(50000)
 
-    for {
-      client1 <- DynamicTLS.getProtocol[String](aRandomAddress())
-      client2 <- DynamicTLS.getProtocol[String](aRandomAddress())
-      client3 <- DynamicTLS.getProtocol[String](aRandomAddress())
-      server <- DynamicTLS.getProtocol[String](aRandomAddress())
-      _ <- server.startHandling(s => s).startAndForget
-      responses1 <- Task.parZip3(
-        client1.send(randomString1, server.processAddress),
-        client2.send(randomString2, server.processAddress),
-        client3.send(randomString3, server.processAddress)
-      )
-      (resp1a, resp1b, resp1c) = responses1
-    } yield {
-      resp1a shouldEqual randomString1
-      resp1b shouldEqual randomString2
-      resp1c shouldEqual randomString3
+    List.fill(4)(DynamicTLS.getProtocol[String](aRandomAddress())).sequence.use {
+      case List(client1, client2, client3, server) =>
+        for {
+          _ <- server.startHandling(s => s).startAndForget
+          responses1 <- Task.parZip3(
+            client1.send(randomString1, server.processAddress),
+            client2.send(randomString2, server.processAddress),
+            client3.send(randomString3, server.processAddress)
+          )
+          (resp1a, resp1b, resp1c) = responses1
+        } yield {
+          resp1a shouldEqual randomString1
+          resp1b shouldEqual randomString2
+          resp1c shouldEqual randomString3
+        }
     }
   }
 
   it should "fail to connect to offline peer" in taskTestCase {
-    val client = new DynamicTLSPeerGroup[String](getCorrectConfig())
-    val server = new DynamicTLSPeerGroup[String](getCorrectConfig())
-    for {
-      _ <- client.initialize()
-      ch1 <- client.client(server.processAddress).attempt
-    } yield {
-      ch1.isLeft shouldEqual true
-      ch1.left.get shouldBe a[ChannelSetupException[_]]
+    val serverConfig = getCorrectConfig()
+    DynamicTLSPeerGroup[String](getCorrectConfig()).use { client =>
+      client.client(serverConfig.peerInfo).use(_ => Task.unit).attempt.map { result =>
+        result.isLeft shouldEqual true
+        result.left.get shouldBe a[ChannelSetupException[_]]
+      }
     }
   }
 
   it should "report error when trying to send message through closed channel" in taskTestCase {
-    val client = new DynamicTLSPeerGroup[String](getCorrectConfig())
-    val server = new DynamicTLSPeerGroup[String](getCorrectConfig())
-    for {
-      _ <- client.initialize()
-      _ <- server.initialize()
-      ch1 <- client.client(server.processAddress)
-      _ <- server.shutdown()
-      result <- ch1.sendMessage("wow").attempt
-    } yield {
-      result.isLeft shouldEqual true
-      result.left.get shouldBe a[ChannelBrokenException[_]]
+    DynamicTLSPeerGroup[String](getCorrectConfig()).use { client =>
+      DynamicTLSPeerGroup[String](getCorrectConfig()).allocated.flatMap {
+        case (server, release) =>
+          client.client(server.processAddress).use { ch1 =>
+            for {
+              _ <- release
+              result <- ch1.sendMessage("wow").attempt
+            } yield {
+              result.isLeft shouldEqual true
+              result.left.get shouldBe a[ChannelBrokenException[_]]
+            }
+          }
+      }
     }
   }
 
-  it should "handle ssl handshake failure becouse of server" in taskTestCase {
-    val client = new DynamicTLSPeerGroup[String](getCorrectConfig())
-    val server = new DynamicTLSPeerGroup[String](getIncorrectConfigWrongId())
-
-    for {
-      _ <- client.initialize()
-      _ <- server.initialize()
-      ch1 <- client.client(server.processAddress).attempt
-      serverHandshake <- server.server().refCount.collectHandshakeFailure.headL
-    } yield {
-      ch1.isLeft shouldEqual true
-      ch1.left.get shouldBe a[HandshakeException[_]]
-      serverHandshake shouldBe a[HandshakeException[_]]
+  it should "handle ssl handshake failure because of server" in taskTestCase {
+    (for {
+      client <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      server <- DynamicTLSPeerGroup[String](getIncorrectConfigWrongId())
+    } yield (client, server)).use {
+      case (client, server) =>
+        for {
+          ch1 <- client.client(server.processAddress).use(_ => Task.unit).attempt
+          serverHandshake <- server.server.refCount.collectHandshakeFailure.headL
+        } yield {
+          ch1.isLeft shouldEqual true
+          ch1.left.get shouldBe a[HandshakeException[_]]
+          serverHandshake shouldBe a[HandshakeException[_]]
+        }
     }
   }
 
   it should "handle ssl handshake failure becouse of client" in taskTestCase {
-    val client = new DynamicTLSPeerGroup[String](getIncorrectConfigWrongSig())
-    val server = new DynamicTLSPeerGroup[String](getCorrectConfig())
-
-    for {
-      _ <- client.initialize()
-      _ <- server.initialize()
-      ch1 <- client.client(server.processAddress).attempt
-      serverHandshake <- server.server().refCount.collectHandshakeFailure.headL
-    } yield {
-      ch1.isLeft shouldEqual true
-      ch1.left.get shouldBe a[HandshakeException[_]]
-      serverHandshake shouldBe a[HandshakeException[_]]
+    (for {
+      client <- DynamicTLSPeerGroup[String](getIncorrectConfigWrongSig())
+      server <- DynamicTLSPeerGroup[String](getCorrectConfig())
+    } yield (client, server)).use {
+      case (client, server) =>
+        for {
+          ch1 <- client.client(server.processAddress).use(_ => Task.unit).attempt
+          serverHandshake <- server.server.refCount.collectHandshakeFailure.headL
+        } yield {
+          ch1.isLeft shouldEqual true
+          ch1.left.get shouldBe a[HandshakeException[_]]
+          serverHandshake shouldBe a[HandshakeException[_]]
+        }
     }
   }
 
-  it should "handle inform user about decoding error" in taskTestCase {
+  it should "inform user about decoding error" in taskTestCase {
     implicit val s = new FramingCodec[TestMessage[String]](Codec[TestMessage[String]])
-    val client = new DynamicTLSPeerGroup[String](getCorrectConfig())
-    val server = new DynamicTLSPeerGroup[TestMessage[String]](getCorrectConfig())
-
-    for {
-      _ <- client.initialize()
-      _ <- server.initialize()
+    (for {
+      client <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      server <- DynamicTLSPeerGroup[TestMessage[String]](getCorrectConfig())
       ch1 <- client.client(server.processAddress)
-      result <- Task.parZip2(
-        ch1.sendMessage("Hello server, do not process this message"),
-        server.server().refCount.collectChannelCreated.mergeMap(_.in.refCount).headL
-      )
-      (_, eventReceived) = result
-    } yield {
-      assert(eventReceived == DecodingError)
+    } yield (client, server, ch1)).use {
+      case (client, server, ch1) =>
+        for {
+          result <- Task.parZip2(
+            ch1.sendMessage("Hello server, do not process this message"),
+            server.server.refCount.collectChannelCreated.mergeMap {
+              case (channel, release) =>
+                channel.in.refCount.guarantee(release)
+            }.headL
+          )
+          (_, eventReceived) = result
+        } yield {
+          assert(eventReceived == DecodingError)
+        }
     }
   }
 }

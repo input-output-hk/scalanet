@@ -148,7 +148,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
         t
     }
 
-    def initialize: Task[ClientChannelImpl[M]] = {
+    private[dynamictls] def initialize: Task[ClientChannelImpl[M]] = {
       val connectTask = for {
         _ <- Task(logger.debug("Initiating connection to peer {}", peerInfo))
         _ <- toTask(bootstrap.connect(peerInfo.address.inetSocketAddress))
@@ -187,7 +187,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       * To be sure that `channelInactive` had run before returning from close, we are also waiting for ctx.closeFuture() after
       * ctx.close()
       */
-    override def close(): Task[Unit] = {
+    private[dynamictls] def close(): Task[Unit] = {
       for {
         _ <- Task(logger.debug("Closing client channel to peer {}", peerInfo))
         ctx <- Task.fromFuture(activationF)
@@ -229,7 +229,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
                     s"to $remoteAddress with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
                 )
                 val channel = new ServerChannelImpl[M](nettyChannel, peerId, codec, messageSubject)
-                serverSubject.onNext(ChannelCreated(channel))
+                serverSubject.onNext(ChannelCreated(channel, channel.close()))
               } else {
                 logger.debug("Ssl handshake failed from peer with address {}", remoteAddress)
                 // Handshake failed we do not have id of remote peer
@@ -280,7 +280,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       * To be sure that `channelInactive` had run before returning from close, we are also waiting for nettyChannel.closeFuture() after
       * nettyChannel.close()
       */
-    override def close(): Task[Unit] =
+    private[dynamictls] def close(): Task[Unit] =
       for {
         _ <- Task(logger.debug("Closing server channel to peer {}", to))
         _ <- toTask(nettyChannel.close())

@@ -3,7 +3,7 @@ package io.iohk.scalanet.peergroup.dynamictls
 import java.net.InetSocketAddress
 import java.security._
 import java.security.cert.X509Certificate
-
+import cats.effect.Resource
 import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.crypto.CryptoUtils
@@ -43,7 +43,7 @@ import scala.util.control.NonFatal
   * @param codec  a decco codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class DynamicTLSPeerGroup[M](val config: Config)(
+class DynamicTLSPeerGroup[M] private (val config: Config)(
     implicit codec: StreamCodec[M],
     scheduler: Scheduler
 ) extends TerminalPeerGroup[PeerInfo, M]()
@@ -78,29 +78,33 @@ class DynamicTLSPeerGroup[M](val config: Config)(
 
   private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
 
-  override def initialize(): Task[Unit] =
+  private def initialize(): Task[Unit] =
     toTask(serverBind).onErrorRecoverWith {
       case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
     } *> Task(logger.info(s"Server bound to address ${config.bindAddress}"))
 
   override def processAddress: PeerInfo = config.peerInfo
 
-  override def client(to: PeerInfo): Task[Channel[PeerInfo, M]] = {
+  override def client(to: PeerInfo): Resource[Task, Channel[PeerInfo, M]] = {
     // Creating new ssl context for each client is necessary, as this is only reliable way to pass peerInfo to TrustManager
     // which takes care of validating certificates and server node id.
     // Using Netty SSLEngine.getSession.putValue does not work as expected as until successfulhandshake there is no separate
     // session for each connection.
-    new ClientChannelImpl[M](
-      to,
-      clientBootstrap,
-      DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForClient(to), config),
-      codec.cleanSlate
-    ).initialize
+    Resource.make(
+      Task.suspend {
+        new ClientChannelImpl[M](
+          to,
+          clientBootstrap,
+          DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForClient(to), config),
+          codec.cleanSlate
+        ).initialize
+      }
+    )(_.close())
   }
 
-  override def server(): ConnectableObservable[ServerEvent[PeerInfo, M]] = serverSubject
+  override def server: ConnectableObservable[ServerEvent[PeerInfo, M]] = serverSubject
 
-  override def shutdown(): Task[Unit] = {
+  private def shutdown(): Task[Unit] = {
     for {
       _ <- Task(logger.debug("Start shutdown of tls peer group for peer {}", processAddress))
       _ <- Task(serverSubject.onComplete())
@@ -155,5 +159,19 @@ object DynamicTLSPeerGroup {
       Config(bindAddress, keyType, convertedKeyPair, secureRandom)
     }
   }
+
+  /** Create the peer group as a resource that is guaranteed to initialize itself and shut itself down at the end. */
+  def apply[M: StreamCodec](config: Config)(implicit scheduler: Scheduler): Resource[Task, DynamicTLSPeerGroup[M]] =
+    Resource.make {
+      for {
+        // NOTE: The DynamicTLSPeerGroup creates Netty workgroups in its constructor, so calling `shutdown()` is a must.
+        pg <- Task(new DynamicTLSPeerGroup[M](config))
+        // NOTE: In theory we wouldn't have to initialize a peer group (i.e. start listening to incoming events)
+        // if all we wanted was to connect to remote clients, however to clean up we must call `shutdown()` at which point
+        // it will start and stop the server anyway, and the interface itself suggests that one can always start concuming
+        // server events, so this is cleaner semantics.
+        _ <- pg.initialize()
+      } yield pg
+    }(_.shutdown())
 
 }

@@ -4,14 +4,14 @@ import java.net._
 import java.nio.ByteBuffer
 import java.security.KeyStore
 import java.security.cert.Certificate
-
+import cats.effect.Resource
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils
 import io.iohk.scalanet.peergroup.udp.DynamicUDPPeerGroup
 import monix.execution.Scheduler
+import monix.eval.Task
 import scodec.Codec
 
 import scala.collection.JavaConverters._
-import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -85,33 +85,30 @@ object NetUtils {
   def randomUDPPeerGroup[M](
       implicit scheduler: Scheduler,
       codec: Codec[M]
-  ): DynamicUDPPeerGroup[M] = {
-    val pg = new DynamicUDPPeerGroup(DynamicUDPPeerGroup.Config(aRandomAddress()))
-    Await.result(pg.initialize().runToFuture, 10 seconds)
-    pg
-  }
+  ): Resource[Task, DynamicUDPPeerGroup[M]] =
+    DynamicUDPPeerGroup(DynamicUDPPeerGroup.Config(aRandomAddress()))
 
   def withTwoRandomUDPPeerGroups[M](
-      testCode: (DynamicUDPPeerGroup[M], DynamicUDPPeerGroup[M]) => Any
+      testCode: (DynamicUDPPeerGroup[M], DynamicUDPPeerGroup[M]) => Task[_]
   )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
-    val pg1 = randomUDPPeerGroup
-    val pg2 = randomUDPPeerGroup
-    try {
-      testCode(pg1, pg2)
-    } finally {
-      pg1.shutdown()
-      pg2.shutdown()
-    }
+    (for {
+      pg1 <- randomUDPPeerGroup
+      pg2 <- randomUDPPeerGroup
+    } yield (pg1, pg2))
+      .use {
+        case (pg1, pg2) =>
+          testCode(pg1, pg2)
+      }
+      .runSyncUnsafe(15.seconds)
   }
 
   def withARandomUDPPeerGroup[M](
-      testCode: DynamicUDPPeerGroup[M] => Any
+      testCode: DynamicUDPPeerGroup[M] => Task[_]
   )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
-    val pg = randomUDPPeerGroup
-    try {
-      testCode(pg)
-    } finally {
-      pg.shutdown()
-    }
+    randomUDPPeerGroup
+      .use { pg =>
+        testCode(pg)
+      }
+      .runSyncUnsafe(15.seconds)
   }
 }

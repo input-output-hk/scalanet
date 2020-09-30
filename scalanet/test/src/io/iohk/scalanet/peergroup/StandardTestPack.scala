@@ -1,68 +1,96 @@
 package io.iohk.scalanet.peergroup
 
-import io.iohk.scalanet.TaskValues._
 import io.iohk.scalanet.peergroup.Channel.MessageReceived
 import io.iohk.scalanet.peergroup.PeerGroup.ChannelSetupException
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
 import monix.execution.Scheduler
+import monix.eval.Task
 import org.scalatest.Matchers._
-import org.scalatest.RecoverMethods.{recoverToExceptionIf, recoverToSucceededIf}
+import org.scalatest.RecoverMethods.{recoverToExceptionIf}
 import org.scalatest.concurrent.ScalaFutures._
 
-import scala.concurrent.Future
 import scala.util.Random
 
 object StandardTestPack {
 
-  def messagingTest[A](alice: PeerGroup[A, String], bob: PeerGroup[A, String])(implicit scheduler: Scheduler): Unit = {
+  // Test that Alice can send a message to Bob and receive an answer.
+  def messagingTest[A](alice: PeerGroup[A, String], bob: PeerGroup[A, String])(
+      implicit scheduler: Scheduler
+  ): Task[Unit] = {
     val alicesMessage = Random.alphanumeric.take(1024).mkString
     val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runToFuture)
-    val aliceClient = alice.client(bob.processAddress).evaluated
-    val aliceReceived = aliceClient.in.collect { case MessageReceived(m) => m }.headL.runToFuture
-
-    aliceClient.sendMessage(alicesMessage).runToFuture
-    val bobReceived: Future[String] =
-      bob
-        .server()
-        .collectChannelCreated
-        .mergeMap(channel => channel.in)
-        .collect { case MessageReceived(m) => m }
+    for {
+      bobReceiver <- bob.server.collectChannelCreated
+        .mapEval {
+          case (channel, release) =>
+            channel.sendMessage(bobsMessage) >>
+              channel.in
+                .collect {
+                  case MessageReceived(m) => m
+                }
+                .headL
+                .guarantee(release)
+        }
         .headL
-        .runToFuture
-    aliceClient.in.connect()
-    bob.server().collectChannelCreated.foreach(_.in.connect())
-    bob.server().connect()
+        .start
 
-    bobReceived.futureValue shouldBe alicesMessage
-    aliceReceived.futureValue shouldBe bobsMessage
+      aliceClient <- alice.client(bob.processAddress).allocated
+      aliceReceiver <- aliceClient._1.in
+        .collect {
+          case MessageReceived(m) => m
+        }
+        .headL
+        .start
+
+      _ <- aliceClient._1.sendMessage(alicesMessage)
+
+      _ = aliceClient._1.in.connect()
+      _ = bob.server.collectChannelCreated.foreach(_._1.in.connect())
+      _ = bob.server.connect()
+
+      bobReceived <- bobReceiver.join
+      aliceReceived <- aliceReceiver.join
+      _ <- aliceClient._2
+    } yield {
+      bobReceived shouldBe alicesMessage
+      aliceReceived shouldBe bobsMessage
+    }
   }
 
+  // Test that Alice can send messages to Bob concurrently and receive answers on both channels.
   def serverMultiplexingTest[A](alice: PeerGroup[A, String], bob: PeerGroup[A, String])(
       implicit scheduler: Scheduler
-  ): Unit = {
+  ): Task[Unit] = {
     val alicesMessage = Random.alphanumeric.take(1024).mkString
     val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-    bob.server().collectChannelCreated.foreach(channel => channel.sendMessage(bobsMessage).runToFuture)
+    for {
+      _ <- bob.server.collectChannelCreated.foreachL {
+        case (channel, release) => channel.sendMessage(bobsMessage).guarantee(release).runAsyncAndForget
+      }.startAndForget
 
-    val aliceClient1 = alice.client(bob.processAddress).evaluated
-    val aliceClient2 = alice.client(bob.processAddress).evaluated
+      aliceClient1 <- alice.client(bob.processAddress).allocated
+      aliceClient2 <- alice.client(bob.processAddress).allocated
 
-    val aliceReceived1 = aliceClient1.in.collect { case MessageReceived(m) => m }.headL.runToFuture
-    val aliceReceived2 = aliceClient2.in.collect { case MessageReceived(m) => m }.headL.runToFuture
-    aliceClient1.sendMessage(alicesMessage).runToFuture
-    aliceClient2.sendMessage(alicesMessage).runToFuture
+      aliceReceiver1 <- aliceClient1._1.in.collect { case MessageReceived(m) => m }.headL.start
+      aliceReceiver2 <- aliceClient2._1.in.collect { case MessageReceived(m) => m }.headL.start
+      _ <- aliceClient1._1.sendMessage(alicesMessage)
+      _ <- aliceClient2._1.sendMessage(alicesMessage)
 
-    aliceClient1.in.connect()
-    aliceClient2.in.connect()
-    bob.server().collectChannelCreated.foreach(channel => channel.in.connect())
-    bob.server().connect()
-    aliceReceived1.futureValue shouldBe bobsMessage
-    aliceReceived2.futureValue shouldBe bobsMessage
+      _ = aliceClient1._1.in.connect()
+      _ = aliceClient2._1.in.connect()
+      _ = bob.server.collectChannelCreated.foreach(channel => channel._1.in.connect())
+      _ = bob.server.connect()
 
-    recoverToSucceededIf[IllegalStateException](aliceReceived2)
+      aliceReceived1 <- aliceReceiver1.join
+      aliceReceived2 <- aliceReceiver2.join
+      _ <- aliceClient1._2
+      _ <- aliceClient2._2
+    } yield {
+      aliceReceived1 shouldBe bobsMessage
+      aliceReceived2 shouldBe bobsMessage
+    }
   }
 
   def shouldErrorForMessagingAnInvalidAddress[A](alice: PeerGroup[A, String], invalidAddress: A)(
@@ -70,7 +98,7 @@ object StandardTestPack {
   ): Unit = {
 
     val aliceError = recoverToExceptionIf[ChannelSetupException[InetMultiAddress]] {
-      alice.client(invalidAddress).runToFuture
+      alice.client(invalidAddress).use(_ => Task.unit).runToFuture
     }
 
     aliceError.futureValue.to shouldBe invalidAddress
