@@ -58,10 +58,7 @@ trait CoreDependency extends ScalaModule {
     super.moduleDeps ++ Seq(scalanet)
 }
 
-trait SubModule extends ScalanetModule with CoreDependency {
-  override def moduleDeps: Seq[JavaModule] =
-    super.moduleDeps ++ Seq(scalanet)
-}
+trait SubModule extends ScalanetModule with CoreDependency
 
 // ScoverageModule creates bug when using custom repositories:
 // https://github.com/lihaoyi/mill/issues/620
