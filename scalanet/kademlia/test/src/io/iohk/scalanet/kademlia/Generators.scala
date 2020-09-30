@@ -1,6 +1,6 @@
-package io.iohk.scalanet.peergroup.kademlia
+package io.iohk.scalanet.kademlia
 
-import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
+import io.iohk.scalanet.kademlia.KRouter.NodeRecord
 import org.scalacheck.Arbitrary.arbitrary
 import org.scalacheck.Gen
 import scodec.bits.BitVector

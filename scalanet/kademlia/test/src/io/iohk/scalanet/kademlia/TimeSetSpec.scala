@@ -1,4 +1,4 @@
-package io.iohk.scalanet.peergroup.kademlia
+package io.iohk.scalanet.kademlia
 
 import java.time.Clock
 

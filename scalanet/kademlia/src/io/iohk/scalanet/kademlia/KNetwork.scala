@@ -1,11 +1,11 @@
-package io.iohk.scalanet.peergroup.kademlia
+package io.iohk.scalanet.kademlia
 
-import io.iohk.scalanet.peergroup.Channel.MessageReceived
-import io.iohk.scalanet.peergroup.kademlia.KMessage.{KRequest, KResponse}
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
-import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
+import io.iohk.scalanet.kademlia.KMessage.{KRequest, KResponse}
+import io.iohk.scalanet.kademlia.KMessage.KRequest.{FindNodes, Ping}
+import io.iohk.scalanet.kademlia.KMessage.KResponse.{Nodes, Pong}
+import io.iohk.scalanet.kademlia.KRouter.NodeRecord
 import io.iohk.scalanet.peergroup.{Channel, PeerGroup}
+import io.iohk.scalanet.peergroup.Channel.MessageReceived
 import monix.eval.Task
 import monix.reactive.Observable
 

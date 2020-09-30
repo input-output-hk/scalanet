@@ -6,14 +6,8 @@ import coursier.maven.MavenRepository
 import mill.scalalib.{PublishModule, ScalaModule}
 import mill.scalalib.publish.{Developer, License, PomSettings, VersionControl}
 
-// ScoverageModule creates bug when using custom repositories:
-// https://github.com/lihaoyi/mill/issues/620
-//object scalanet extends ScalaModule with PublishModule with ScoverageModule {
-object scalanet extends ScalaModule with PublishModule {
-
-  def scalaVersion = "2.12.10"
-
-  def publishVersion = "0.4-SNAPSHOT"
+trait ScalanetModule extends ScalaModule {
+  override def scalaVersion = "2.12.10"
 
   override def repositories =
     super.repositories ++ Seq(
@@ -38,6 +32,54 @@ object scalanet extends ScalaModule with PublishModule {
     "utf-8"
   )
 
+  // `extends Tests` uses the context of the module in which it's defined,
+  // which is why the trait is defined here not within `scalanet`, otherwise
+  // it wouldn't work for `kademlia` for example.
+  trait TestModule extends Tests with CoreDependency {
+    override def testFrameworks =
+      Seq("org.scalatest.tools.Framework")
+
+    override def ivyDeps = Agg(
+      ivy"org.scalatest::scalatest:3.0.5",
+      ivy"org.scalacheck::scalacheck:1.14.0",
+      ivy"ch.qos.logback:logback-core:1.2.3",
+      ivy"ch.qos.logback:logback-classic:1.2.3",
+      ivy"org.mockito:mockito-core:2.21.0"
+    )
+
+    def single(args: String*) = T.command {
+      super.runMain("org.scalatest.run", args: _*)
+    }
+  }
+}
+
+trait CoreDependency extends ScalaModule {
+  override def moduleDeps: Seq[JavaModule] =
+    super.moduleDeps ++ Seq(scalanet)
+}
+
+trait SubModule extends ScalanetModule with CoreDependency {
+  override def moduleDeps: Seq[JavaModule] =
+    super.moduleDeps ++ Seq(scalanet)
+}
+
+// ScoverageModule creates bug when using custom repositories:
+// https://github.com/lihaoyi/mill/issues/620
+//object scalanet extends ScalaModule with PublishModule with ScoverageModule {
+object scalanet extends ScalanetModule with PublishModule {
+
+  override def publishVersion = "0.4-SNAPSHOT"
+
+  override def pomSettings = PomSettings(
+    description =
+      "Asynchronous, strongly typed, resource-managed networking library, written in Scala with support for a variety of network technologies",
+    organization = "io.iohk",
+    url = "https://github.com/input-output-hk/scalanet",
+    licenses = Seq(License.`Apache-2.0`),
+    versionControl = VersionControl.github("input-output-hk", "scalanet"),
+    developers = Seq()
+  )
+
   override def ivyDeps = Agg(
     ivy"io.monix::monix:3.2.2",
     ivy"com.github.nscala-time::nscala-time:2.22.0",
@@ -49,57 +91,26 @@ object scalanet extends ScalaModule with PublishModule {
     ivy"org.eclipse.californium:element-connector:2.0.0-M15",
     ivy"org.scodec::scodec-bits:1.1.12",
     ivy"org.scodec::scodec-core:1.11.4",
-    ivy"org.scala-lang.modules::scala-parser-combinators:1.1.2",
     ivy"org.bouncycastle:bcprov-jdk15on:1.64",
     ivy"org.bouncycastle:bcpkix-jdk15on:1.64",
     ivy"org.bouncycastle:bctls-jdk15on:1.64"
   )
 
-  def pomSettings = PomSettings(
-    description =
-      "Asynchronous, strongly typed, resource-managed networking library, written in Scala with support for a variety of network technologies",
-    organization = "io.iohk",
-    url = "https://github.com/input-output-hk/scalanet",
-    licenses = Seq(License.`Apache-2.0`),
-    versionControl = VersionControl.github("input-output-hk", "scalanet"),
-    developers = Seq()
-  )
-
   def scoverageVersion = "1.3.1"
-
-  trait TestModule extends Tests {
-    override def ivyDeps = Agg(
-      ivy"org.scalatest::scalatest:3.0.5",
-      ivy"org.scalacheck::scalacheck:1.14.0",
-      ivy"ch.qos.logback:logback-core:1.2.3",
-      ivy"ch.qos.logback:logback-classic:1.2.3",
-      ivy"org.mockito:mockito-core:2.21.0"
-    )
-
-    override def moduleDeps: Seq[JavaModule] = super.moduleDeps ++ Seq(scalanet)
-
-    def testFrameworks = Seq("org.scalatest.tools.Framework")
-
-    def single(args: String*) = T.command {
-      super.runMain("org.scalatest.run", args: _*)
-    }
-  }
 
   // Scoverage disabled
   // object test extends ScoverageTests {
   object test extends TestModule
 
-  object it extends TestModule
+  object kademlia extends SubModule {
+    object test extends TestModule {
+      override def moduleDeps: Seq[JavaModule] =
+        super.moduleDeps ++ Seq(scalanet.test)
+    }
+    object it extends TestModule
+  }
 
-  object examples extends ScalaModule {
-    override def scalaVersion = "2.12.10"
-
-    override def scalacOptions = scalanet.scalacOptions
-
-    override def repositories = scalanet.repositories
-
-    override def moduleDeps: Seq[JavaModule] = super.moduleDeps ++ Seq(scalanet)
-
+  object examples extends SubModule {
     override def ivyDeps = Agg(
       ivy"ch.qos.logback:logback-core:1.2.3",
       ivy"ch.qos.logback:logback-classic:1.2.3",
@@ -111,23 +122,9 @@ object scalanet extends ScalaModule with PublishModule {
       ivy"org.scala-lang.modules::scala-parser-combinators:1.1.2"
     )
 
-    object test extends Tests {
-      override def ivyDeps = Agg(
-        ivy"org.scalatest::scalatest:3.0.5",
-        ivy"org.scalacheck::scalacheck:1.14.0",
-        ivy"ch.qos.logback:logback-core:1.2.3",
-        ivy"ch.qos.logback:logback-classic:1.2.3",
-        ivy"org.mockito:mockito-core:2.21.0",
-        ivy"org.scodec::scodec-bits:1.1.6"
-      )
+    override def moduleDeps: Seq[JavaModule] =
+      super.moduleDeps ++ Seq(scalanet.kademlia)
 
-      override def moduleDeps: Seq[JavaModule] = super.moduleDeps ++ Seq(scalanet)
-
-      def testFrameworks = Seq("org.scalatest.tools.Framework")
-
-      def single(args: String*) = T.command {
-        super.runMain("org.scalatest.run", args: _*)
-      }
-    }
+    object test extends TestModule
   }
 }

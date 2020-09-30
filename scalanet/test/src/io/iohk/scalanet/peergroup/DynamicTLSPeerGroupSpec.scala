@@ -15,7 +15,6 @@ import io.iohk.scalanet.peergroup.ReqResponseProtocol.DynamicTLS
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.SignedKey
 import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSExtension, DynamicTLSPeerGroup, Secp256k1}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{Config, PeerInfo}
-import io.iohk.scalanet.peergroup.kademlia.KMessage
 import io.iohk.scalanet.testutils.GeneratorUtils
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -174,13 +173,9 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
   }
 
   it should "handle inform user about decoding error" in taskTestCase {
-    import io.iohk.scalanet.codec.DefaultCodecs.KademliaMessages._
-    import io.iohk.scalanet.codec.DefaultCodecs.General._
-    import scodec.codecs.implicits._
-
-    implicit val s = new FramingCodec[KMessage[String]](Codec[KMessage[String]])
+    implicit val s = new FramingCodec[TestMessage[String]](Codec[TestMessage[String]])
     val client = new DynamicTLSPeerGroup[String](getCorrectConfig())
-    val server = new DynamicTLSPeerGroup[KMessage[String]](getCorrectConfig())
+    val server = new DynamicTLSPeerGroup[TestMessage[String]](getCorrectConfig())
 
     for {
       _ <- client.initialize()

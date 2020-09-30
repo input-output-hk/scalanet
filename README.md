@@ -9,36 +9,36 @@ Scalanet is an asynchronous, strongly typed, resource-managed networking library
 What does all that mean?
  * Resource managed. Scalanet makes it as easy as possible to send and receive messages without having to open or close connections.
  * Asynchronous. Scalanet is non-blocking. In this regard, it is like netty, however, unlike netty, Scalanet uses *reactive*
- programming idioms. 
- * Technology support. Out of the box, Scalanet supports TCP and UDP (with other internet and non-internet technologies to come) but through an abstraction called the _Peer Group_, allows for the addition of other transports or more complex p2p overlays (kademlia, ethereum, etc). The _Peer Group_ provides a consistent interface whatever your networking approach.   
+ programming idioms.
+ * Technology support. Out of the box, Scalanet supports TCP and UDP (with other internet and non-internet technologies to come) but through an abstraction called the _Peer Group_, allows for the addition of other transports or more complex p2p overlays (kademlia, ethereum, etc). The _Peer Group_ provides a consistent interface whatever your networking approach.
 
 It is well suited to peer-to-peer apps but supports client-server too.
 
 ### Peer groups
-As mentioned, the foundation of Scalanet is the notion of a _Peer Group_. From a practical standpoint, a peer group 
-allows an application to use a variety of network technologies with a consistent interface. More abstractly, it defines 
-* an address space and 
+As mentioned, the foundation of Scalanet is the notion of a _Peer Group_. From a practical standpoint, a peer group
+allows an application to use a variety of network technologies with a consistent interface. More abstractly, it defines
+* an address space and
 * a context in which communication can happen.
 * TODO: quality of service
 
-A Peer Group could be something like scalanet's `UDPPeerGroup` where the addresses are IP:port combos and the set of 
+A Peer Group could be something like scalanet's `UDPPeerGroup` where the addresses are IP:port combos and the set of
 peers allowed to communicate is basically anybody on the IP network in question (the internet, an office network, etc).
 Equally, a Peer Group could be something like an Ethereum network where addresses are public keys and the peers
 are anybody who talks the RLPx protocol. Equally, a peer group could be an integration test with the address space {Alice, Bob, Charlie}
-and the peers are all in the same JVM. Scalanet will not limit you in this regard. 
+and the peers are all in the same JVM. Scalanet will not limit you in this regard.
 
 Peer groups can implement arbitrary enrolment and encryption schemes, so are suitable for implementing secure messaging overlays.
 Typically, on the internet, limiting the context of communication (aka _zoning_) is performed by firewalls. The idea
 is so ubiquitous that it may not have struck you that this is a hack. Peer groups are designed to support more elegant
 solutions, generally using cryptography instead of firewall provisioning.
- 
+
 ### Structure of the library
 Here is a picture of the structure of the library for a few sample applications:
 ![](doc-resources/sample-configurations.png)
 
 ### Getting started
 The easiest way to get started is to send and receive data over TCP, using the library just like netty. Have a look at
-the [TCPPeerGroupSpec](core/io/iohk/scalanet/test/peergroup/TCPPeerGroupSpec.scala) test case or the following code. 
+the [TCPPeerGroupSpec](core/io/iohk/scalanet/test/peergroup/TCPPeerGroupSpec.scala) test case or the following code.
 
 ```scala
 // import some peer group classes
@@ -62,15 +62,15 @@ val messageF: Future[Unit] = tcp.sendMessage(new InetSocketAddress("example.com"
 
 // receive messages
 tcp.messageStream.foreach((b: ByteBuffer) => ())
- 
-``` 
+
+```
 
 # Contributing
 
 ### Branches
 
-Two main branches are maintained: `develop` and `master`. 
-`master` contains the latest stable version of the library. 
+Two main branches are maintained: `develop` and `master`.
+`master` contains the latest stable version of the library.
 `develop` is the place you want to merge to if submitting PRs.
 
 ### Building the codebase
@@ -80,9 +80,18 @@ To build the codebase, we use [mill](http://www.lihaoyi.com/mill). Assuming you 
 mill __.test
 ```
 
+A single test suite can be executed with the `single` helper command, for example:
+```bash
+mill scalanet.test.single io.iohk.scalanet.crypto.SignatureVerificationSpec
+```
+
+### Publishing
+
+Have a look [here](http://www.lihaoyi.com/mill/page/common-project-layouts.html#publishing) for how to publish multiple modules.
+
 ### Formatting the codebase
 In order to keep the code format consistent, we use scalafmt.
- 
+
 The CI build will fail if code is not formatted, but the project contains a githook that means you do not have to think
 about. To set this up:
 - Install [coursier](https://github.com/coursier/coursier#command-line), the `coursier` command must work.

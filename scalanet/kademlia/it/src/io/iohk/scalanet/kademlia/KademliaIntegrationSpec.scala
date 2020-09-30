@@ -1,10 +1,10 @@
-package io.iohk.scalanet.peergroup.kademlia
+package io.iohk.scalanet.kademlia
 
 import java.security.SecureRandom
 import java.util.concurrent.{Executors, TimeUnit}
 
-import io.iohk.scalanet.peergroup.kademlia.KNetwork.KNetworkScalanetImpl
-import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
+import io.iohk.scalanet.kademlia.KNetwork.KNetworkScalanetImpl
+import io.iohk.scalanet.kademlia.KRouter.NodeRecord
 import io.iohk.scalanet.peergroup.{InetMultiAddress, InetPeerGroupUtils, UDPPeerGroup}
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -190,8 +190,8 @@ object KademliaIntegrationSpec {
   val randomGen = new SecureRandom()
   val testBitLength = 16
 
-  import io.iohk.scalanet.codec.DefaultCodecs.KademliaMessages._
-  import io.iohk.scalanet.codec.DefaultCodecs.General._
+  import io.iohk.scalanet.codec.DefaultCodecs._
+  import io.iohk.scalanet.kademlia.codec.DefaultCodecs._
   import scodec.codecs.implicits._
 
   def startRouter(

@@ -3,8 +3,8 @@ package io.iohk.scalanet.kconsole
 import com.typesafe.config.{ConfigFactory, ConfigRenderOptions, ConfigValue}
 import io.iohk.scalanet.peergroup.InetMultiAddress
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.aRandomAddress
-import io.iohk.scalanet.peergroup.kademlia.KRouter
-import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
+import io.iohk.scalanet.kademlia.KRouter
+import io.iohk.scalanet.kademlia.KRouter.NodeRecord
 import pureconfig.ConfigWriter
 import scodec.bits.BitVector
 

@@ -1,15 +1,15 @@
-package io.iohk.scalanet.peergroup.kademlia
+package io.iohk.scalanet.kademlia
 
 import java.util.UUID
 
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse
+import io.iohk.scalanet.kademlia.KMessage.KResponse
 import java.util.concurrent.TimeoutException
 
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest.{FindNodes, Ping}
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KResponse.{Nodes, Pong}
+import io.iohk.scalanet.kademlia.KMessage.KRequest.{FindNodes, Ping}
+import io.iohk.scalanet.kademlia.KMessage.KResponse.{Nodes, Pong}
 import io.iohk.scalanet.peergroup.{Channel, PeerGroup}
-import io.iohk.scalanet.peergroup.kademlia.KNetwork.KNetworkScalanetImpl
-import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
+import io.iohk.scalanet.kademlia.KNetwork.KNetworkScalanetImpl
+import io.iohk.scalanet.kademlia.KRouter.NodeRecord
 import monix.eval.Task
 import monix.reactive.Observable
 import org.scalatest.FlatSpec
@@ -25,7 +25,7 @@ import KNetworkSpec._
 import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.Channel.MessageReceived
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import io.iohk.scalanet.peergroup.kademlia.KMessage.KRequest
+import io.iohk.scalanet.kademlia.KMessage.KRequest
 import org.scalatest.prop.TableDrivenPropertyChecks._
 
 class KNetworkSpec extends FlatSpec {

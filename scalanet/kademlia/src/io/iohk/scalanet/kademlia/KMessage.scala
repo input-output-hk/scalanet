@@ -1,8 +1,8 @@
-package io.iohk.scalanet.peergroup.kademlia
+package io.iohk.scalanet.kademlia
 
 import java.util.UUID
 
-import io.iohk.scalanet.peergroup.kademlia.KRouter.NodeRecord
+import io.iohk.scalanet.kademlia.KRouter.NodeRecord
 import scodec.bits.BitVector
 
 sealed trait KMessage[A] {
