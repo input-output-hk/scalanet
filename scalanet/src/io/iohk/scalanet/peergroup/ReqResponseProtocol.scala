@@ -138,13 +138,13 @@ object ReqResponseProtocol {
         address: InetSocketAddress
     )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[AddressingType, M]]
   }
-  case object Udp extends TransportProtocol {
+  case object DynamicUDP extends TransportProtocol {
     override type AddressingType = InetMultiAddress
 
     override def getProtocol[M](
         address: InetSocketAddress
     )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[InetMultiAddress, M]] = {
-      getUdpReqResponseProtocolClient(address)
+      getDynamicUdpReqResponseProtocolClient(address)
     }
   }
 
@@ -173,7 +173,7 @@ object ReqResponseProtocol {
     } yield prot
   }
 
-  def getUdpReqResponseProtocolClient[M](
+  def getDynamicUdpReqResponseProtocolClient[M](
       address: InetSocketAddress
   )(implicit s: Scheduler, c: Codec[M]): Task[ReqResponseProtocol[InetMultiAddress, M]] = {
     val pg1 = new DynamicUDPPeerGroup[MessageEnvelope[M]](DynamicUDPPeerGroup.Config(address))
