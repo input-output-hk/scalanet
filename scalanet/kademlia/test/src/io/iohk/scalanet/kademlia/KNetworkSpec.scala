@@ -1,10 +1,10 @@
 package io.iohk.scalanet.kademlia
 
 import java.util.UUID
-
+import cats.effect.Resource
 import io.iohk.scalanet.kademlia.KMessage.KResponse
 import java.util.concurrent.TimeoutException
-
+import java.util.concurrent.atomic.AtomicBoolean
 import io.iohk.scalanet.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.kademlia.KMessage.KResponse.{Nodes, Pong}
 import io.iohk.scalanet.peergroup.{Channel, PeerGroup}
@@ -15,7 +15,8 @@ import monix.reactive.Observable
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.mockito.MockitoSugar._
-import org.mockito.Mockito.{never, verify, when}
+//import org.mockito.Mockito.{never, verify, when}
+import org.mockito.Mockito.{when}
 
 import scala.concurrent.duration._
 import monix.execution.Scheduler.Implicits.global
@@ -48,155 +49,139 @@ class KNetworkSpec extends FlatSpec {
     ("PING", ping, pong, getPingRequest, sendPingRequest(targetRecord, ping))
   )
 
-  forAll(rpcs) { (label, request, response, requestExtractor, clientRpc) =>
-    s"Server $label" should "not close server channels (it is the responsibility of the response handler)" in {
-      val (network, peerGroup) = createKNetwork
+  trait Fixture {
+    class MockChannel {
       val channel = mock[Channel[String, KMessage[String]]]
-      when(peerGroup.server())
-        .thenReturn(ConnectableSubject(Observable.eval(ChannelCreated(channel))))
+      val closed = new AtomicBoolean(false)
+      val created = ChannelCreated(channel, Task { closed.set(true) })
+      val resource = Resource.make(Task.pure(channel))(_ => Task { closed.set(true) })
+    }
+
+    val (network, peerGroup) = createKNetwork
+    val (channel, channelCreated, channelClosed, channelResource) = {
+      val mc = new MockChannel
+      (mc.channel, mc.created, mc.closed, mc.resource)
+    }
+  }
+
+  forAll(rpcs) { (label, request, response, requestExtractor, clientRpc) =>
+    s"Server $label" should "not close server channels while yielding requests (it is the responsibility of the response handler)" in new Fixture {
+      when(peerGroup.server)
+        .thenReturn(ConnectableSubject(Observable.eval(channelCreated)))
       when(channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(request))))
-      when(channel.close()).thenReturn(Task.unit)
 
       val actualRequest = requestExtractor(network).evaluated
 
       actualRequest shouldBe request
-      verify(channel, never()).close()
+      channelClosed.get shouldBe false
     }
 
-    s"Server $label" should "close server channels when a request does not arrive before a timeout" in {
-      val (network, peerGroup) = createKNetwork
-      val channel = mock[Channel[String, KMessage[String]]]
-      when(peerGroup.server())
-        .thenReturn(ConnectableSubject(Observable.eval(ChannelCreated(channel))))
+    s"Server $label" should "close server channels when a request does not arrive before a timeout" in new Fixture {
+      when(peerGroup.server)
+        .thenReturn(ConnectableSubject(Observable.eval(channelCreated)))
       when(channel.in).thenReturn(ConnectableSubject(Observable.never))
-      when(channel.close()).thenReturn(Task.unit)
 
       val t = requestExtractor(network).runToFuture.failed.futureValue
 
       t shouldBe a[NoSuchElementException]
-      verify(channel).close()
+      channelClosed.get shouldBe true
     }
 
-    s"Server $label" should "close server channel in the response task" in {
-      val (network, peerGroup) = createKNetwork
-      val channel = mock[Channel[String, KMessage[String]]]
-      when(peerGroup.server())
-        .thenReturn(ConnectableSubject(Observable.eval(ChannelCreated(channel))))
+    s"Server $label" should "close server channel in the response task" in new Fixture {
+      when(peerGroup.server)
+        .thenReturn(ConnectableSubject(Observable.eval(channelCreated)))
       when(channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(request))))
       when(channel.sendMessage(response)).thenReturn(Task.unit)
-      when(channel.close()).thenReturn(Task.unit)
 
       sendResponse(network, response).evaluated
 
-      verify(channel).close()
+      channelClosed.get shouldBe true
     }
 
-    s"Server $label" should "close server channel in timed out response task" in {
-      val (network, peerGroup) = createKNetwork
-      val channel = mock[Channel[String, KMessage[String]]]
-      when(peerGroup.server())
-        .thenReturn(ConnectableSubject(Observable.eval(ChannelCreated(channel))))
+    s"Server $label" should "close server channel in timed out response task" in new Fixture {
+      when(peerGroup.server)
+        .thenReturn(ConnectableSubject(Observable.eval(channelCreated)))
       when(channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(request))))
       when(channel.sendMessage(response)).thenReturn(Task.never)
-      when(channel.close()).thenReturn(Task.unit)
 
       sendResponse(network, response).evaluatedFailure shouldBe a[TimeoutException]
-      verify(channel).close()
+      channelClosed.get shouldBe true
     }
 
-    s"Server $label" should "keep working even if there is an error" in {
-      val (network: KNetwork[String], peerGroup) = createKNetwork
-      val channel1 = mock[Channel[String, KMessage[String]]]
-      val channel2 = mock[Channel[String, KMessage[String]]]
-      when(peerGroup.server())
-        .thenReturn(ConnectableSubject(Observable(ChannelCreated(channel1), ChannelCreated(channel2))))
+    s"Server $label" should "keep working even if there is an error" in new Fixture {
+      val channel1 = new MockChannel
+      val channel2 = new MockChannel
 
-      when(channel1.in).thenReturn(ConnectableSubject(Observable.never))
-      when(channel2.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(request))))
-
-      when(channel1.close()).thenReturn(Task.unit)
-      when(channel2.close()).thenReturn(Task.unit)
+      when(peerGroup.server).thenReturn(ConnectableSubject(Observable(channel1.created, channel2.created)))
+      when(channel1.channel.in).thenReturn(ConnectableSubject(Observable.never))
+      when(channel2.channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(request))))
 
       val actualRequest = requestExtractor(network).evaluated
 
       actualRequest shouldBe request
-      verify(channel1).close()
-      verify(channel2, never()).close()
+      channel1.closed.get shouldBe true
+      channel2.closed.get shouldBe false
     }
 
-    s"Client $label" should "close client channels when requests are successful" in {
-      val (network, peerGroup) = createKNetwork
-      val client = mock[Channel[String, KMessage[String]]]
-      when(peerGroup.client(targetRecord.routingAddress)).thenReturn(Task(client))
-      when(client.sendMessage(request)).thenReturn(Task.unit)
-      when(client.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(response))))
-      when(client.close()).thenReturn(Task.unit)
+    s"Client $label" should "close client channels when requests are successful" in new Fixture {
+      when(peerGroup.client(targetRecord.routingAddress)).thenReturn(channelResource)
+      when(channel.sendMessage(request)).thenReturn(Task.unit)
+      when(channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(response))))
 
       val actualResponse = clientRpc(network).evaluated
 
       actualResponse shouldBe response
-      verify(client).close()
+      channelClosed.get shouldBe true
     }
 
-    s"Client $label" should "pass exception when client call fails" in {
-      val (network, peerGroup) = createKNetwork
-      val client = mock[Channel[String, KMessage[String]]]
+    s"Client $label" should "pass exception when client call fails" in new Fixture {
       val exception = new Exception("failed")
+
       when(peerGroup.client(targetRecord.routingAddress))
-        .thenReturn(Task.raiseError(exception))
-      when(client.close()).thenReturn(Task.unit)
+        .thenReturn(Resource.liftF(Task.raiseError[Channel[String, KMessage[String]]](exception)))
 
       clientRpc(network).evaluatedFailure shouldBe exception
     }
 
-    s"Client $label" should "close client channels when sendMessage calls fail" in {
-      val (network, peerGroup) = createKNetwork
-      val client = mock[Channel[String, KMessage[String]]]
+    s"Client $label" should "close client channels when sendMessage calls fail" in new Fixture {
       val exception = new Exception("failed")
-      when(peerGroup.client(targetRecord.routingAddress)).thenReturn(Task(client))
-      when(client.sendMessage(request)).thenReturn(Task.raiseError(exception))
-      when(client.close()).thenReturn(Task.unit)
+      when(peerGroup.client(targetRecord.routingAddress)).thenReturn(channelResource)
+      when(channel.sendMessage(request)).thenReturn(Task.raiseError(exception))
 
       clientRpc(network).evaluatedFailure shouldBe exception
-      verify(client).close()
+      channelClosed.get shouldBe true
     }
 
-    s"Client $label" should "close client channels when response fails to arrive" in {
-      val (network, peerGroup) = createKNetwork
-      val client = mock[Channel[String, KMessage[String]]]
-      when(peerGroup.client(targetRecord.routingAddress)).thenReturn(Task(client))
-      when(client.sendMessage(request)).thenReturn(Task.unit)
-      when(client.in).thenReturn(ConnectableSubject(Observable.fromTask(Task.never)))
-      when(client.close()).thenReturn(Task.unit)
+    s"Client $label" should "close client channels when response fails to arrive" in new Fixture {
+      when(peerGroup.client(targetRecord.routingAddress)).thenReturn(channelResource)
+      when(channel.sendMessage(request)).thenReturn(Task.unit)
+      when(channel.in).thenReturn(ConnectableSubject(Observable.fromTask(Task.never)))
 
       clientRpc(network).evaluatedFailure shouldBe a[TimeoutException]
-      verify(client).close()
+      channelClosed.get shouldBe true
     }
   }
 
-  s"In consuming only PING" should "channels should be closed for unhandled FIND_NODES requests" in {
-    val (network: KNetwork[String], peerGroup) = createKNetwork
-    val channel1 = mock[Channel[String, KMessage[String]]]
-    val channel2 = mock[Channel[String, KMessage[String]]]
-    when(peerGroup.server())
-      .thenReturn(ConnectableSubject(Observable(ChannelCreated(channel1), ChannelCreated(channel2))))
+  s"In consuming only PING" should "channels should be closed for unhandled FIND_NODES requests" in new Fixture {
+    val channel1 = new MockChannel
+    val channel2 = new MockChannel
+    when(peerGroup.server)
+      .thenReturn(ConnectableSubject(Observable(channel1.created, channel2.created)))
 
-    when(channel1.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(findNodes))))
-    when(channel2.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(ping))))
+    when(channel1.channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(findNodes))))
+    when(channel2.channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(ping))))
 
-    when(channel2.sendMessage(pong)).thenReturn(Task.unit)
+    when(channel2.channel.sendMessage(pong)).thenReturn(Task.unit)
 
-    when(channel1.close()).thenReturn(Task.unit)
-    when(channel2.close()).thenReturn(Task.unit)
-
+    // This should consume all requests and call `ignore` on the FindNodes, passing None which should close the channel.
     val (actualRequest, handler) = network.pingRequests().headL.evaluated
 
     actualRequest shouldBe ping
-    verify(channel1).close()
-    verify(channel2, never()).close()
+    channel1.closed.get shouldBe true
+    channel2.closed.get shouldBe false
 
     handler(Some(pong)).runToFuture.futureValue
-    verify(channel2).close()
+    channel2.closed.get shouldBe true
   }
 }
 
@@ -213,7 +198,7 @@ object KNetworkSpec {
 
   private def createKNetwork: (KNetwork[String], PeerGroup[String, KMessage[String]]) = {
     val peerGroup = mock[PeerGroup[String, KMessage[String]]]
-    when(peerGroup.server()).thenReturn(ConnectableSubject(Observable.empty))
+    when(peerGroup.server).thenReturn(ConnectableSubject(Observable.empty))
     (new KNetworkScalanetImpl(peerGroup, 50 millis), peerGroup)
   }
 
