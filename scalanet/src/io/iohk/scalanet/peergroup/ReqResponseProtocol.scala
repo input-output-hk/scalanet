@@ -60,10 +60,11 @@ class ReqResponseProtocol[A, M](
             case None =>
               group.client(to).allocated.flatMap {
                 case (channel, release) =>
+                  val cleanup = release >> channelMapRef.update(_ - channelId)
                   // Keep in mind that stream is back pressured for all subscribers so in case of many parallel requests to one client
                   // waiting for response on first request can influence result of second request
                   for {
-                    _ <- channelMapRef.update(_.updated(channelId, channel -> release))
+                    _ <- channelMapRef.update(_.updated(channelId, channel -> cleanup))
                     // start publishing incoming messages to any subscriber
                     // in normal circumstances we should keep cancellation token to clear up resources
                     _ = channel.in.connect()
@@ -115,6 +116,7 @@ class ReqResponseProtocol[A, M](
     group.server.refCount.collectChannelCreated
       .foreachL {
         case (channel, release) =>
+          val channelId = (a.getAddress(processAddress), a.getAddress(channel.to))
           channel.in.refCount
             .collect {
               case MessageReceived(msg) => msg
@@ -123,12 +125,11 @@ class ReqResponseProtocol[A, M](
               channel.sendMessage(MessageEnvelope(msg.id, requestHandler(msg.m)))
             }
             .guarantee {
-              release
+              release >> fiberMapRef.update(_ - channelId)
             }
             .foreachL(_ => ())
             .start
             .flatMap { fiber =>
-              val channelId = (a.getAddress(processAddress), a.getAddress(channel.to))
               fiberMapRef.update(_.updated(channelId, fiber))
             }
             .runAsyncAndForget

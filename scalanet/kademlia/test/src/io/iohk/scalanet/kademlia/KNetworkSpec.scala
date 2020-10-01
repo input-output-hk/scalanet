@@ -15,7 +15,6 @@ import monix.reactive.Observable
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import org.scalatest.mockito.MockitoSugar._
-//import org.mockito.Mockito.{never, verify, when}
 import org.mockito.Mockito.{when}
 
 import scala.concurrent.duration._
