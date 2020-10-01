@@ -9,6 +9,7 @@ object InetPeerGroupUtils {
 
   type ChannelId = (InetSocketAddress, InetSocketAddress)
 
+  // TODO: This has nothing to do with InetPeerGroup, move it somewhere else.
   def toTask(f: => util.concurrent.Future[_]): Task[Unit] = {
     Task.async[Unit] { cb =>
       try {
@@ -26,6 +27,7 @@ object InetPeerGroupUtils {
     (remoteAddress, localAddress)
   }
 
+  // TODO: Can we move this to tests?
   def aRandomAddress(): InetSocketAddress = {
     val s = new ServerSocket(0)
     try {

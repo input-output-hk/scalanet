@@ -12,6 +12,7 @@ import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import org.scalatest.concurrent.ScalaFutures._
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelAlreadyClosedException, MessageMTUException}
 import io.iohk.scalanet.peergroup.StandardTestPack._
+import io.iohk.scalanet.peergroup.udp.DynamicUDPPeerGroup
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.scalatest.RecoverMethods._
@@ -251,8 +252,8 @@ object UDPPeerGroupSpecUtils {
 
   def initUdpPeerGroup[M](
       address: InetSocketAddress = aRandomAddress()
-  )(implicit s: Scheduler, c: Codec[M]): Task[UDPPeerGroup[M]] = {
-    val pg = new UDPPeerGroup[M](UDPPeerGroup.Config(address))
+  )(implicit s: Scheduler, c: Codec[M]): Task[DynamicUDPPeerGroup[M]] = {
+    val pg = new DynamicUDPPeerGroup[M](DynamicUDPPeerGroup.Config(address))
     pg.initialize().map(_ => pg)
   }
 

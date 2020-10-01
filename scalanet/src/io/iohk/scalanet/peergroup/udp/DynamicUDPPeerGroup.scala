@@ -1,4 +1,4 @@
-package io.iohk.scalanet.peergroup
+package io.iohk.scalanet.peergroup.udp
 
 import java.io.IOException
 import java.net.{InetSocketAddress, PortUnreachableException}
@@ -7,13 +7,12 @@ import java.util.concurrent.ConcurrentHashMap
 import cats.syntax.functor._
 import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.monix_subject.ConnectableSubject
+import io.iohk.scalanet.peergroup.{Channel, InetMultiAddress}
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived, UnexpectedError}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup._
-import io.iohk.scalanet.peergroup.UDPPeerGroup.UDPPeerGroupInternals.{ChannelType, UdpChannelId}
-import io.iohk.scalanet.peergroup.UDPPeerGroup.{UDPPeerGroupInternals, _}
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel
@@ -30,24 +29,27 @@ import scodec.{Attempt, Codec}
 import scala.util.control.NonFatal
 
 /**
-  * PeerGroup implementation on top of UDP.
+  * PeerGroup implementation on top of UDP that always opens a new channel
+  * from a random port when it creates a new client to a given remote address.
   *
   * @param config bind address etc. See the companion object.
   * @param codec a scodec codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class UDPPeerGroup[M](val config: Config)(
+class DynamicUDPPeerGroup[M](val config: DynamicUDPPeerGroup.Config)(
     implicit codec: Codec[M],
     scheduler: Scheduler
 ) extends TerminalPeerGroup[InetMultiAddress, M]()
     with StrictLogging {
+
+  import DynamicUDPPeerGroup.Internals.{UDPChannelId, ChannelType, ClientChannel, ServerChannel}
 
   val serverSubject = ConnectableSubject[ServerEvent[InetMultiAddress, M]]()
 
   private val workerGroup = new NioEventLoopGroup()
 
   // all channels in the map are open and active, as upon closing channels are removed from the map
-  private[peergroup] val activeChannels = new ConcurrentHashMap[UdpChannelId, ChannelImpl]()
+  private[peergroup] val activeChannels = new ConcurrentHashMap[UDPChannelId, ChannelImpl]()
 
   /**
     * Listener will run when ChannelImpl closed promise will be completed. Channel close promise will run on underlying netty channel
@@ -78,7 +80,7 @@ class UDPPeerGroup[M](val config: Config)(
     }
   }
 
-  private def handleError(channelId: UdpChannelId, error: Throwable): Unit = {
+  private def handleError(channelId: UDPChannelId, error: Throwable): Unit = {
     // Inform about error only if channel is available and open
     Option(activeChannels.get(channelId)).foreach { ch =>
       logger.debug("Unexpected error {} on channel {}", error: Any, channelId: Any)
@@ -103,7 +105,7 @@ class UDPPeerGroup[M](val config: Config)(
               val datagram = msg.asInstanceOf[DatagramPacket]
               val remoteAddress = datagram.sender()
               val localAddress = datagram.recipient()
-              val udpChannelId = UdpChannelId(ctx.channel().id(), remoteAddress, localAddress)
+              val udpChannelId = UDPChannelId(ctx.channel().id(), remoteAddress, localAddress)
               try {
                 logger.info(s"Client channel read message with remote $remoteAddress and local $localAddress")
                 Option(activeChannels.get(udpChannelId)).foreach(handleIncomingMessage(_, datagram))
@@ -118,7 +120,7 @@ class UDPPeerGroup[M](val config: Config)(
               val channelId = ctx.channel().id()
               val localAddress = ctx.channel().localAddress().asInstanceOf[InetSocketAddress]
               val remoteAddress = ctx.channel.remoteAddress().asInstanceOf[InetSocketAddress]
-              val udpChannelId = UdpChannelId(channelId, remoteAddress, localAddress)
+              val udpChannelId = UDPChannelId(channelId, remoteAddress, localAddress)
               cause match {
                 case _: PortUnreachableException =>
                   // we do not want ugly exception, but we do not close the channel, it is entirely up to user to close not
@@ -154,7 +156,7 @@ class UDPPeerGroup[M](val config: Config)(
                 localAddress,
                 remoteAddress,
                 ConnectableSubject[ChannelEvent[M]](),
-                UDPPeerGroupInternals.ServerChannel
+                ServerChannel
               )
               try {
                 Option(activeChannels.putIfAbsent(potentialNewChannel.channelId, potentialNewChannel)) match {
@@ -176,7 +178,7 @@ class UDPPeerGroup[M](val config: Config)(
             }
 
             override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
-              // We cannot create UdpChannelId as on udp netty server channel there is no remote peer address.
+              // We cannot create UDPChannelId as on udp netty server channel there is no remote peer address.
               logger.error(s"Unexpected server error ${cause.getMessage}")
             }
           })
@@ -188,12 +190,12 @@ class UDPPeerGroup[M](val config: Config)(
       localAddress: InetSocketAddress,
       remoteAddress: InetSocketAddress,
       val messageSubject: ConnectableSubject[ChannelEvent[M]],
-      channelType: UDPPeerGroupInternals.ChannelType
+      channelType: ChannelType
   ) extends Channel[InetMultiAddress, M] {
 
     val closePromise: Promise[ChannelImpl] = nettyChannel.eventLoop().newPromise[ChannelImpl]()
 
-    val channelId = UdpChannelId(nettyChannel.id(), remoteAddress, localAddress)
+    val channelId = UDPChannelId(nettyChannel.id(), remoteAddress, localAddress)
 
     logger.debug(
       s"Setting up new channel from local address $localAddress " +
@@ -223,11 +225,11 @@ class UDPPeerGroup[M](val config: Config)(
 
     private def closeNettyChannel(channelType: ChannelType): Task[Unit] = {
       channelType match {
-        case UDPPeerGroupInternals.ServerChannel =>
+        case ServerChannel =>
           // on netty side there is only one channel for accepting incoming connection so if we close it, we will effectively
           // close server
           Task.now(())
-        case UDPPeerGroupInternals.ClientChannel =>
+        case ClientChannel =>
           // each client connection creates new channel on netty side
           toTask(nettyChannel.close())
       }
@@ -288,7 +290,7 @@ class UDPPeerGroup[M](val config: Config)(
           localAddress,
           to.inetSocketAddress,
           ConnectableSubject[ChannelEvent[M]](),
-          UDPPeerGroupInternals.ClientChannel
+          ClientChannel
         )
         // By using netty channel id as part of our channel id, we make sure that each client channel is unique
         // therefore there won't be such channels in active channels map already.
@@ -314,7 +316,7 @@ class UDPPeerGroup[M](val config: Config)(
   }
 }
 
-object UDPPeerGroup {
+object DynamicUDPPeerGroup {
 
   val mtu: Int = 16384
 
@@ -327,12 +329,12 @@ object UDPPeerGroup {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, InetMultiAddress(bindAddress))
   }
 
-  private[scalanet] object UDPPeerGroupInternals {
+  private[scalanet] object Internals {
     sealed abstract class ChannelType
     case object ServerChannel extends ChannelType
     case object ClientChannel extends ChannelType
 
-    final case class UdpChannelId(
+    final case class UDPChannelId(
         nettyChannelId: io.netty.channel.ChannelId,
         remoteAddress: InetSocketAddress,
         localAddress: InetSocketAddress

@@ -1,14 +1,13 @@
 package io.iohk.scalanet.peergroup
 
 import io.iohk.scalanet.peergroup.Channel.ChannelEvent
-import scodec.Codec
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.Observable
 import monix.reactive.observables.ConnectableObservable
-
+import scodec.Codec
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 

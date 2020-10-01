@@ -5,7 +5,8 @@ import java.util.concurrent.{Executors, TimeUnit}
 
 import io.iohk.scalanet.kademlia.KNetwork.KNetworkScalanetImpl
 import io.iohk.scalanet.kademlia.KRouter.NodeRecord
-import io.iohk.scalanet.peergroup.{InetMultiAddress, InetPeerGroupUtils, UDPPeerGroup}
+import io.iohk.scalanet.peergroup.{InetMultiAddress, InetPeerGroupUtils}
+import io.iohk.scalanet.peergroup.udp.DynamicUDPPeerGroup
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.scalatest.{Assertion, AsyncFlatSpec, BeforeAndAfterAll}
@@ -195,12 +196,12 @@ object KademliaIntegrationSpec {
   import scodec.codecs.implicits._
 
   def startRouter(
-      udpConfig: UDPPeerGroup.Config,
+      udpConfig: DynamicUDPPeerGroup.Config,
       routerConfig: KRouter.Config[InetMultiAddress]
-  )(implicit s: Scheduler): Task[(KRouter[InetMultiAddress], UDPPeerGroup[KMessage[InetMultiAddress]])] = {
+  )(implicit s: Scheduler): Task[(KRouter[InetMultiAddress], DynamicUDPPeerGroup[KMessage[InetMultiAddress]])] = {
 
     for {
-      udpPeerGroup <- Task(new UDPPeerGroup[KMessage[InetMultiAddress]](udpConfig))
+      udpPeerGroup <- Task(new DynamicUDPPeerGroup[KMessage[InetMultiAddress]](udpConfig))
       _ <- udpPeerGroup.initialize()
       kademliaNetwork = new KNetworkScalanetImpl(udpPeerGroup)
       router <- KRouter.startRouterWithServerPar(routerConfig, kademliaNetwork)
@@ -210,7 +211,7 @@ object KademliaIntegrationSpec {
   case class TestNode(
       self: NodeRecord[InetMultiAddress],
       router: KRouter[InetMultiAddress],
-      underLyingGroup: UDPPeerGroup[KMessage[InetMultiAddress]]
+      underLyingGroup: DynamicUDPPeerGroup[KMessage[InetMultiAddress]]
   ) {
     def getPeers: Task[Seq[NodeRecord[InetMultiAddress]]] = {
       router.nodeRecords.map(_.values.toSeq)
@@ -244,7 +245,7 @@ object KademliaIntegrationSpec {
       initialNodes: Set[NodeRecord[InetMultiAddress]] = Set(),
       testConfig: TestNodeKademliaConfig = defaultConfig
   )(implicit s: Scheduler): Task[TestNode] = {
-    val udpConfig = UDPPeerGroup.Config(selfRecord.routingAddress.inetSocketAddress)
+    val udpConfig = DynamicUDPPeerGroup.Config(selfRecord.routingAddress.inetSocketAddress)
     val routerConfig = KRouter.Config(
       selfRecord,
       initialNodes,
