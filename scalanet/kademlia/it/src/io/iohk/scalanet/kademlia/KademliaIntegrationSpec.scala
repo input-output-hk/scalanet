@@ -2,7 +2,8 @@ package io.iohk.scalanet.kademlia
 
 import java.security.SecureRandom
 import java.util.concurrent.{Executors, TimeUnit}
-
+import cats.effect.Resource
+import cats.implicits._
 import io.iohk.scalanet.kademlia.KNetwork.KNetworkScalanetImpl
 import io.iohk.scalanet.kademlia.KRouter.NodeRecord
 import io.iohk.scalanet.peergroup.{InetMultiAddress, InetPeerGroupUtils}
@@ -31,87 +32,101 @@ class KademliaIntegrationSpec extends AsyncFlatSpec with BeforeAndAfterAll with 
   behavior of "Kademlia"
 
   it should "only find self node when there are no bootstrap nodes" in taskTestCase {
-    for {
-      node <- startNode()
-      knownNodes <- node.router.nodeRecords
-    } yield {
-      knownNodes.values.size shouldEqual 1
-    }
-  }
-
-  it should "enable finding nodes with common bootstrap node" in taskTestCase {
-    for {
-      node <- startNode()
-      node1 <- startNode(initialNodes = Set(node.self))
-      node2 <- startNode(initialNodes = Set(node.self))
-    } yield {
-      eventually {
-        haveSameNumberOfPeers(Seq(node, node1, node2), expectedNumber = 3).runSyncUnsafe() shouldEqual true
+    startNode().use { node =>
+      node.router.nodeRecords.map { knownNodes =>
+        knownNodes.values.size shouldEqual 1
       }
     }
   }
 
+  it should "enable finding nodes with common bootstrap node" in taskTestCase {
+    (for {
+      node <- startNode()
+      node1 <- startNode(initialNodes = Set(node.self))
+      node2 <- startNode(initialNodes = Set(node.self))
+    } yield (node, node1, node2)).use {
+      case (node, node1, node2) =>
+        Task {
+          eventually {
+            haveSameNumberOfPeers(Seq(node, node1, node2), expectedNumber = 3).runSyncUnsafe() shouldEqual true
+          }
+        }
+    }
+  }
+
   it should "enable discovering neighbours of boostrap node" in taskTestCase {
-    for {
+    (for {
       node <- startNode()
       node1 <- startNode()
       node2 <- startNode()
       node3 <- startNode(initialNodes = Set(node.self, node1.self, node2.self))
       node4 <- startNode(initialNodes = Set(node3.self))
-    } yield {
-      eventually {
-        node4.getPeers.runSyncUnsafe().size shouldEqual 5
-        node3.getPeers.runSyncUnsafe().size shouldEqual 5
+    } yield (node, node1, node2, node3, node4)).use {
+      case (node, node1, node2, node3, node4) =>
+        Task {
+          eventually {
+            node4.getPeers.runSyncUnsafe().size shouldEqual 5
+            node3.getPeers.runSyncUnsafe().size shouldEqual 5
 
-        // this nodes received messages from node3 and node4 so they should add them to their routing tables
-        node.getPeers.runSyncUnsafe().size shouldEqual 3
-        node1.getPeers.runSyncUnsafe().size shouldEqual 3
-        node2.getPeers.runSyncUnsafe().size shouldEqual 3
-      }
+            // this nodes received messages from node3 and node4 so they should add them to their routing tables
+            node.getPeers.runSyncUnsafe().size shouldEqual 3
+            node1.getPeers.runSyncUnsafe().size shouldEqual 3
+            node2.getPeers.runSyncUnsafe().size shouldEqual 3
+          }
+        }
     }
   }
 
   it should "enable discovering neighbours of the neighbours" in taskTestCase {
-    for {
+    (for {
       node <- startNode()
       node1 <- startNode(initialNodes = Set(node.self))
       node2 <- startNode(initialNodes = Set(node1.self))
       node3 <- startNode(initialNodes = Set(node2.self))
       node4 <- startNode(initialNodes = Set(node3.self))
-    } yield {
-      eventually {
-        haveSameNumberOfPeers(Seq(node, node1, node2, node3, node4), expectedNumber = 5)
-          .runSyncUnsafe() shouldEqual true
-      }
+    } yield (node, node1, node2, node3, node4)).use {
+      case (node, node1, node2, node3, node4) =>
+        Task {
+          eventually {
+            haveSameNumberOfPeers(Seq(node, node1, node2, node3, node4), expectedNumber = 5)
+              .runSyncUnsafe() shouldEqual true
+          }
+        }
     }
   }
 
   it should "add only online nodes to routing table" in taskTestCase {
-    for {
+    (for {
       node <- startNode()
-      node1 <- startNode()
+      node1A <- Resource.liftF(startNode().allocated)
+      (node1, node1Shutdown) = node1A
       node2 <- startNode(initialNodes = Set(node.self, node1.self))
-      _ <- node1.shutdown()
+      _ <- Resource.liftF(node1Shutdown)
       node3 <- startNode(initialNodes = Set(node2.self))
-    } yield {
-      eventually {
-        val peers = node3.getPeers.runSyncUnsafe()
-        peers.size shouldEqual 3
-        peers.contains(node1.self) shouldBe false
-      }
+    } yield (node1, node3)).use {
+      case (node1, node3) =>
+        Task {
+          eventually {
+            val peers = node3.getPeers.runSyncUnsafe()
+            peers.size shouldEqual 3
+            peers.contains(node1.self) shouldBe false
+          }
+        }
     }
   }
 
   it should "refresh routing table" in taskTestCase {
     val lowRefConfig = defaultConfig.copy(refreshRate = 3.seconds)
     val randomNode = generateNodeRecord()
-    for {
+    (for {
       node <- startNode(initialNodes = Set(randomNode), testConfig = lowRefConfig)
       node1 <- startNode(initialNodes = Set(node.self), testConfig = lowRefConfig)
-      rNode <- startNode(selfRecord = randomNode)
-    } yield {
-      eventually {
-        node1.getPeers.runSyncUnsafe().size shouldEqual 3
+      _ <- startNode(selfRecord = randomNode)
+    } yield node1).use { node1 =>
+      Task {
+        eventually {
+          node1.getPeers.runSyncUnsafe().size shouldEqual 3
+        }
       }
     }
   }
@@ -119,40 +134,43 @@ class KademliaIntegrationSpec extends AsyncFlatSpec with BeforeAndAfterAll with 
   it should "refresh table with many nodes in the network " in taskTestCase {
     val lowRefConfig = defaultConfig.copy(refreshRate = 1.seconds)
     val randomNode = generateNodeRecord()
-    for {
+    (for {
       node1 <- startNode(initialNodes = Set(randomNode), testConfig = lowRefConfig)
       node2 <- startNode(initialNodes = Set(), testConfig = lowRefConfig)
       node3 <- startNode(initialNodes = Set(node2.self), testConfig = lowRefConfig)
       node4 <- startNode(initialNodes = Set(node3.self), testConfig = lowRefConfig)
+      _ <- Resource.liftF(Task.sleep(10.seconds))
       node5 <- startNode(
         selfRecord = randomNode,
         initialNodes = Set(node2.self, node3.self, node4.self),
         testConfig = lowRefConfig
-      ).delayExecution(10.seconds)
-    } yield {
-      eventually {
-        node1.getPeers.runSyncUnsafe().size shouldEqual 5
-        node2.getPeers.runSyncUnsafe().size shouldEqual 5
-        node3.getPeers.runSyncUnsafe().size shouldEqual 5
-        node4.getPeers.runSyncUnsafe().size shouldEqual 5
-        node5.getPeers.runSyncUnsafe().size shouldEqual 5
-      }
+      )
+    } yield (node1, node2, node3, node4, node5)).use {
+      case (node1, node2, node3, node4, node5) =>
+        Task {
+          eventually {
+            node1.getPeers.runSyncUnsafe().size shouldEqual 5
+            node2.getPeers.runSyncUnsafe().size shouldEqual 5
+            node3.getPeers.runSyncUnsafe().size shouldEqual 5
+            node4.getPeers.runSyncUnsafe().size shouldEqual 5
+            node5.getPeers.runSyncUnsafe().size shouldEqual 5
+          }
+        }
     }
   }
 
   it should "add to routing table multiple concurrent nodes" in taskTestCase {
-    val nodesRound1 = (0 until 5).map(_ => generateNodeRecord()).toSeq
-    val nodesRound2 = (0 until 5).map(_ => generateNodeRecord()).toSeq
-
-    println(nodesRound1)
-    println(nodesRound2)
-    for {
+    val nodesRound1 = List.fill(5)(generateNodeRecord())
+    val nodesRound2 = List.fill(5)(generateNodeRecord())
+    (for {
       node <- startNode()
-      node1 <- Task.parTraverseUnordered(nodesRound1)(n => startNode(n, initialNodes = Set(node.self)))
-      node2 <- Task.parTraverseUnordered(nodesRound2)(n => startNode(n, initialNodes = Set(node.self)))
-    } yield {
-      eventually {
-        node.getPeers.runSyncUnsafe().size shouldEqual 11
+      _ <- nodesRound1.map(n => startNode(n, initialNodes = Set(node.self))).sequence
+      _ <- nodesRound2.map(n => startNode(n, initialNodes = Set(node.self))).sequence
+    } yield node).use { node =>
+      Task {
+        eventually {
+          node.getPeers.runSyncUnsafe().size shouldEqual 11
+        }
       }
     }
   }
@@ -167,18 +185,21 @@ class KademliaIntegrationSpec extends AsyncFlatSpec with BeforeAndAfterAll with 
     val bootStrapNode = rest.head
     val bootStrapNodeNeighbours = rest.tail.toSet
 
-    for {
-      nodes <- Task.traverse(bootStrapNodeNeighbours)(node => startNode(node, testConfig = lowKConfig))
+    (for {
+      nodes <- bootStrapNodeNeighbours.toList.map(node => startNode(node, testConfig = lowKConfig)).sequence
       bootNode <- startNode(bootStrapNode, initialNodes = bootStrapNodeNeighbours, testConfig = lowKConfig)
       rootNode <- startNode(testNode, initialNodes = Set(bootStrapNode), testConfig = lowKConfig)
-    } yield {
-      nodes.size shouldEqual 3
+    } yield (nodes, rootNode)).use {
+      case (nodes, rootNode) =>
+        Task {
+          nodes.size shouldEqual 3
 
-      eventually {
-        val peers = rootNode.getPeers.runSyncUnsafe()
-        peers should have size 4
-        peers should not contain rest.last
-      }
+          eventually {
+            val peers = rootNode.getPeers.runSyncUnsafe()
+            peers should have size 4
+            peers should not contain rest.last
+          }
+        }
     }
   }
 }
@@ -198,29 +219,23 @@ object KademliaIntegrationSpec {
   def startRouter(
       udpConfig: DynamicUDPPeerGroup.Config,
       routerConfig: KRouter.Config[InetMultiAddress]
-  )(implicit s: Scheduler): Task[(KRouter[InetMultiAddress], DynamicUDPPeerGroup[KMessage[InetMultiAddress]])] = {
-
+  )(
+      implicit s: Scheduler
+  ): Resource[Task, KRouter[InetMultiAddress]] = {
     for {
-      udpPeerGroup <- Task(new DynamicUDPPeerGroup[KMessage[InetMultiAddress]](udpConfig))
-      _ <- udpPeerGroup.initialize()
+      udpPeerGroup <- DynamicUDPPeerGroup[KMessage[InetMultiAddress]](udpConfig)
       kademliaNetwork = new KNetworkScalanetImpl(udpPeerGroup)
-      router <- KRouter.startRouterWithServerPar(routerConfig, kademliaNetwork)
-    } yield (router, udpPeerGroup)
+      router <- Resource.liftF(KRouter.startRouterWithServerPar(routerConfig, kademliaNetwork))
+    } yield router
   }
 
   case class TestNode(
       self: NodeRecord[InetMultiAddress],
-      router: KRouter[InetMultiAddress],
-      underLyingGroup: DynamicUDPPeerGroup[KMessage[InetMultiAddress]]
+      router: KRouter[InetMultiAddress]
   ) {
     def getPeers: Task[Seq[NodeRecord[InetMultiAddress]]] = {
       router.nodeRecords.map(_.values.toSeq)
     }
-
-    def shutdown(): Task[Unit] = {
-      underLyingGroup.shutdown()
-    }
-
   }
 
   case class TestNodeKademliaConfig(
@@ -244,7 +259,7 @@ object KademliaIntegrationSpec {
       selfRecord: NodeRecord[InetMultiAddress] = generateNodeRecord(),
       initialNodes: Set[NodeRecord[InetMultiAddress]] = Set(),
       testConfig: TestNodeKademliaConfig = defaultConfig
-  )(implicit s: Scheduler): Task[TestNode] = {
+  )(implicit s: Scheduler): Resource[Task, TestNode] = {
     val udpConfig = DynamicUDPPeerGroup.Config(selfRecord.routingAddress.inetSocketAddress)
     val routerConfig = KRouter.Config(
       selfRecord,
@@ -256,9 +271,8 @@ object KademliaIntegrationSpec {
     )
 
     for {
-      init <- startRouter(udpConfig, routerConfig)
-      (router, underlyingGroup) = init
-    } yield TestNode(selfRecord, router, underlyingGroup)
+      router <- startRouter(udpConfig, routerConfig)
+    } yield TestNode(selfRecord, router)
   }
 
   def haveSameNumberOfPeers(nodes: Seq[TestNode], expectedNumber: Int): Task[Boolean] = {

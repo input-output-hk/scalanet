@@ -173,7 +173,7 @@ class KNetworkSpec extends FlatSpec {
 
     when(channel2.channel.sendMessage(pong)).thenReturn(Task.unit)
 
-    // This should consume all requests and call `ignore` on the FindNodes, passing None which should close the channel.
+    // `pingRequests` consumes all requests and call `ignore` on the FindNodes, passing None which should close the channel.
     val (actualRequest, handler) = network.pingRequests().headL.evaluated
 
     actualRequest shouldBe ping

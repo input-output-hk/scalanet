@@ -20,11 +20,11 @@ import scala.collection.immutable.SortedSet
 
 class KRouter[A](
     val config: Config[A],
-    val network: KNetwork[A],
-    private val routerState: Ref[Task, NodeRecordIndex[A]],
-    val clock: Clock = Clock.systemUTC(),
-    val uuidSource: () => UUID = () => UUID.randomUUID(),
-    val rnd: Random = new SecureRandom()
+    network: KNetwork[A],
+    routerState: Ref[Task, NodeRecordIndex[A]],
+    clock: Clock = Clock.systemUTC(),
+    uuidSource: () => UUID = () => UUID.randomUUID(),
+    rnd: Random = new SecureRandom()
 ) {
   import KRouter.NodeId
 
@@ -467,6 +467,7 @@ object KRouter {
       )
       router <- Task.now(new KRouter(config, network, state, clock, uuidSource))
       _ <- router.enroll()
+      // TODO: These should be fibers that get cleaned up.
       _ <- router.startServerHandling().startAndForget
       _ <- router.startRefreshCycle().startAndForget
     } yield router
