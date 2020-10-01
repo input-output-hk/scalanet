@@ -30,7 +30,7 @@ import scala.util.control.NonFatal
 
 /**
   * PeerGroup implementation on top of UDP that always opens a new channel
-  * from a random port when sending a message to a remote address.
+  * from a random port when it creates a new client to a given remote address.
   *
   * @param config bind address etc. See the companion object.
   * @param codec a scodec codec for reading writing messages to NIO ByteBuffer.
