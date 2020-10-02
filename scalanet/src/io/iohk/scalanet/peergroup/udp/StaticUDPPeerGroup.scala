@@ -204,8 +204,9 @@ class StaticUDPPeerGroup[M] private (
   // The event loop will wait, but we have to delegate the execution elsewhere.
   // The alternative would be to use the normal concurrent data structures
   // that do internal locking without Tasks.
-  private def executeSync(task: Task[Unit]) =
+  private def executeSync(task: Task[Unit]): Unit = {
     task.runSyncUnsafe()
+  }
 
   private def tryDecodeDatagram(datagram: DatagramPacket): Attempt[M] =
     codec.decodeValue(BitVector(datagram.content.nioBuffer)) match {
@@ -269,11 +270,14 @@ class StaticUDPPeerGroup[M] private (
 
   // Wait until the server is bound.
   private def initialize(): Task[Unit] =
-    raiseIfShutdown >>
-      toTask(serverBinding).onErrorRecoverWith {
+    for {
+      _ <- raiseIfShutdown
+      _ <- toTask(serverBinding).onErrorRecoverWith {
         case NonFatal(ex) =>
           Task.raiseError(InitializationError(ex.getMessage, ex.getCause))
-      } >> Task(logger.info(s"Server bound to address ${config.bindAddress}"))
+      }
+      _ <- Task(logger.info(s"Server bound to address ${config.bindAddress}"))
+    } yield ()
 
   private def shutdown(): Task[Unit] = {
     for {
@@ -395,7 +399,7 @@ object StaticUDPPeerGroup extends StrictLogging {
         for {
           _ <- raiseIfClosed
           _ <- isClosedRef.set(true)
-          _ = messageSubject.onComplete()
+          _ <- Task(messageSubject.onComplete())
         } yield ()
       }
 
@@ -406,7 +410,12 @@ object StaticUDPPeerGroup extends StrictLogging {
   }
 
   private object ChannelImpl {
-    sealed trait Role
+    sealed trait Role {
+      override def toString(): String = this match {
+        case Server => "server"
+        case Client => "client"
+      }
+    }
     object Server extends Role
     object Client extends Role
 
