@@ -7,10 +7,16 @@ import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.{Channel, Release}
 import io.iohk.scalanet.peergroup.{InetMultiAddress}
-import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, MessageReceived, DecodingError}
+import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, MessageReceived, DecodingError, UnexpectedError}
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
-import io.iohk.scalanet.peergroup.PeerGroup.{ServerEvent, TerminalPeerGroup, MessageMTUException}
+import io.iohk.scalanet.peergroup.PeerGroup.{
+  ServerEvent,
+  TerminalPeerGroup,
+  MessageMTUException,
+  ChannelAlreadyClosedException
+}
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel.{
@@ -30,20 +36,22 @@ import monix.execution.Scheduler
 import scala.util.control.NonFatal
 import scodec.{Codec, Attempt}
 import scodec.bits.BitVector
-import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import io.iohk.scalanet.peergroup.Channel.UnexpectedError
-import monix.execution.schedulers.CanBlock
 
 /**
   * PeerGroup implementation on top of UDP that uses the same local port
   * when creating channels to remote addresses as the one it listens on
-  * for incoming messages. This makes it compatible with certain UDP
-  * based node discovery protocols. It also means that incoming messages
-  * cannot be tied to a specific channel, so if multiple channels are
-  * open to the same remote address, they will all see the same messages.
+  * for incoming messages.
   *
-  * @param config bind address etc. See the companion object.
-  * @param codec a scodec codec for reading writing messages to NIO ByteBuffer.
+  * This makes it compatible with protocols that update the peer's port
+  * to the last one it sent a message from.
+  *
+  * It also means that incoming messages cannot be tied to a specific channel,
+  * so if multiple channels are open to the same remote address,
+  * they will all see the same messages. The incoming responses will also
+  * cause a server channel to be opened, where response type messages have
+  * to be discarded, and the server channel can be discarded if there's no
+  * request type message for a long time.
+  *
   * @tparam M the message type.
   */
 class StaticUDPPeerGroup[M] private (
@@ -57,12 +65,20 @@ class StaticUDPPeerGroup[M] private (
     extends TerminalPeerGroup[InetMultiAddress, M]
     with StrictLogging {
 
-  import StaticUDPPeerGroup.{ChannelImpl, ChannelRelease, TaskExecutionOps}
+  import StaticUDPPeerGroup.{ChannelImpl, ChannelRelease}
 
   override val processAddress = config.processAddress
   override val server = serverSubject
 
-  private def raiseIfShutdown =
+  private val localAddress = config.bindAddress
+
+  def channelCount: Task[Int] =
+    for {
+      serverChannels <- serverChannelsRef.get
+      clientChannels <- clientChannelsRef.get
+    } yield serverChannels.size + clientChannels.values.map(_.size).sum
+
+  private val raiseIfShutdown =
     isShutdownRef.get
       .ifM(Task.raiseError(new IllegalStateException("The peer group has already been shut down.")), Task.unit)
 
@@ -70,24 +86,26 @@ class StaticUDPPeerGroup[M] private (
   override def client(to: InetMultiAddress): Resource[Task, Channel[InetMultiAddress, M]] = {
     for {
       _ <- Resource.liftF(raiseIfShutdown)
+      remoteAddress = to.inetSocketAddress
       channel <- Resource {
         ChannelImpl[M](
           nettyChannel = serverBinding.channel,
-          localAddress = config.bindAddress,
-          remoteAddress = to.inetSocketAddress
+          localAddress = localAddress,
+          remoteAddress = remoteAddress,
+          role = "client"
         ).allocated.flatMap {
           case (channel, release) =>
             // Register the channel as belonging to the remote address so that
             // we can replicate incoming messages to it later.
             val add = for {
               _ <- addClientChannel(channel -> release)
-              _ <- Task(logger.debug(s"Added UDP client channel to $to"))
+              _ <- Task(logger.debug(s"Added UDP client channel from $localAddress to $remoteAddress"))
             } yield ()
 
             val remove = for {
               _ <- removeClientChannel(channel -> release)
               _ <- release
-              _ <- Task(logger.debug(s"Removed UDP client channel to $to"))
+              _ <- Task(logger.debug(s"Removed UDP client channel from $localAddress to $remoteAddress"))
             } yield ()
 
             add.as(channel -> remove)
@@ -118,23 +136,25 @@ class StaticUDPPeerGroup[M] private (
 
       case None =>
         // All incoming messages are handled on the same event loop, by the same channel,
-        // so we don't have to synchronize anything, it will only try to create one channel at a time.
+        // so we don't have to worry about multiple server channels for the same remote,
+        // it will only try to create one channel at a time.
         ChannelImpl[M](
           nettyChannel = serverBinding.channel,
           localAddress = config.bindAddress,
-          remoteAddress = remoteAddress
+          remoteAddress = remoteAddress,
+          role = "server"
         ).allocated.flatMap {
           case (channel, release) =>
             val remove = for {
               _ <- serverChannelsRef.update(_ - remoteAddress)
               _ <- release
-              _ <- Task(logger.debug(s"Removed UDP server channel from $remoteAddress"))
+              _ <- Task(logger.debug(s"Removed UDP server channel from $remoteAddress to $localAddress"))
             } yield ()
 
             val add = for {
               _ <- serverChannelsRef.update(_.updated(remoteAddress, channel -> release))
-              _ <- Task(serverSubject.onNext(ChannelCreated(channel, remove)))
-              _ <- Task(logger.debug(s"Added UDP server channel from $remoteAddress"))
+              _ <- Task.deferFuture(serverSubject.onNext(ChannelCreated(channel, remove)))
+              _ <- Task(logger.debug(s"Added UDP server channel from $remoteAddress to $localAddress"))
             } yield channel
 
             add.as(channel)
@@ -147,26 +167,54 @@ class StaticUDPPeerGroup[M] private (
       _.getOrElse(remoteAddress, Set.empty).toIterable.map(_._1)
     }
 
-  private def replicateToChannels(remoteAddress: InetSocketAddress)(f: ChannelImpl[M] => Task[Unit]): Task[Unit] =
+  private def getChannels(remoteAddress: InetSocketAddress): Task[Iterable[ChannelImpl[M]]] =
     isShutdownRef.get.ifM(
-      Task.unit,
+      Task.pure(Iterable.empty),
       for {
         serverChannel <- getOrCreateServerChannel(remoteAddress)
         clientChannels <- getClientChannels(remoteAddress)
         channels = Iterable(serverChannel) ++ clientChannels
-        _ <- Task.parTraverseUnordered(channels)(f)
-      } yield ()
+      } yield channels
     )
 
-  /** Replicate the incoming message to the server channel and all client channels connected to the remote address. */
-  private def handleMessage(remoteAddress: InetSocketAddress, maybeMessage: Attempt[M]): Task[Unit] =
-    replicateToChannels(remoteAddress)(_.handleMessage(maybeMessage))
+  private def replicateToChannels(remoteAddress: InetSocketAddress)(
+      f: ChannelImpl[M] => Task[Unit]
+  ): Task[Unit] =
+    for {
+      channels <- getChannels(remoteAddress)
+      _ <- Task.parTraverseUnordered(channels)(f).executeOn(scheduler)
+    } yield ()
 
-  private def handleError(remoteAddress: InetSocketAddress, error: Throwable): Task[Unit] =
-    replicateToChannels(remoteAddress)(_.handleError(error))
+  /** Replicate the incoming message to the server channel and all client channels connected to the remote address. */
+  private def handleMessage(
+      remoteAddress: InetSocketAddress,
+      maybeMessage: Attempt[M]
+  ): Unit =
+    executeSync {
+      replicateToChannels(remoteAddress)(_.handleMessage(maybeMessage))
+    }
+
+  private def handleError(remoteAddress: InetSocketAddress, error: Throwable): Unit =
+    executeSync {
+      replicateToChannels(remoteAddress)(_.handleError(error))
+    }
+
+  // We cannot execute right on the channel's event loop because that's already
+  // occupied with handing the incoming message, so it would deadlock.
+  // The event loop will wait, but we have to delegate the execution elsewhere.
+  // The alternative would be to use the normal concurrent data structures
+  // that do internal locking without Tasks.
+  private def executeSync(task: Task[Unit]) =
+    task.runSyncUnsafe()
 
   private def tryDecodeDatagram(datagram: DatagramPacket): Attempt[M] =
-    codec.decodeValue(BitVector(datagram.content.nioBuffer))
+    codec.decodeValue(BitVector(datagram.content.nioBuffer)) match {
+      case failure @ Attempt.Failure(err) =>
+        logger.debug(s"Message decoding failed due to ${err}", err)
+        failure
+      case success =>
+        success
+    }
 
   private lazy val serverBinding =
     new Bootstrap()
@@ -185,11 +233,11 @@ class StaticUDPPeerGroup[M] private (
                 val datagram = msg.asInstanceOf[DatagramPacket]
                 val remoteAddress = datagram.sender
                 try {
-                  logger.debug(s"Server channel read message from $remoteAddress")
-                  handleMessage(remoteAddress, tryDecodeDatagram(datagram)).executeOn(ctx)
+                  logger.debug(s"Server channel at $localAddress read message from $remoteAddress")
+                  handleMessage(remoteAddress, tryDecodeDatagram(datagram))
                 } catch {
                   case NonFatal(ex) =>
-                    handleError(remoteAddress, ex).executeOn(ctx)
+                    handleError(remoteAddress, ex)
                 } finally {
                   datagram.content().release()
                   ()
@@ -209,7 +257,7 @@ class StaticUDPPeerGroup[M] private (
                 }
                 cause match {
                   case NonFatal(ex) =>
-                    handleError(remoteAddress, ex).executeOn(ctx)
+                    handleError(remoteAddress, ex)
                 }
               }
             })
@@ -217,7 +265,7 @@ class StaticUDPPeerGroup[M] private (
           ()
         }
       })
-      .bind(config.bindAddress)
+      .bind(localAddress)
 
   // Wait until the server is bound.
   private def initialize(): Task[Unit] =
@@ -289,17 +337,26 @@ object StaticUDPPeerGroup extends StrictLogging {
       localAddress: InetSocketAddress,
       remoteAddress: InetSocketAddress,
       messageSubject: ConnectableSubject[ChannelEvent[M]],
-      isClosedRef: Ref[Task, Boolean]
+      isClosedRef: Ref[Task, Boolean],
+      role: String
   )(implicit codec: Codec[M])
       extends Channel[InetMultiAddress, M]
       with StrictLogging {
     override val to = InetMultiAddress(remoteAddress)
     override val in = messageSubject
 
+    private val raiseIfClosed =
+      isClosedRef.get.ifM(
+        Task.raiseError(
+          new ChannelAlreadyClosedException[InetMultiAddress](InetMultiAddress(localAddress), to)
+        ),
+        Task.unit
+      )
+
     override def sendMessage(message: M) =
       for {
-        _ <- isClosedRef.get.ifM(Task.raiseError(new IllegalStateException("Channel is already closed.")), Task.unit)
-        _ <- Task(logger.debug(s"Sending message ${message} to peer ${remoteAddress}"))
+        _ <- raiseIfClosed
+        _ <- Task(logger.debug(s"Sending $role message from $localAddress to $remoteAddress"))
         encodedMessage <- Task.fromTry(codec.encode(message).toTry)
         asBuffer = encodedMessage.toByteBuffer
         packet = new DatagramPacket(Unpooled.wrappedBuffer(asBuffer), remoteAddress, localAddress)
@@ -309,36 +366,43 @@ object StaticUDPPeerGroup extends StrictLogging {
         }
       } yield ()
 
-    def handleMessage(maybeMessage: Attempt[M]): Task[Unit] =
+    def handleMessage(maybeMessage: Attempt[M]): Task[Unit] = {
       isClosedRef.get.ifM(
         Task.unit,
         maybeMessage match {
           case Attempt.Successful(message) =>
-            Task.deferFuture(messageSubject.onNext(MessageReceived(message))).void
+            publish(MessageReceived(message))
           case Attempt.Failure(err) =>
-            Task(logger.debug(s"Message decoding failed due to ${err}", err)) >>
-              Task.deferFuture(messageSubject.onNext(DecodingError)).void
+            publish(DecodingError)
         }
       )
+    }
 
     def handleError(error: Throwable): Task[Unit] =
       isClosedRef.get.ifM(
         Task.unit,
-        Task.deferFuture(messageSubject.onNext(UnexpectedError(error))).void
+        publish(UnexpectedError(error))
       )
 
     private def close() =
       for {
+        _ <- raiseIfClosed
         _ <- isClosedRef.set(true)
         _ = messageSubject.onComplete()
       } yield ()
+
+    private def publish(event: ChannelEvent[M]): Task[Unit] = {
+      // Maybe it should be `.startAndForget`? This is were we should just push to a queue.
+      Task.deferFuture(messageSubject.onNext(event)).void
+    }
   }
 
   private object ChannelImpl {
     def apply[M: Codec](
         nettyChannel: io.netty.channel.Channel,
         localAddress: InetSocketAddress,
-        remoteAddress: InetSocketAddress
+        remoteAddress: InetSocketAddress,
+        role: String
     )(implicit scheduler: Scheduler): Resource[Task, ChannelImpl[M]] =
       Resource.make {
         for {
@@ -348,19 +412,10 @@ object StaticUDPPeerGroup extends StrictLogging {
             localAddress,
             remoteAddress,
             ConnectableSubject[ChannelEvent[M]](),
-            isClosedRef
+            isClosedRef,
+            role
           )
         } yield channel
       }(_.close())
-  }
-
-  private implicit class TaskExecutionOps(task: Task[Unit]) {
-
-    /** Execute a task synchronously on the channel's event loop.
-      * Since we know we only have once channel this will always
-      * just execute one thing at a time.
-      */
-    def executeOn(ctx: ChannelHandlerContext): Unit =
-      task.runSyncUnsafe()(Scheduler(ctx.channel.eventLoop), implicitly[CanBlock])
   }
 }
