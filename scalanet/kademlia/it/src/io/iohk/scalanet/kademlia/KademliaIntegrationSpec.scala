@@ -27,6 +27,7 @@ class KademliaIntegrationSpec extends AsyncFlatSpec with BeforeAndAfterAll with 
   override def afterAll(): Unit = {
     threadPool.shutdown()
     threadPool.awaitTermination(60, TimeUnit.SECONDS)
+    ()
   }
 
   behavior of "Kademlia"

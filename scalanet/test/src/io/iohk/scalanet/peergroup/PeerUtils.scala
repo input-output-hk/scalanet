@@ -37,9 +37,11 @@ trait PeerUtils[A, M, PG[_, _]] {
     initialize(bob).runToFuture
     try {
       testFunction(alice, bob)
+      ()
     } finally {
       shutdown(alice).runToFuture
       shutdown(bob).runToFuture
+      ()
     }
   }
 }

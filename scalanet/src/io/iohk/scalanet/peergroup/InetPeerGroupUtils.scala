@@ -16,6 +16,7 @@ object InetPeerGroupUtils {
         f.addListener(
           (future: util.concurrent.Future[_]) => if (future.isSuccess) cb.onSuccess(()) else cb.onError(future.cause())
         )
+        ()
       } catch {
         case t: Throwable =>
           cb.onError(t)

@@ -20,7 +20,7 @@ object StandardTestPack {
     val alicesMessage = Random.alphanumeric.take(1024).mkString
     val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-    for {
+    (for {
       bobReceiver <- bob.server.collectChannelCreated
         .mapEval {
           case (channel, release) =>
@@ -46,7 +46,11 @@ object StandardTestPack {
       _ <- aliceClient._1.sendMessage(alicesMessage)
 
       _ = aliceClient._1.in.connect()
-      _ = bob.server.collectChannelCreated.foreach(_._1.in.connect())
+      _ = bob.server.collectChannelCreated.foreach {
+        case (channel, _) =>
+          channel.in.connect()
+          ()
+      }
       _ = bob.server.connect()
 
       bobReceived <- bobReceiver.join
@@ -55,7 +59,7 @@ object StandardTestPack {
     } yield {
       bobReceived shouldBe alicesMessage
       aliceReceived shouldBe bobsMessage
-    }
+    }).void
   }
 
   // Test that Alice can send messages to Bob concurrently and receive answers on both channels.
@@ -65,7 +69,7 @@ object StandardTestPack {
     val alicesMessage = Random.alphanumeric.take(1024).mkString
     val bobsMessage = Random.alphanumeric.take(1024).mkString
 
-    for {
+    (for {
       _ <- bob.server.collectChannelCreated.foreachL {
         case (channel, release) => channel.sendMessage(bobsMessage).guarantee(release).runAsyncAndForget
       }.startAndForget
@@ -80,7 +84,11 @@ object StandardTestPack {
 
       _ = aliceClient1._1.in.connect()
       _ = aliceClient2._1.in.connect()
-      _ = bob.server.collectChannelCreated.foreach(channel => channel._1.in.connect())
+      _ = bob.server.collectChannelCreated.foreach {
+        case (channel, _) =>
+          channel.in.connect()
+          ()
+      }
       _ = bob.server.connect()
 
       aliceReceived1 <- aliceReceiver1.join
@@ -90,7 +98,7 @@ object StandardTestPack {
     } yield {
       aliceReceived1 shouldBe bobsMessage
       aliceReceived2 shouldBe bobsMessage
-    }
+    }).void
   }
 
   def shouldErrorForMessagingAnInvalidAddress[A](alice: PeerGroup[A, String], invalidAddress: A)(
@@ -102,5 +110,6 @@ object StandardTestPack {
     }
 
     aliceError.futureValue.to shouldBe invalidAddress
+    ()
   }
 }

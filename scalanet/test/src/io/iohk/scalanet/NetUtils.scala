@@ -61,6 +61,7 @@ object NetUtils {
     val socket = new ServerSocket(address.getPort, 0, InetAddress.getLoopbackAddress)
     try {
       testCode(address)
+      ()
     } finally {
       socket.close()
     }
@@ -71,6 +72,7 @@ object NetUtils {
     val address = socket.getLocalSocketAddress.asInstanceOf[InetSocketAddress]
     try {
       testCode(address)
+      ()
     } finally {
       socket.close()
     }
@@ -97,7 +99,7 @@ object NetUtils {
     } yield (pg1, pg2))
       .use {
         case (pg1, pg2) =>
-          testCode(pg1, pg2)
+          testCode(pg1, pg2).void
       }
       .runSyncUnsafe(15.seconds)
   }
@@ -107,7 +109,7 @@ object NetUtils {
   )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
     randomUDPPeerGroup
       .use { pg =>
-        testCode(pg)
+        testCode(pg).void
       }
       .runSyncUnsafe(15.seconds)
   }
