@@ -59,13 +59,13 @@ class StaticUDPPeerGroup[M] private (
     workerGroup: NioEventLoopGroup,
     isShutdownRef: Ref[Task, Boolean],
     serverSubject: ConnectableSubject[ServerEvent[InetMultiAddress, M]],
-    serverChannelsRef: Ref[Task, Map[InetSocketAddress, StaticUDPPeerGroup.ChannelRelease[M]]],
-    clientChannelsRef: Ref[Task, Map[InetSocketAddress, Set[StaticUDPPeerGroup.ChannelRelease[M]]]]
+    serverChannelsRef: Ref[Task, Map[InetSocketAddress, StaticUDPPeerGroup.ChannelAlloc[M]]],
+    clientChannelsRef: Ref[Task, Map[InetSocketAddress, Set[StaticUDPPeerGroup.ChannelAlloc[M]]]]
 )(implicit scheduler: Scheduler, codec: Codec[M])
     extends TerminalPeerGroup[InetMultiAddress, M]
     with StrictLogging {
 
-  import StaticUDPPeerGroup.{ChannelImpl, ChannelRelease}
+  import StaticUDPPeerGroup.{ChannelImpl, ChannelAlloc}
 
   override val processAddress = config.processAddress
   override val server = serverSubject
@@ -114,14 +114,14 @@ class StaticUDPPeerGroup[M] private (
     } yield channel
   }
 
-  private def addClientChannel(channel: ChannelRelease[M]) =
+  private def addClientChannel(channel: ChannelAlloc[M]) =
     clientChannelsRef.update { clientChannels =>
       val remoteAddress = channel._1.to.inetSocketAddress
       val current = clientChannels.getOrElse(remoteAddress, Set.empty)
       clientChannels.updated(remoteAddress, current + channel)
     }
 
-  private def removeClientChannel(channel: ChannelRelease[M]) =
+  private def removeClientChannel(channel: ChannelAlloc[M]) =
     clientChannelsRef.update { clientChannels =>
       val remoteAddress = channel._1.to.inetSocketAddress
       val current = clientChannels.getOrElse(remoteAddress, Set.empty)
@@ -301,15 +301,15 @@ object StaticUDPPeerGroup extends StrictLogging {
     def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, InetMultiAddress(bindAddress))
   }
 
-  private type ChannelRelease[M] = (ChannelImpl[M], Release)
+  private type ChannelAlloc[M] = (ChannelImpl[M], Release)
 
   def apply[M: Codec](config: Config)(implicit scheduler: Scheduler): Resource[Task, StaticUDPPeerGroup[M]] =
     makeEventLoop.flatMap { workerGroup =>
       Resource.make {
         for {
           isShutdownRef <- Ref[Task].of(false)
-          clientChannelsRef <- Ref[Task].of(Map.empty[InetSocketAddress, Set[ChannelRelease[M]]])
-          serverChannelsRef <- Ref[Task].of(Map.empty[InetSocketAddress, ChannelRelease[M]])
+          clientChannelsRef <- Ref[Task].of(Map.empty[InetSocketAddress, Set[ChannelAlloc[M]]])
+          serverChannelsRef <- Ref[Task].of(Map.empty[InetSocketAddress, ChannelAlloc[M]])
           serverSubject = ConnectableSubject[ServerEvent[InetMultiAddress, M]]()
           peerGroup = new StaticUDPPeerGroup[M](
             config,
