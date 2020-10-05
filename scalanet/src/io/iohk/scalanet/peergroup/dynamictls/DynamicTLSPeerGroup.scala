@@ -25,7 +25,7 @@ import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.logging.{LogLevel, LoggingHandler}
 import io.netty.handler.ssl.SslContext
 import monix.eval.Task
-import monix.execution.{Scheduler, BufferCapacity}
+import monix.execution.Scheduler
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair
 import scodec.bits.BitVector
 
@@ -52,7 +52,7 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
 
   private val sslServerCtx: SslContext = DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForServer, config)
 
-  private val serverQueue = CloseableQueue[ServerEvent[PeerInfo, M]](BufferCapacity.Unbounded()).runSyncUnsafe()
+  private val serverQueue = CloseableQueue.unbounded[ServerEvent[PeerInfo, M]]().runSyncUnsafe()
 
   private val workerGroup = new NioEventLoopGroup()
 

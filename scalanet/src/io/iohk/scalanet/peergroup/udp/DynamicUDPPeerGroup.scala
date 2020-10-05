@@ -25,7 +25,6 @@ import monix.execution.Scheduler
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec}
 import scala.util.control.NonFatal
-import monix.execution.BufferCapacity
 
 /**
   * PeerGroup implementation on top of UDP that always opens a new channel
@@ -45,7 +44,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
 
   import DynamicUDPPeerGroup.Internals.{UDPChannelId, ChannelType, ClientChannel, ServerChannel}
 
-  val serverQueue = CloseableQueue[ServerEvent[InetMultiAddress, M]](BufferCapacity.Unbounded()).runSyncUnsafe()
+  val serverQueue = CloseableQueue.unbounded[ServerEvent[InetMultiAddress, M]]().runSyncUnsafe()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -196,7 +195,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
     })
 
   private def makeMessageQueue(): CloseableQueue[ChannelEvent[M]] = {
-    CloseableQueue[ChannelEvent[M]](capacity = BufferCapacity.Bounded(config.channelCapacity)).runSyncUnsafe()
+    CloseableQueue[ChannelEvent[M]](capacity = config.channelCapacity).runSyncUnsafe()
   }
 
   class ChannelImpl(
@@ -354,7 +353,7 @@ object DynamicUDPPeerGroup {
   )
 
   object Config {
-    def apply(bindAddress: InetSocketAddress, channelCapacity: Int = 100): Config =
+    def apply(bindAddress: InetSocketAddress, channelCapacity: Int = 0): Config =
       Config(bindAddress, InetMultiAddress(bindAddress), channelCapacity)
   }
 

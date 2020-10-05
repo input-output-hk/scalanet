@@ -34,7 +34,6 @@ import monix.execution.Scheduler
 import scala.util.control.NonFatal
 import scodec.{Codec, Attempt}
 import scodec.bits.BitVector
-import monix.execution.BufferCapacity
 
 /**
   * PeerGroup implementation on top of UDP that uses the same local port
@@ -312,7 +311,7 @@ object StaticUDPPeerGroup extends StrictLogging {
       channelCapacity: Int
   )
   object Config {
-    def apply(bindAddress: InetSocketAddress, channelCapacity: Int = 100): Config =
+    def apply(bindAddress: InetSocketAddress, channelCapacity: Int = 0): Config =
       Config(bindAddress, InetMultiAddress(bindAddress), channelCapacity)
   }
 
@@ -323,7 +322,7 @@ object StaticUDPPeerGroup extends StrictLogging {
       Resource.make {
         for {
           isShutdownRef <- Ref[Task].of(false)
-          serverQueue <- CloseableQueue[ServerEvent[InetMultiAddress, M]](BufferCapacity.Unbounded())
+          serverQueue <- CloseableQueue.unbounded[ServerEvent[InetMultiAddress, M]]()
           serverChannelSemaphore <- Semaphore[Task](1)
           serverChannelsRef <- Ref[Task].of(Map.empty[InetSocketAddress, ChannelAlloc[M]])
           clientChannelsRef <- Ref[Task].of(Map.empty[InetSocketAddress, Set[ChannelAlloc[M]]])
@@ -448,7 +447,7 @@ object StaticUDPPeerGroup extends StrictLogging {
         for {
           subjectSemaphore <- Semaphore[Task](1)
           isClosedRef <- Ref[Task].of(false)
-          messageQueue <- CloseableQueue[ChannelEvent[M]](BufferCapacity.Bounded(capacity))
+          messageQueue <- CloseableQueue[ChannelEvent[M]](capacity)
           channel = new ChannelImpl[M](
             nettyChannel,
             localAddress,

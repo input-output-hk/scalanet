@@ -1,18 +1,20 @@
 package io.iohk.scalanet.peergroup
 
 import cats.implicits._
-import monix.execution.{BufferCapacity, Scheduler}
+import monix.execution.Scheduler
 import monix.eval.Task
 import org.scalatest.{FlatSpec, Matchers}
 import scala.concurrent.duration._
+import org.scalatest.compatible.Assertion
 
 class CloseableQueueSpec extends FlatSpec with Matchers {
   import Scheduler.Implicits.global
+  import CloseableQueue.Closed
 
   def withQueue(
-      capacity: BufferCapacity = BufferCapacity.Unbounded()
-  )(f: CloseableQueue[String] => Task[Unit]): Unit = {
-    CloseableQueue[String](capacity).flatMap(f).runSyncUnsafe(5.seconds)
+      capacity: Int = 0
+  )(f: CloseableQueue[String] => Task[Assertion]): Unit = {
+    CloseableQueue[String](capacity).flatMap(f).void.runSyncUnsafe(5.seconds)
   }
 
   behavior of "ClosableQueue"
@@ -33,7 +35,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
       maybeOffered <- queue.tryOffer("Hung up?")
       maybeMessage <- queue.next()
     } yield {
-      maybeOffered shouldBe false
+      maybeOffered shouldBe Left(Closed)
       maybeMessage shouldBe None
     }
   }
@@ -64,19 +66,59 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
     }
   }
 
-  it should "discard the latest value if the capacity is reached" in withQueue(capacity = BufferCapacity.Bounded(2)) {
-    queue =>
-      for {
-        _ <- List.range(0, 5).traverse(i => queue.tryOffer(i.toString))
-        maybe0 <- queue.next()
-        maybe1 <- queue.next()
-        maybe3 <- queue.next().start // No more message so this would block.
-        _ <- queue.close(discard = false)
-        maybe3 <- maybe3.join
-      } yield {
-        maybe0 should not be empty
-        maybe1 should not be empty
-        maybe3 shouldBe empty
-      }
+  behavior of "tryOffer"
+
+  it should "discard the latest value if the capacity is reached" in withQueue(capacity = 2) { queue =>
+    for {
+      offered <- List.range(0, 5).traverse(i => queue.tryOffer(i.toString))
+      maybe0 <- queue.next()
+      maybe1 <- queue.next()
+      maybe3 <- queue.next().start // No more message so this would block.
+      _ <- queue.close(discard = false)
+      maybe3 <- maybe3.join
+    } yield {
+      offered.head shouldBe Right(true)
+      offered.last shouldBe Right(false)
+      maybe0 should not be empty
+      maybe1 should not be empty
+      maybe3 shouldBe empty
+    }
+  }
+
+  behavior of "offer"
+
+  it should "wait until messages are drained if the capacity is reached" in withQueue(capacity = 2) { queue =>
+    for {
+      _ <- queue.offer("a")
+      _ <- queue.offer("b")
+      attempt1 <- queue.tryOffer("c")
+      offering <- queue.offer("c").start
+      _ <- queue.next()
+      attempt2 <- offering.join
+    } yield {
+      attempt1 shouldBe Right(false)
+      attempt2 shouldBe Right(())
+    }
+  }
+
+  it should "not wait if the queue is closed" in withQueue() { queue =>
+    for {
+      _ <- queue.close(discard = true)
+      attempt <- queue.offer("Too late.")
+    } yield {
+      attempt shouldBe Left(Closed)
+    }
+  }
+
+  it should "be interrupted if the queue is closed while offering" in withQueue(capacity = 2) { queue =>
+    for {
+      _ <- queue.offer("a")
+      _ <- queue.offer("b")
+      offering <- queue.offer("c").start
+      _ <- queue.close(discard = true)
+      offered <- offering.join
+    } yield {
+      offered shouldBe Left(Closed)
+    }
   }
 }

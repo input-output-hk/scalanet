@@ -24,7 +24,6 @@ import scodec.bits.BitVector
 
 import scala.concurrent.Promise
 import scala.util.control.NonFatal
-import monix.execution.BufferCapacity
 
 private[dynamictls] object DynamicTLSPeerGroupInternals {
   implicit class ChannelOps(val channel: io.netty.channel.Channel) {
@@ -309,6 +308,6 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
   }
 
   private def makeMessageQueue[M](implicit scheduler: Scheduler) =
-    CloseableQueue[ChannelEvent[M]](capacity = BufferCapacity.Unbounded()).runSyncUnsafe()
+    CloseableQueue.unbounded[ChannelEvent[M]]().runSyncUnsafe()
 
 }

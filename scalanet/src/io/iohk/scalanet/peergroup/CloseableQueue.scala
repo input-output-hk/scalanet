@@ -19,6 +19,7 @@ class CloseableQueue[A](
     closed: TryableDeferred[Task, Boolean],
     queue: ConcurrentQueue[Task, A]
 ) {
+  import CloseableQueue.Closed
 
   /** Fetch the next item from the queue, or None if the production has finished
     * and the queue has been emptied.
@@ -45,22 +46,44 @@ class CloseableQueue[A](
     closed.complete(discard) >> queue.clear.whenA(discard)
 
   /** Try to put a new item in the queue, unless the capactiy has been reached or the queue has been closed. */
-  def tryOffer(item: A): Task[Boolean] =
+  def tryOffer(item: A): Task[Either[Closed, Boolean]] =
+    // We could drop the oldest item if the queue is full, rather than drop the latest,
+    // but the capacity should be set so it only prevents DoS attacks, so it shouldn't
+    // be that crucial to serve clients who overproduce.
+    unlessClosed(queue.tryOffer(item))
+
+  def offer(item: A): Task[Either[Closed, Unit]] =
+    unlessClosed {
+      Task.race(closed.get, queue.offer(item)).map(_.leftMap(_ => Closed))
+    }.map(_.joinRight)
+
+  private def unlessClosed[T](task: Task[T]): Task[Either[Closed, T]] =
     closed.tryGet
       .map(_.isDefined)
       .ifM(
-        Task.pure(false),
-        // We could drop the oldest item if the queue is full, rather than drop the latest,
-        // but the capacity should be set so it only prevents DoS attacks, so it shouldn't
-        // be that crucial to serve clients who overproduce.
-        queue.tryOffer(item)
+        Task.pure(Left(Closed)),
+        task.map(Right(_))
       )
 }
 
 object CloseableQueue {
-  def apply[A](capacity: BufferCapacity, channelType: ChannelType = ChannelType.MPMC) =
+
+  /** Indicate that the queue was closed. */
+  object Closed
+  type Closed = Closed.type
+
+  /** Create a queue with a given capacity; 0 or negative means unbounded. */
+  def apply[A](capacity: Int, channelType: ChannelType = ChannelType.MPMC) = {
+    val buffer = capacity match {
+      case i if i <= 0 => BufferCapacity.Unbounded()
+      // Capacity is approximate and a power of 2, min value 2.
+      case i => BufferCapacity.Bounded(math.max(2, i))
+    }
     for {
       closed <- Deferred.tryable[Task, Boolean]
-      queue <- ConcurrentQueue.withConfig[Task, A](capacity, channelType)
+      queue <- ConcurrentQueue.withConfig[Task, A](buffer, channelType)
     } yield new CloseableQueue[A](closed, queue)
+  }
+
+  def unbounded[A](channelType: ChannelType = ChannelType.MPMC) = apply[A](capacity = 0)
 }
