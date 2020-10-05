@@ -143,9 +143,9 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
       _ <- queue.offer("a")
       _ <- queue.offer("b")
       _ <- queue.offer("c")
-      // This test is only here to demonstrate that this verstion with `.share` doesn't work:
+      // This test is only here to demonstrate that this vertion with `.share` doesn't work:
       //o = queue.toObservable.share
-      // But these one do:
+      // But these ones do:
       //o = queue.toObservable
       o = queue.toIterant
       _ <- o.headOptionL

@@ -39,8 +39,7 @@ object StandardTestPack {
         .start
 
       aliceClient <- alice.client(bob.processAddress).allocated
-      _ = aliceClient._1.in.foreach { x =>
-      }
+
       aliceReceiver <- aliceClient._1.in
         .collect {
           case MessageReceived(m) => m
