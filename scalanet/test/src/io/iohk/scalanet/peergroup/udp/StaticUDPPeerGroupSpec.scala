@@ -91,8 +91,8 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
                     .start
 
                   // Send 3 messages, which should result in two incoming channels emitted.
-                  // Allow some time between them so the third message doesn't end up in the first channel that gets released.
-                  _ <- List.range(0, 3).traverse(i => client12.sendMessage(i.toString).delayExecution(50.millis))
+                  // Space them out a bit so the third messages doesn't end up in the discarded queue.
+                  _ <- List.range(0, 3).traverse(i => client12.sendMessage(i.toString).delayResult(50.millis))
 
                   // Give the server time to process all messages
                   _ <- Task(messageCounter.await(timeout.toMillis, TimeUnit.MILLISECONDS))
