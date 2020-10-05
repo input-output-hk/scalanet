@@ -8,7 +8,6 @@ import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
-import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.{ServerEvent, TerminalPeerGroup}
@@ -17,6 +16,7 @@ import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{Config, PeerIn
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroupInternals.{ClientChannelImpl, ServerChannelBuilder}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroupUtils.{SSLContextForClient, SSLContextForServer}
 import io.iohk.scalanet.peergroup.{Addressable, Channel, InetMultiAddress}
+import io.iohk.scalanet.peergroup.CloseableQueue
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
@@ -25,8 +25,7 @@ import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.logging.{LogLevel, LoggingHandler}
 import io.netty.handler.ssl.SslContext
 import monix.eval.Task
-import monix.execution.Scheduler
-import monix.reactive.observables.ConnectableObservable
+import monix.execution.{Scheduler, BufferCapacity}
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair
 import scodec.bits.BitVector
 
@@ -49,9 +48,11 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
 ) extends TerminalPeerGroup[PeerInfo, M]
     with StrictLogging {
 
+  protected override val s = scheduler
+
   private val sslServerCtx: SslContext = DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForServer, config)
 
-  private val serverSubject = ConnectableSubject[ServerEvent[PeerInfo, M]]()
+  private val serverQueue = CloseableQueue[ServerEvent[PeerInfo, M]](BufferCapacity.Unbounded()).runSyncUnsafe()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -68,7 +69,7 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
-        new ServerChannelBuilder[M](serverSubject, ch, sslServerCtx, codec.cleanSlate)
+        new ServerChannelBuilder[M](serverQueue, ch, sslServerCtx, codec.cleanSlate)
         logger.info(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })
@@ -102,12 +103,13 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
     )(_.close())
   }
 
-  override def server: ConnectableObservable[ServerEvent[PeerInfo, M]] = serverSubject
+  override def nextServerEvent() =
+    serverQueue.next()
 
   private def shutdown(): Task[Unit] = {
     for {
       _ <- Task(logger.debug("Start shutdown of tls peer group for peer {}", processAddress))
-      _ <- Task(serverSubject.onComplete())
+      _ <- serverQueue.close(discard = true)
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
       _ <- Task(logger.debug("Tls peer group shutdown for peer {}", processAddress))

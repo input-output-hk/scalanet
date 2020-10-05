@@ -23,11 +23,12 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
 
   override def initUdpPeerGroup[M](
       address: InetSocketAddress
-  )(implicit s: Scheduler, c: Codec[M]): Resource[Task, UDPPeerGroupSpec.TestGroup[M]] = {
+  )(implicit scheduler: Scheduler, codec: Codec[M]): Resource[Task, UDPPeerGroupSpec.TestGroup[M]] = {
     StaticUDPPeerGroup[M](StaticUDPPeerGroup.Config(address)).map { pg =>
       new PeerGroup[InetMultiAddress, M] {
+        override val s = scheduler
         override def processAddress = pg.processAddress
-        override def server = pg.server
+        override def nextServerEvent() = pg.nextServerEvent()
         override def client(to: InetMultiAddress) = pg.client(to)
         def channelCount: Int = pg.channelCount.runSyncUnsafe()
       }
@@ -78,15 +79,11 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
                   listener <- pg2.server.refCount.collectChannelCreated
                     .mapEval {
                       case (channel, release) =>
-                        channel.in.refCount
-                          .collect {
-                            case MessageReceived(_) =>
-                              messageCounter.countDown()
-                          }
-                          .take(2)
-                          .completedL
+                        // Have to do it in the background otherwise it would block the processing of incoming UDP packets.
+                        List
+                          .fill(2)(channel.nextMessage() >> Task(messageCounter.countDown()))
+                          .sequence
                           .guarantee(release)
-                          // Have to do it in the background otherwise it would block the processing of incoming UDP packets..
                           .startAndForget
                           .as(channel.to)
                     }

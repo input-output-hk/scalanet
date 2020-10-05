@@ -44,7 +44,7 @@ class CloseableQueue[A](
   def close(discard: Boolean): Task[Unit] =
     closed.complete(discard) >> queue.clear.whenA(discard)
 
-  /** Try to put a new item in the queue, unless the capactiy has been reached. */
+  /** Try to put a new item in the queue, unless the capactiy has been reached or the queue has been closed. */
   def tryOffer(item: A): Task[Boolean] =
     closed.tryGet
       .map(_.isDefined)

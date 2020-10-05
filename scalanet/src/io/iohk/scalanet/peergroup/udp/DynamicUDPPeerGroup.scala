@@ -6,7 +6,6 @@ import java.util.concurrent.ConcurrentHashMap
 import cats.effect.Resource
 import cats.syntax.functor._
 import com.typesafe.scalalogging.StrictLogging
-import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.{Channel, InetMultiAddress, CloseableQueue}
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived, UnexpectedError}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
@@ -23,7 +22,6 @@ import io.netty.channel.socket.nio.NioDatagramChannel
 import io.netty.util.concurrent.{Future, GenericFutureListener, Promise}
 import monix.eval.Task
 import monix.execution.Scheduler
-import monix.reactive.observables.ConnectableObservable
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec}
 import scala.util.control.NonFatal
@@ -43,9 +41,11 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
 ) extends TerminalPeerGroup[InetMultiAddress, M]
     with StrictLogging {
 
+  override protected val s = scheduler
+
   import DynamicUDPPeerGroup.Internals.{UDPChannelId, ChannelType, ClientChannel, ServerChannel}
 
-  val serverSubject = ConnectableSubject[ServerEvent[InetMultiAddress, M]]()
+  val serverQueue = CloseableQueue[ServerEvent[InetMultiAddress, M]](BufferCapacity.Unbounded()).runSyncUnsafe()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -172,7 +172,9 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
                       s"Channel with id ${potentialNewChannel.channelId} NOT found in active channels table. Creating a new one"
                     )
                     potentialNewChannel.closePromise.addListener(closeChannelListener)
-                    serverSubject.onNext(ChannelCreated(potentialNewChannel, potentialNewChannel.close()))
+                    serverQueue
+                      .tryOffer(ChannelCreated(potentialNewChannel, potentialNewChannel.close()))
+                      .runSyncUnsafe()
                     handleIncomingMessage(potentialNewChannel, datagram)
                 }
               } catch {
@@ -329,11 +331,12 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
       })(_.close())
   }
 
-  override def server: ConnectableObservable[ServerEvent[InetMultiAddress, M]] = serverSubject
+  override def nextServerEvent() =
+    serverQueue.next()
 
   private def shutdown(): Task[Unit] = {
     for {
-      _ <- Task(serverSubject.onComplete())
+      _ <- serverQueue.close(discard = true)
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
     } yield ()

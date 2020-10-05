@@ -4,7 +4,6 @@ import cats.effect.concurrent.{Ref, Semaphore}
 import cats.effect.Resource
 import cats.implicits._
 import com.typesafe.scalalogging.StrictLogging
-import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.{Channel, Release, InetMultiAddress, CloseableQueue}
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, MessageReceived, DecodingError, UnexpectedError}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
@@ -58,7 +57,7 @@ class StaticUDPPeerGroup[M] private (
     config: StaticUDPPeerGroup.Config,
     workerGroup: NioEventLoopGroup,
     isShutdownRef: Ref[Task, Boolean],
-    serverSubject: ConnectableSubject[ServerEvent[InetMultiAddress, M]],
+    serverQueue: CloseableQueue[ServerEvent[InetMultiAddress, M]],
     serverChannelSemaphore: Semaphore[Task],
     serverChannelsRef: Ref[Task, Map[InetSocketAddress, StaticUDPPeerGroup.ChannelAlloc[M]]],
     clientChannelsRef: Ref[Task, Map[InetSocketAddress, Set[StaticUDPPeerGroup.ChannelAlloc[M]]]]
@@ -68,10 +67,14 @@ class StaticUDPPeerGroup[M] private (
 
   import StaticUDPPeerGroup.{ChannelImpl, ChannelAlloc}
 
+  override protected val s = scheduler
+
   override val processAddress = config.processAddress
-  override val server = serverSubject
 
   private val localAddress = config.bindAddress
+
+  override def nextServerEvent() =
+    serverQueue.next()
 
   def channelCount: Task[Int] =
     for {
@@ -161,7 +164,7 @@ class StaticUDPPeerGroup[M] private (
 
                   val add = for {
                     _ <- serverChannelsRef.update(_.updated(remoteAddress, channel -> release))
-                    _ <- Task.deferFuture(serverSubject.onNext(ChannelCreated(channel, remove)))
+                    _ <- serverQueue.tryOffer(ChannelCreated(channel, remove))
                     _ <- Task(logger.debug(s"Added UDP server channel from $remoteAddress to $localAddress"))
                   } yield channel
 
@@ -290,7 +293,7 @@ class StaticUDPPeerGroup[M] private (
       _ <- Task(logger.info(s"Shutting down UDP peer group for peer ${config.processAddress}"))
       // Mark the group as shutting down to stop accepting incoming connections.
       _ <- isShutdownRef.set(true)
-      _ <- Task(serverSubject.onComplete())
+      _ <- serverQueue.close(discard = true)
       // Release client channels.
       _ <- clientChannelsRef.get.map(_.values.flatten.toList.map(_._2.attempt).sequence)
       // Release server channels.
@@ -320,7 +323,7 @@ object StaticUDPPeerGroup extends StrictLogging {
       Resource.make {
         for {
           isShutdownRef <- Ref[Task].of(false)
-          serverSubject = ConnectableSubject[ServerEvent[InetMultiAddress, M]]()
+          serverQueue <- CloseableQueue[ServerEvent[InetMultiAddress, M]](BufferCapacity.Unbounded())
           serverChannelSemaphore <- Semaphore[Task](1)
           serverChannelsRef <- Ref[Task].of(Map.empty[InetSocketAddress, ChannelAlloc[M]])
           clientChannelsRef <- Ref[Task].of(Map.empty[InetSocketAddress, Set[ChannelAlloc[M]]])
@@ -328,7 +331,7 @@ object StaticUDPPeerGroup extends StrictLogging {
             config,
             workerGroup,
             isShutdownRef,
-            serverSubject,
+            serverQueue,
             serverChannelSemaphore,
             serverChannelsRef,
             clientChannelsRef

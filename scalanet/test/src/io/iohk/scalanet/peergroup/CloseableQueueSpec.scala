@@ -30,8 +30,10 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
   it should "return None if it's closed" in withQueue() { queue =>
     for {
       _ <- queue.close(discard = true)
+      maybeOffered <- queue.tryOffer("Hung up?")
       maybeMessage <- queue.next()
     } yield {
+      maybeOffered shouldBe false
       maybeMessage shouldBe None
     }
   }

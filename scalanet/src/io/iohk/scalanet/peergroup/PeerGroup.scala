@@ -113,12 +113,25 @@ trait PeerGroup[A, M] {
     */
   def client(to: A): Resource[Task, Channel[A, M]]
 
+  /** Waits for the next server event, or returns None if the peer group is closed.
+    *
+    * @return the next ServerEvent.
+    */
+  def nextServerEvent(): Task[Option[ServerEvent[A, M]]]
+
   /**
     * This method provides a stream of the events received by the server.
+    * Provided for backards compatibility.
     *
     * @return the stream of server events received by this peer.
     */
-  def server: ConnectableObservable[ServerEvent[A, M]]
+  lazy val server: ConnectableObservable[ServerEvent[A, M]] = {
+    val obs = Observable.repeatEvalF(nextServerEvent()).takeWhile(_.isDefined).map(_.get)
+    ConnectableSubject(obs)(s)
+  }
+
+  // Here to support the ConnectableSubject.
+  protected def s: Scheduler
 }
 
 object PeerGroup {

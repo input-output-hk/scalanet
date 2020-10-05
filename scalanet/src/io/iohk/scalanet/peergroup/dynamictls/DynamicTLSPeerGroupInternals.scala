@@ -6,7 +6,6 @@ import java.nio.channels.ClosedChannelException
 
 import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.codec.StreamCodec
-import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived, UnexpectedError}
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
@@ -214,7 +213,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
   }
 
   class ServerChannelBuilder[M](
-      serverSubject: ConnectableSubject[ServerEvent[PeerInfo, M]],
+      serverQueue: CloseableQueue[ServerEvent[PeerInfo, M]],
       val nettyChannel: SocketChannel,
       sslServerCtx: SslContext,
       codec: StreamCodec[M]
@@ -244,17 +243,14 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
                     s"to $remoteAddress with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
                 )
                 val channel = new ServerChannelImpl[M](nettyChannel, peerId, codec, messageQueue)
-                serverSubject.onNext(ChannelCreated(channel, channel.close()))
-                ()
+                handleEvent(ChannelCreated(channel, channel.close()))
               } else {
                 logger.debug("Ssl handshake failed from peer with address {}", remoteAddress)
                 // Handshake failed we do not have id of remote peer
-                serverSubject
-                  .onNext(
-                    PeerGroup.ServerEvent
-                      .HandshakeFailed(new HandshakeException(PeerInfo(BitVector.empty, remoteAddress), e.cause()))
-                  )
-                ()
+                handleEvent(
+                  PeerGroup.ServerEvent
+                    .HandshakeFailed(new HandshakeException(PeerInfo(BitVector.empty, remoteAddress), e.cause()))
+                )
               }
             case ev =>
               logger.debug(
@@ -265,6 +261,9 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
         }
       })
       .addLast(new MessageNotifier(messageQueue, codec))
+
+    private def handleEvent(event: ServerEvent[PeerInfo, M]): Unit =
+      serverQueue.tryOffer(event).void.runSyncUnsafe()
   }
 
   class ServerChannelImpl[M](
