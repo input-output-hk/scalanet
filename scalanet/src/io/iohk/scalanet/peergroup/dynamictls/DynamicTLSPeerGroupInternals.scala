@@ -43,7 +43,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
 
     override def channelInactive(channelHandlerContext: ChannelHandlerContext): Unit = {
       logger.debug("Channel to peer {} inactive", channelHandlerContext.channel().remoteAddress())
-      executeSync(messageQueue.close(discard = false).attempt.void)
+      executeSync(messageQueue.close(discard = false))
     }
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {

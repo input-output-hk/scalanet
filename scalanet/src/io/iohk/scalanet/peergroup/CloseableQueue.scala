@@ -42,9 +42,12 @@ class CloseableQueue[A](
         }
     }
 
-  /** Stop accepting items in the queue. Clear items if `discard` is true, otherwise let them be drained. */
+  /** Stop accepting items in the queue. Clear items if `discard` is true, otherwise let them be drained.
+    * If the queue is already closed it does nothing; this is because either the producer or the consumer
+    * could have closed the queue before.
+    */
   def close(discard: Boolean): Task[Unit] =
-    closed.complete(discard) >> queue.clear.whenA(discard)
+    closed.complete(discard).attempt >> queue.clear.whenA(discard)
 
   /** Try to put a new item in the queue, unless the capactiy has been reached or the queue has been closed. */
   def tryOffer(item: A): Task[Either[Closed, Boolean]] =

@@ -68,6 +68,17 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
     }
   }
 
+  it should "not throw if close is called multiple times" in testQueue() { queue =>
+    for {
+      _ <- queue.offer("Spam")
+      _ <- queue.close(discard = false)
+      _ <- queue.close(discard = true)
+      m <- queue.next()
+    } yield {
+      m shouldBe None
+    }
+  }
+
   behavior of "tryOffer"
 
   it should "discard the latest value if the capacity is reached" in testQueue(capacity = 2) { queue =>
