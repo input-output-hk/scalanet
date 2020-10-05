@@ -18,8 +18,8 @@ object StandardTestPack {
   def messagingTest[A](alice: PeerGroup[A, String], bob: PeerGroup[A, String])(
       implicit scheduler: Scheduler
   ): Task[Unit] = {
-    val alicesMessage = Random.alphanumeric.take(1024).mkString
-    val bobsMessage = Random.alphanumeric.take(1024).mkString
+    val alicesMessage = "Hi Bob!"
+    val bobsMessage = "Hi Alice!"
 
     (for {
       bobReceiver <- bob.server.collectChannelCreated
@@ -39,6 +39,8 @@ object StandardTestPack {
         .start
 
       aliceClient <- alice.client(bob.processAddress).allocated
+      _ = aliceClient._1.in.foreach { x =>
+      }
       aliceReceiver <- aliceClient._1.in
         .collect {
           case MessageReceived(m) => m
