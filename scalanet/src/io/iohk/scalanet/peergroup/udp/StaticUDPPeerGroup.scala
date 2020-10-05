@@ -380,7 +380,9 @@ object StaticUDPPeerGroup extends StrictLogging {
     override def sendMessage(message: M) =
       for {
         _ <- raiseIfClosed
-        _ <- Task(logger.debug(s"Sending $role message from $localAddress to $remoteAddress"))
+        _ <- Task(
+          logger.debug(s"Sending $role message ${message.toString.take(100)}... from $localAddress to $remoteAddress")
+        )
         encodedMessage <- Task.fromTry(codec.encode(message).toTry)
         asBuffer = encodedMessage.toByteBuffer
         packet = new DatagramPacket(Unpooled.wrappedBuffer(asBuffer), remoteAddress, localAddress)

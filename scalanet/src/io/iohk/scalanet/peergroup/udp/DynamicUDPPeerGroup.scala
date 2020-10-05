@@ -275,7 +275,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
         nettyChannel: NioDatagramChannel
     ): Task[Unit] = {
       for {
-        _ <- Task(logger.debug(s"Sending message ${message} to peer ${recipient}"))
+        _ <- Task(logger.debug(s"Sending message ${message.toString.take(100)}... to peer ${recipient}"))
         encodedMessage <- Task.fromTry(codec.encode(message).toTry)
         asBuffer = encodedMessage.toByteBuffer
         _ <- toTask(nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(asBuffer), recipient, sender)))
