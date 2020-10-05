@@ -87,5 +87,6 @@ object CloseableQueue {
     } yield new CloseableQueue[A](closed, queue)
   }
 
-  def unbounded[A](channelType: ChannelType = ChannelType.MPMC) = apply[A](capacity = 0)
+  def unbounded[A](channelType: ChannelType = ChannelType.MPMC) =
+    apply[A](capacity = 0)
 }

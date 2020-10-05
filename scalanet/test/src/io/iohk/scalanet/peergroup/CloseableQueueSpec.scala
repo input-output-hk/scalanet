@@ -3,6 +3,8 @@ package io.iohk.scalanet.peergroup
 import cats.implicits._
 import monix.execution.Scheduler
 import monix.eval.Task
+import monix.tail.Iterant
+import monix.reactive.Observable
 import org.scalatest.{FlatSpec, Matchers}
 import scala.concurrent.duration._
 import org.scalatest.compatible.Assertion
@@ -11,7 +13,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
   import Scheduler.Implicits.global
   import CloseableQueue.Closed
 
-  def withQueue(
+  def testQueue(
       capacity: Int = 0
   )(f: CloseableQueue[String] => Task[Assertion]): Unit = {
     CloseableQueue[String](capacity).flatMap(f).void.runSyncUnsafe(5.seconds)
@@ -19,7 +21,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
 
   behavior of "ClosableQueue"
 
-  it should "publish a message" in withQueue() { queue =>
+  it should "publish a message" in testQueue() { queue =>
     val msg = "Hello!"
     for {
       _ <- queue.tryOffer(msg)
@@ -29,7 +31,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
     }
   }
 
-  it should "return None if it's closed" in withQueue() { queue =>
+  it should "return None if it's closed" in testQueue() { queue =>
     for {
       _ <- queue.close(discard = true)
       maybeOffered <- queue.tryOffer("Hung up?")
@@ -40,7 +42,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
     }
   }
 
-  it should "return all remaining messages if they aren't discarded during close" in withQueue() { queue =>
+  it should "return all remaining messages if they aren't discarded during close" in testQueue() { queue =>
     for {
       _ <- queue.tryOffer("Foo")
       _ <- queue.tryOffer("Bar")
@@ -55,7 +57,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
     }
   }
 
-  it should "return none of remaining messages if they are discarded during close" in withQueue() { queue =>
+  it should "return none of remaining messages if they are discarded during close" in testQueue() { queue =>
     for {
       _ <- queue.tryOffer("Foo")
       _ <- queue.tryOffer("Bar")
@@ -68,7 +70,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
 
   behavior of "tryOffer"
 
-  it should "discard the latest value if the capacity is reached" in withQueue(capacity = 2) { queue =>
+  it should "discard the latest value if the capacity is reached" in testQueue(capacity = 2) { queue =>
     for {
       offered <- List.range(0, 5).traverse(i => queue.tryOffer(i.toString))
       maybe0 <- queue.next()
@@ -87,7 +89,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
 
   behavior of "offer"
 
-  it should "wait until messages are drained if the capacity is reached" in withQueue(capacity = 2) { queue =>
+  it should "wait until messages are drained if the capacity is reached" in testQueue(capacity = 2) { queue =>
     for {
       _ <- queue.offer("a")
       _ <- queue.offer("b")
@@ -101,7 +103,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
     }
   }
 
-  it should "not wait if the queue is closed" in withQueue() { queue =>
+  it should "not wait if the queue is closed" in testQueue() { queue =>
     for {
       _ <- queue.close(discard = true)
       attempt <- queue.offer("Too late.")
@@ -110,7 +112,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
     }
   }
 
-  it should "be interrupted if the queue is closed while offering" in withQueue(capacity = 2) { queue =>
+  it should "be interrupted if the queue is closed while offering" in testQueue(capacity = 2) { queue =>
     for {
       _ <- queue.offer("a")
       _ <- queue.offer("b")
@@ -120,5 +122,37 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
     } yield {
       offered shouldBe Left(Closed)
     }
+  }
+
+  behavior of "toIterant"
+
+  it should "not do internal buffering" in testQueue() { queue =>
+    implicit val scheduler = Scheduler.fixedPool("test", 16)
+    for {
+      _ <- queue.offer("a")
+      _ <- queue.offer("b")
+      _ <- queue.offer("c")
+      // This test is only here to demonstrate that this verstion with `.share` doesn't work:
+      //o = queue.toObservable.share
+      // But these one do:
+      //o = queue.toObservable
+      o = queue.toIterant
+      _ <- o.headOptionL
+      b <- o.take(1).toListL.timeoutTo(10.millis, Task.now(Nil))
+      _ <- queue.close(discard = false)
+      c <- queue.next()
+    } yield {
+      b shouldBe List("b")
+      c shouldBe Some("c")
+    }
+  }
+
+  implicit class ClosableQueueOps[A](queue: CloseableQueue[A]) {
+
+    def toIterant: Iterant[Task, A] =
+      Iterant.repeatEvalF(queue.next()).takeWhile(_.isDefined).map(_.get)
+
+    def toObservable: Observable[A] =
+      Observable.repeatEvalF(queue.next()).takeWhile(_.isDefined).map(_.get)
   }
 }
