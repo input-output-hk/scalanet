@@ -57,6 +57,7 @@ class ReqResponseProtocol[A, M](
           channelMapRef.get.map(_.get(channelId)).flatMap {
             case Some((channel, _)) =>
               Task.pure(channel)
+
             case None =>
               group.client(to).allocated.flatMap {
                 case (channel, release) =>
@@ -112,6 +113,7 @@ class ReqResponseProtocol[A, M](
     }.headL
   }
 
+  /** Start handling requests in the background. */
   def startHandling(requestHandler: M => M): Task[Unit] = {
     group.server.refCount.collectChannelCreated
       .foreachL {
@@ -124,17 +126,33 @@ class ReqResponseProtocol[A, M](
             .mapEval { msg =>
               channel.sendMessage(MessageEnvelope(msg.id, requestHandler(msg.m)))
             }
+            .completedL
             .guarantee {
+              // Release the channel and remove the background process from the map.
               release >> fiberMapRef.update(_ - channelId)
             }
-            .foreachL(_ => ())
-            .start
+            .start // Start running it in a background fiber.
             .flatMap { fiber =>
+              // Remember we're running this so we can cancel when released.
               fiberMapRef.update(_.updated(channelId, fiber))
             }
             .runAsyncAndForget
       }
   }
+
+  /** Stop background fibers. */
+  private def cancelHandling(): Task[Unit] =
+    fiberMapRef.get.flatMap { fiberMap =>
+      fiberMap.values.toList.traverse(_.cancel.attempt)
+    }.void >> fiberMapRef.set(Map.empty)
+
+  /** Release all open channels */
+  private def closeChannels(): Task[Unit] =
+    channelMapRef.get.flatMap { channelMap =>
+      channelMap.values.toList.traverse {
+        case (_, release) => release.attempt
+      }.void
+    }
 
   def processAddress: A = group.processAddress
 }
@@ -158,20 +176,10 @@ object ReqResponseProtocol {
           channelMapRef <- Ref.of[Task, ChannelMap[A, M]](Map.empty)
           fiberMapRef <- Ref.of[Task, Map[ChannelId, Fiber[Task, Unit]]](Map.empty)
           protocol = new ReqResponseProtocol[A, M](group, channelSemaphore, channelMapRef, fiberMapRef)
-        } yield (protocol, channelMapRef, fiberMapRef)
-      ) {
-        case (_, channelMapRef, fiberMapRef) =>
-          fiberMapRef.get.flatMap { fiberMap =>
-            fiberMap.values.toList.traverse(_.cancel)
-          } >>
-            channelMapRef.get.flatMap { channelMap =>
-              channelMap.values.toList.traverse {
-                case (_, release) => release
-              }.void
-            }
-      }
-      .map {
-        case (protocol, _, _) => protocol
+        } yield protocol
+      ) { protocol =>
+        protocol.cancelHandling() >>
+          protocol.closeChannels()
       }
   }
 
