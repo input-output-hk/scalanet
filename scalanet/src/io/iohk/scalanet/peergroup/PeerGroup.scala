@@ -54,12 +54,8 @@ trait Channel[A, M] {
     * The inbound stream of messages coming from the remote peer.
     * Provided for backwards compatibility.
     */
-  lazy val in: ConnectableObservable[ChannelEvent[M]] = {
-    val obs = Observable.repeatEvalF(nextMessage()).takeWhile(_.isDefined).map(_.get)
-    // Once created, the ConnectableSubject subscribes to the source and buffers messages
-    // until it's connected to by subscribers.
-    ConnectableSubject(obs)(s)
-  }
+  lazy val in: ConnectableObservable[ChannelEvent[M]] =
+    ConnectableSubject.repeatEvalNext(nextMessage())(s)
 
   // Here to support the ConnectableSubject.
   protected def s: Scheduler
@@ -125,10 +121,8 @@ trait PeerGroup[A, M] {
     *
     * @return the stream of server events received by this peer.
     */
-  lazy val server: ConnectableObservable[ServerEvent[A, M]] = {
-    val obs = Observable.repeatEvalF(nextServerEvent()).takeWhile(_.isDefined).map(_.get)
-    ConnectableSubject(obs)(s)
-  }
+  lazy val server: ConnectableObservable[ServerEvent[A, M]] =
+    ConnectableSubject.repeatEvalNext(nextServerEvent())(s)
 
   // Here to support the ConnectableSubject.
   protected def s: Scheduler

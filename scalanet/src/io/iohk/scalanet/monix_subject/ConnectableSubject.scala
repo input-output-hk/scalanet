@@ -1,5 +1,6 @@
 package io.iohk.scalanet.monix_subject
 
+import monix.eval.Task
 import monix.execution.{Ack, Cancelable, Scheduler}
 import monix.reactive.{Observable, Observer}
 import monix.reactive.observables.ConnectableObservable
@@ -59,4 +60,10 @@ object ConnectableSubject {
         subject.unsafeSubscribeFn(subscriber)
     }
   }
+
+  /** Repeatedly evaludate a task until it returns None,
+    * buffering the events until downstream subscribers connect.
+    */
+  def repeatEvalNext[T](task: => Task[Option[T]])(implicit s: Scheduler): ConnectableObservable[T] =
+    ConnectableSubject(Observable.repeatEvalF(task).takeWhile(_.isDefined).map(_.get))
 }
