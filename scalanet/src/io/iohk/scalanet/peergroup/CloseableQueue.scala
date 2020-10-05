@@ -50,7 +50,9 @@ class CloseableQueue[A](
       .map(_.isDefined)
       .ifM(
         Task.pure(false),
-        // TODO: We could drop the oldest item if the queue is full, rather than drop the latest.
+        // We could drop the oldest item if the queue is full, rather than drop the latest,
+        // but the capacity should be set so it only prevents DoS attacks, so it shouldn't
+        // be that crucial to serve clients who overproduce.
         queue.tryOffer(item)
       )
 }
