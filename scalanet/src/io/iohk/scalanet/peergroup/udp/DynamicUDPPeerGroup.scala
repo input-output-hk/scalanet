@@ -3,7 +3,7 @@ package io.iohk.scalanet.peergroup.udp
 import java.io.IOException
 import java.net.{InetSocketAddress, PortUnreachableException}
 import java.util.concurrent.ConcurrentHashMap
-
+import cats.effect.Resource
 import cats.syntax.functor._
 import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.monix_subject.ConnectableSubject
@@ -36,7 +36,7 @@ import scala.util.control.NonFatal
   * @param codec a scodec codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class DynamicUDPPeerGroup[M](val config: DynamicUDPPeerGroup.Config)(
+class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
     implicit codec: Codec[M],
     scheduler: Scheduler
 ) extends TerminalPeerGroup[InetMultiAddress, M]()
@@ -74,8 +74,8 @@ class DynamicUDPPeerGroup[M](val config: DynamicUDPPeerGroup.Config)(
     codec.decodeValue(BitVector(datagramPacket.content().nioBuffer())) match {
       case Attempt.Successful(msg) =>
         channel.messageSubject.onNext(MessageReceived(msg))
-      case Attempt.Failure(er) =>
-        logger.debug("Message decoding failed due to {}", er)
+      case Attempt.Failure(err) =>
+        logger.debug(s"Message decoding failed due to ${err}", err)
         channel.messageSubject.onNext(DecodingError)
     }
   }
@@ -83,7 +83,7 @@ class DynamicUDPPeerGroup[M](val config: DynamicUDPPeerGroup.Config)(
   private def handleError(channelId: UDPChannelId, error: Throwable): Unit = {
     // Inform about error only if channel is available and open
     Option(activeChannels.get(channelId)).foreach { ch =>
-      logger.debug("Unexpected error {} on channel {}", error: Any, channelId: Any)
+      logger.debug(s"Unexpected error ${error} on channel ${channelId}")
       ch.messageSubject.onNext(UnexpectedError(error))
     }
   }
@@ -125,7 +125,7 @@ class DynamicUDPPeerGroup[M](val config: DynamicUDPPeerGroup.Config)(
                 case _: PortUnreachableException =>
                   // we do not want ugly exception, but we do not close the channel, it is entirely up to user to close not
                   // responding channels
-                  logger.info("Peer with ip {} not available", remoteAddress)
+                  logger.info(s"Peer with ip ${remoteAddress} not available")
 
                 case _ =>
                   super.exceptionCaught(ctx, cause)
@@ -149,7 +149,7 @@ class DynamicUDPPeerGroup[M](val config: DynamicUDPPeerGroup.Config)(
               val datagram = msg.asInstanceOf[DatagramPacket]
               val remoteAddress = datagram.sender()
               val localAddress = datagram.recipient()
-              logger.info(s"Server from $remoteAddress")
+              logger.info(s"Server accepted incoming channel from $remoteAddress")
               val serverChannel: NioDatagramChannel = ctx.channel().asInstanceOf[NioDatagramChannel]
               val potentialNewChannel = new ChannelImpl(
                 serverChannel,
@@ -164,10 +164,10 @@ class DynamicUDPPeerGroup[M](val config: DynamicUDPPeerGroup.Config)(
                     handleIncomingMessage(existingChannel, datagram)
                   case None =>
                     logger.debug(
-                      s"Channel with id ${potentialNewChannel.channelId}. NOT found in active channels table. Creating a new one"
+                      s"Channel with id ${potentialNewChannel.channelId} NOT found in active channels table. Creating a new one"
                     )
                     potentialNewChannel.closePromise.addListener(closeChannelListener)
-                    serverSubject.onNext(ChannelCreated(potentialNewChannel))
+                    serverSubject.onNext(ChannelCreated(potentialNewChannel, potentialNewChannel.close()))
                     handleIncomingMessage(potentialNewChannel, datagram)
                 }
               } catch {
@@ -237,17 +237,17 @@ class DynamicUDPPeerGroup[M](val config: DynamicUDPPeerGroup.Config)(
 
     private def closeChannel(): Task[Unit] = {
       for {
-        _ <- Task(logger.debug("Closing channel from {} to {}", localAddress: Any, remoteAddress: Any))
+        _ <- Task(logger.debug(s"Closing channel from ${localAddress} to ${remoteAddress}"))
         _ <- closeNettyChannel(channelType)
-        _ <- Task(logger.debug("Channel from {} to {} closed", localAddress: Any, remoteAddress: Any))
+        _ <- Task(logger.debug(s"Channel from ${localAddress} to ${remoteAddress} closed"))
       } yield ()
     }
 
-    override def close(): Task[Unit] = {
+    private[udp] def close(): Task[Unit] = {
       if (closePromise.isDone) {
         Task.now(())
       } else {
-        closeChannel().doOnFinish(_ => Task(closePromise.trySuccess(this)))
+        closeChannel().guarantee(Task(closePromise.trySuccess(this)))
       }
     }
 
@@ -258,7 +258,7 @@ class DynamicUDPPeerGroup[M](val config: DynamicUDPPeerGroup.Config)(
         nettyChannel: NioDatagramChannel
     ): Task[Unit] = {
       for {
-        _ <- Task(logger.debug("Sending message {} to peer {}", message, recipient))
+        _ <- Task(logger.debug(s"Sending message ${message} to peer ${recipient}"))
         encodedMessage <- Task.fromTry(codec.encode(message).toTry)
         asBuffer = encodedMessage.toByteBuffer
         _ <- toTask(nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(asBuffer), recipient, sender)))
@@ -272,42 +272,46 @@ class DynamicUDPPeerGroup[M](val config: DynamicUDPPeerGroup.Config)(
 
   private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
 
-  override def initialize(): Task[Unit] =
+  private def initialize(): Task[Unit] =
     toTask(serverBind).onErrorRecoverWith {
       case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
     } *> Task(logger.info(s"Server bound to address ${config.bindAddress}"))
 
   override def processAddress: InetMultiAddress = config.processAddress
 
-  override def client(to: InetMultiAddress): Task[Channel[InetMultiAddress, M]] = {
-    val cf = clientBootstrap.connect(to.inetSocketAddress)
-    val ct: Task[NioDatagramChannel] = toTask(cf).as(cf.channel().asInstanceOf[NioDatagramChannel])
-    ct.map { nettyChannel =>
-        val localAddress = nettyChannel.localAddress()
-        logger.debug(s"Generated local address for new client is $localAddress")
-        val channel = new ChannelImpl(
-          nettyChannel,
-          localAddress,
-          to.inetSocketAddress,
-          ConnectableSubject[ChannelEvent[M]](),
-          ClientChannel
-        )
-        // By using netty channel id as part of our channel id, we make sure that each client channel is unique
-        // therefore there won't be such channels in active channels map already.
-        activeChannels.put(channel.channelId, channel)
-        channel.closePromise.addListener(closeChannelListener)
-        channel
-      }
-      .onErrorRecoverWith {
-        case e: Throwable =>
-          Task(logger.debug("Udp channel setup failed due to {}", e)) *>
-            Task.raiseError(new ChannelSetupException[InetMultiAddress](to, e))
-      }
+  override def client(to: InetMultiAddress): Resource[Task, Channel[InetMultiAddress, M]] = {
+    Resource
+      .make(Task.suspend {
+        val cf = clientBootstrap.connect(to.inetSocketAddress)
+        val ct: Task[NioDatagramChannel] = toTask(cf).as(cf.channel().asInstanceOf[NioDatagramChannel])
+        ct.map {
+            nettyChannel =>
+              val localAddress = nettyChannel.localAddress()
+              logger.debug(s"Generated local address for new client is $localAddress")
+              val channel = new ChannelImpl(
+                nettyChannel,
+                localAddress,
+                to.inetSocketAddress,
+                ConnectableSubject[ChannelEvent[M]](),
+                ClientChannel
+              )
+              // By using netty channel id as part of our channel id, we make sure that each client channel is unique
+              // therefore there won't be such channels in active channels map already.
+              activeChannels.put(channel.channelId, channel)
+              channel.closePromise.addListener(closeChannelListener)
+              channel
+          }
+          .onErrorRecoverWith {
+            case NonFatal(ex) =>
+              Task(logger.debug(s"UDP channel setup failed due to ${ex}", ex)) *>
+                Task.raiseError(new ChannelSetupException[InetMultiAddress](to, ex))
+          }
+      })(_.close())
   }
 
-  override def server(): ConnectableObservable[ServerEvent[InetMultiAddress, M]] = serverSubject
+  override def server: ConnectableObservable[ServerEvent[InetMultiAddress, M]] = serverSubject
 
-  override def shutdown(): Task[Unit] = {
+  private def shutdown(): Task[Unit] = {
     for {
       _ <- Task(serverSubject.onComplete())
       _ <- toTask(serverBind.channel().close())
@@ -340,4 +344,20 @@ object DynamicUDPPeerGroup {
         localAddress: InetSocketAddress
     )
   }
+
+  /** Create the peer group as a resource that is guaranteed to initialize itself and shut itself down at the end. */
+  def apply[M: Codec](config: Config)(implicit scheduler: Scheduler): Resource[Task, DynamicUDPPeerGroup[M]] =
+    Resource.make {
+      for {
+        // NOTE: The DynamicUDPPeerGroup creates Netty workgroups in its constructor, so calling `shutdown()` is a must.
+        pg <- Task(new DynamicUDPPeerGroup[M](config))
+        // NOTE: In theory we wouldn't have to initialize a peer group (i.e. start listening to incoming events)
+        // if all we wanted was to connect to remote clients, however to clean up we must call `shutdown()` at which point
+        // it will start and stop the server anyway, and the interface itself suggests that one can always start concuming
+        // server events, so this is cleaner semantics.
+        _ <- pg.initialize()
+      } yield pg
+    } { pg =>
+      pg.shutdown()
+    }
 }

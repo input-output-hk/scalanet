@@ -1,15 +1,12 @@
 package io.iohk.scalanet.peergroup
 
+import cats.effect.Resource
 import io.iohk.scalanet.peergroup.Channel.ChannelEvent
-import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
 import monix.eval.Task
-import monix.execution.Scheduler
 import monix.reactive.Observable
 import monix.reactive.observables.ConnectableObservable
 import scodec.Codec
-import scala.concurrent.Await
-import scala.concurrent.duration.Duration
 
 /**
   * A Channel represents a route between two peers on the network for the purposes
@@ -48,14 +45,6 @@ trait Channel[A, M] {
     * The inbound stream of messages coming from the remote peer.
     */
   def in: ConnectableObservable[ChannelEvent[M]]
-
-  /**
-    * Terminate the Channel and clean up any resources.
-    *
-    * @return Implementations should wait for termination of the underlying network resources
-    *         and return a successful Task.
-    */
-  def close(): Task[Unit]
 }
 
 object Channel {
@@ -96,13 +85,6 @@ trait PeerGroup[A, M] {
   def processAddress: A
 
   /**
-    * This method initializes the PeerGroup.
-    *
-    * @return a task that will be completed at the end of the initialization.
-    */
-  def initialize(): Task[Unit]
-
-  /**
     * This method builds a communication channel for the current peer to communicate messages with the
     * desired address,
     *
@@ -111,21 +93,14 @@ trait PeerGroup[A, M] {
     *           set of peers).
     * @return the channel to interact with the desired peer(s).
     */
-  def client(to: A): Task[Channel[A, M]]
+  def client(to: A): Resource[Task, Channel[A, M]]
 
   /**
     * This method provides a stream of the events received by the server.
     *
     * @return the stream of server events received by this peer.
     */
-  def server(): ConnectableObservable[ServerEvent[A, M]]
-
-  /**
-    * This methods clean resources of the current instance of a PeerGroup.
-    *
-    * @return a task that will be completed at the end of the shutdown procedure.
-    */
-  def shutdown(): Task[Unit]
+  def server: ConnectableObservable[ServerEvent[A, M]]
 }
 
 object PeerGroup {
@@ -144,10 +119,12 @@ object PeerGroup {
       * only to A or to the whole group that is referenced by the multicast address. Different
       * implementations could handle this logic differently.
       */
-    case class ChannelCreated[A, M](channel: Channel[A, M]) extends ServerEvent[A, M]
+    case class ChannelCreated[A, M](channel: Channel[A, M], release: Release) extends ServerEvent[A, M]
 
     object ChannelCreated {
-      def collector[A, M]: PartialFunction[ServerEvent[A, M], Channel[A, M]] = { case ChannelCreated(c) => c }
+      def collector[A, M]: PartialFunction[ServerEvent[A, M], (Channel[A, M], Release)] = {
+        case ChannelCreated(c, r) => c -> r
+      }
     }
 
     case class HandshakeFailed[A, M](failure: HandshakeException[A]) extends ServerEvent[A, M]
@@ -159,52 +136,10 @@ object PeerGroup {
     }
 
     implicit class ServerOps[A, M](observable: Observable[ServerEvent[A, M]]) {
-      def collectChannelCreated: Observable[Channel[A, M]] = observable.collect(ChannelCreated.collector)
+      def collectChannelCreated: Observable[(Channel[A, M], Release)] = observable.collect(ChannelCreated.collector)
       def collectHandshakeFailure: Observable[HandshakeException[A]] = observable.collect(HandshakeFailed.collector)
     }
   }
-
-  /**
-    * This function provides a consistent approach to creating and initializing peer group instances.
-    *
-    * @param pg lazy peer group instance.
-    * @param config the peer group config. Only used for error reporting.
-    * @param scheduler a monix scheduler to the run the peer group's initialization.
-    * @tparam PG the PeerGroup type.
-    * @return this method returns the peer group in an Either. This makes is more suitable
-    *         for use in normal code flow, rather than application context setup.
-    */
-  def create[PG <: PeerGroup[_, _]](pg: => PG, config: Any)(
-      implicit scheduler: Scheduler
-  ): Either[InitializationError, PG] =
-    try {
-      Await.result(pg.initialize().runToFuture, Duration.Inf)
-      Right(pg)
-    } catch {
-      case t: Throwable =>
-        Left(InitializationError(initializationErrorMsg(config), t))
-    }
-
-  /**
-    * This function provides a consistent approach to creating and initializing peer group instances.
-    *
-    * @param pg lazy peer group instance.
-    * @param config the peer group config. Only used for error reporting.
-    * @param scheduler a monix scheduler to the run the peer group's initialization.
-    * @tparam PG the PeerGroup type.
-    * @return this method returns the peer group or throws an exception. This makes is more suitable
-    *         for creating peer groups at application startup, where you would like to abort the startup
-    *         process when errors arise.
-    */
-  def createOrThrow[PG <: PeerGroup[_, _]](pg: => PG, config: Any)(implicit scheduler: Scheduler): PG =
-    try {
-      val peerGroup = pg
-      Await.result(peerGroup.initialize().runToFuture, Duration.Inf)
-      peerGroup
-    } catch {
-      case t: Throwable =>
-        throw new IllegalStateException(initializationErrorMsg(config), t)
-    }
 
   private def initializationErrorMsg(config: Any) =
     s"Failed initialization of peer group member with config $config. Cause follows."

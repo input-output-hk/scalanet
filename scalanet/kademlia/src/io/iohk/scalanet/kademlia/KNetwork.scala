@@ -1,5 +1,6 @@
 package io.iohk.scalanet.kademlia
 
+import cats.implicits._
 import io.iohk.scalanet.kademlia.KMessage.{KRequest, KResponse}
 import io.iohk.scalanet.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.kademlia.KMessage.KResponse.{Nodes, Pong}
@@ -8,6 +9,7 @@ import io.iohk.scalanet.peergroup.{Channel, PeerGroup}
 import io.iohk.scalanet.peergroup.Channel.MessageReceived
 import monix.eval.Task
 import monix.reactive.Observable
+import scala.util.control.NonFatal
 
 trait KNetwork[A] {
 
@@ -44,24 +46,35 @@ object KNetwork {
   import scala.concurrent.duration._
 
   class KNetworkScalanetImpl[A](
-      val peerGroup: PeerGroup[A, KMessage[A]],
-      val requestTimeout: FiniteDuration = 3 seconds
+      peerGroup: PeerGroup[A, KMessage[A]],
+      requestTimeout: FiniteDuration = 3 seconds
   ) extends KNetwork[A] {
 
     override lazy val kRequests: Observable[(KRequest[A], Option[KResponse[A]] => Task[Unit])] = {
-      peerGroup
-        .server()
-        .refCount
-        .collectChannelCreated
-        .mapEval { channel: Channel[A, KMessage[A]] =>
-          channel.in.refCount
-            .collect { case MessageReceived(req: KRequest[A]) => req }
-            .map(request => Some((request, sendOptionalResponse(channel))))
-            .headL
-            .timeout(requestTimeout)
-            .onErrorHandle(closeTheChannel(channel))
+      peerGroup.server.refCount.collectChannelCreated
+        .mapEval {
+          case (channel: Channel[A, KMessage[A]], release: Task[Unit]) =>
+            channel.in.refCount
+              .collect { case MessageReceived(req: KRequest[A]) => req }
+              .headL
+              .timeout(requestTimeout)
+              .map { request =>
+                Some {
+                  request -> { (maybeResponse: Option[KResponse[A]]) =>
+                    maybeResponse
+                      .fold(Task.unit) { response =>
+                        channel.sendMessage(response).timeout(requestTimeout)
+                      }
+                      .guarantee(release)
+                  }
+                }
+              }
+              .onErrorHandleWith {
+                case NonFatal(ex) =>
+                  release.as(None)
+              }
         }
-        .collect { case Some(thing) => thing }
+        .collect { case Some(pair) => pair }
     }
 
     override def findNodes(to: NodeRecord[A], request: FindNodes[A]): Task[Nodes[A]] = {
@@ -79,10 +92,8 @@ object KNetwork {
     ): Task[Response] = {
       peerGroup
         .client(to.routingAddress)
-        .bracket { clientChannel =>
+        .use { clientChannel =>
           sendRequest(message, clientChannel, pf)
-        } { clientChannel =>
-          clientChannel.close()
         }
     }
 
@@ -100,28 +111,6 @@ object KNetwork {
           .headL
           .timeout(requestTimeout)
       } yield response
-    }
-
-    private def closeTheChannel[Request <: KRequest[A]](
-        channel: Channel[A, KMessage[A]]
-    )(error: Throwable): Option[(Request, Option[KMessage[A]] => Task[Unit])] = {
-      channel.close()
-      None
-    }
-
-    private def sendResponse(
-        channel: Channel[A, KMessage[A]]
-    ): KMessage[A] => Task[Unit] = { message =>
-      channel
-        .sendMessage(message)
-        .timeout(requestTimeout)
-        .doOnFinish(_ => channel.close())
-    }
-
-    private def sendOptionalResponse(
-        channel: Channel[A, KMessage[A]]
-    ): Option[KMessage[A]] => Task[Unit] = { maybeMessage =>
-      maybeMessage.fold(channel.close())(sendResponse(channel))
     }
   }
 }

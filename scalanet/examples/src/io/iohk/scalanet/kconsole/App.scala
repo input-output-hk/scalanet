@@ -1,14 +1,17 @@
 package io.iohk.scalanet.kconsole
 import java.io.File
 import java.nio.file.Path
-
+import cats.effect.ExitCode
+import cats.implicits._
 import io.iohk.scalanet.kconsole.Utils.{configToStr, generateRandomConfig}
 import io.iohk.scalanet.peergroup.InetMultiAddress
 import io.iohk.scalanet.kademlia.KRouter
 import monix.execution.Scheduler.Implicits.global
+import monix.eval.{Task, TaskApp}
 import scopt.OptionParser
+import scala.util.control.NonFatal
 
-object App extends App with CommandParser {
+object App extends TaskApp with CommandParser {
 
   case class CommandLineOptions(
       configFile: Option[Path] = None,
@@ -73,27 +76,29 @@ object App extends App with CommandParser {
     checkConfig((c: CommandLineOptions) => success)
   }
 
-  val commandLineOptions = getCommandLineOptions
+  override def run(args: List[String]): Task[ExitCode] = {
+    Task(optionsParser.parse(args, CommandLineOptions())) flatMap {
+      case None =>
+        Task.pure(ExitCode.Error)
 
-  if (commandLineOptions.generateConfig) {
-    generateAndWriteConfigAndExit()
-  }
+      case Some(options) =>
+        if (options.generateConfig) {
+          generateAndWriteConfigAndExit
+        } else {
+          val nodeConfig = configFromBootstrapOption(options)
+            .orElse(configFromConfigFile(options))
+            .getOrElse(randomConfig(options))
 
-  val nodeConfig = configFromBootstrapOption(commandLineOptions)
-    .orElse(configFromConfigFile(commandLineOptions))
-    .getOrElse(randomConfig(commandLineOptions))
-
-  val kRouter = new AppContext(nodeConfig).kRouter
-
-  ConsoleLoop.run(kRouter)
-
-  private def getCommandLineOptions: CommandLineOptions = {
-    optionsParser.parse(args, CommandLineOptions()) match {
-      case Some(config) =>
-        config
-      case _ =>
-        System.exit(1)
-        null
+          AppContext(nodeConfig)
+            .use { kRouter =>
+              Task(ConsoleLoop.run(kRouter)).as(ExitCode.Success)
+            }
+            .onErrorRecover {
+              case NonFatal(ex) =>
+                System.err.println(s"Error running Kademlia: $ex")
+                ExitCode.Error
+            }
+        }
     }
   }
 
@@ -131,8 +136,7 @@ object App extends App with CommandParser {
     generateRandomConfig.copy(k = options.k, alpha = options.alpha)
   }
 
-  private def generateAndWriteConfigAndExit(): Unit = {
-    println(configToStr(generateRandomConfig))
-    System.exit(0)
+  private def generateAndWriteConfigAndExit: Task[ExitCode] = {
+    Task(println(configToStr(generateRandomConfig))).as(ExitCode.Success)
   }
 }
