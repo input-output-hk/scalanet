@@ -30,7 +30,7 @@ import io.netty.channel.socket.nio.NioDatagramChannel
 import java.io.IOException
 import java.net.{InetSocketAddress, PortUnreachableException}
 import monix.eval.Task
-import monix.execution.Scheduler
+import monix.execution.{Scheduler, ChannelType}
 import scala.util.control.NonFatal
 import scodec.{Codec, Attempt}
 import scodec.bits.BitVector
@@ -322,7 +322,7 @@ object StaticUDPPeerGroup extends StrictLogging {
       Resource.make {
         for {
           isShutdownRef <- Ref[Task].of(false)
-          serverQueue <- CloseableQueue.unbounded[ServerEvent[InetMultiAddress, M]]()
+          serverQueue <- CloseableQueue.unbounded[ServerEvent[InetMultiAddress, M]](ChannelType.SPMC)
           serverChannelSemaphore <- Semaphore[Task](1)
           serverChannelsRef <- Ref[Task].of(Map.empty[InetSocketAddress, ChannelAlloc[M]])
           clientChannelsRef <- Ref[Task].of(Map.empty[InetSocketAddress, Set[ChannelAlloc[M]]])
@@ -447,7 +447,7 @@ object StaticUDPPeerGroup extends StrictLogging {
         for {
           subjectSemaphore <- Semaphore[Task](1)
           isClosedRef <- Ref[Task].of(false)
-          messageQueue <- CloseableQueue[ChannelEvent[M]](capacity)
+          messageQueue <- CloseableQueue[ChannelEvent[M]](capacity, ChannelType.SPMC)
           channel = new ChannelImpl[M](
             nettyChannel,
             localAddress,

@@ -21,7 +21,7 @@ import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
 import io.netty.util.concurrent.{Future, GenericFutureListener, Promise}
 import monix.eval.Task
-import monix.execution.Scheduler
+import monix.execution.{Scheduler, ChannelType}
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec}
 import scala.util.control.NonFatal
@@ -44,7 +44,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
 
   import DynamicUDPPeerGroup.Internals.{UDPChannelId, ChannelType, ClientChannel, ServerChannel}
 
-  val serverQueue = CloseableQueue.unbounded[ServerEvent[InetMultiAddress, M]]().runSyncUnsafe()
+  val serverQueue = CloseableQueue.unbounded[ServerEvent[InetMultiAddress, M]](ChannelType.SPMC).runSyncUnsafe()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -195,7 +195,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
     })
 
   private def makeMessageQueue(): CloseableQueue[ChannelEvent[M]] = {
-    CloseableQueue[ChannelEvent[M]](capacity = config.channelCapacity).runSyncUnsafe()
+    CloseableQueue[ChannelEvent[M]](capacity = config.channelCapacity, channelType = ChannelType.SPMC).runSyncUnsafe()
   }
 
   class ChannelImpl(

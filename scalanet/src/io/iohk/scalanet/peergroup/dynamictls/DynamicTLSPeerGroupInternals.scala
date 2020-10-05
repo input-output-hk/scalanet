@@ -19,7 +19,7 @@ import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter, Ch
 import io.netty.handler.ssl.{SslContext, SslHandshakeCompletionEvent}
 import javax.net.ssl.{SSLException, SSLHandshakeException, SSLKeyException}
 import monix.eval.Task
-import monix.execution.Scheduler
+import monix.execution.{Scheduler, ChannelType}
 import scodec.bits.BitVector
 
 import scala.concurrent.Promise
@@ -308,6 +308,6 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
   }
 
   private def makeMessageQueue[M](implicit scheduler: Scheduler) =
-    CloseableQueue.unbounded[ChannelEvent[M]]().runSyncUnsafe()
+    CloseableQueue.unbounded[ChannelEvent[M]](ChannelType.SPMC).runSyncUnsafe()
 
 }
