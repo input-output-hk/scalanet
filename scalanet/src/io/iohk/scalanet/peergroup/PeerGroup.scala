@@ -3,7 +3,9 @@ package io.iohk.scalanet.peergroup
 import cats.effect.Resource
 import io.iohk.scalanet.peergroup.Channel.ChannelEvent
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
+import io.iohk.scalanet.monix_subject.ConnectableSubject
 import monix.eval.Task
+import monix.execution.Scheduler
 import monix.reactive.Observable
 import monix.reactive.observables.ConnectableObservable
 import scodec.Codec
@@ -42,9 +44,25 @@ trait Channel[A, M] {
   def sendMessage(message: M): Task[Unit]
 
   /**
-    * The inbound stream of messages coming from the remote peer.
+    * Consume the next message from the underlying event queue.
+    *
+    * @return The next incoming message, or None if the channel was closed.
     */
-  def in: ConnectableObservable[ChannelEvent[M]]
+  def nextMessage(): Task[Option[ChannelEvent[M]]]
+
+  /**
+    * The inbound stream of messages coming from the remote peer.
+    * Provided for backwards compatibility.
+    */
+  lazy val in: ConnectableObservable[ChannelEvent[M]] = {
+    val obs = Observable.repeatEvalF(nextMessage()).takeWhile(_.isDefined).map(_.get)
+    // Once created, the ConnectableSubject subscribes to the source and buffers messages
+    // until it's connected to by subscribers.
+    ConnectableSubject(obs)(s)
+  }
+
+  // Here to support the ConnectableSubject.
+  protected def s: Scheduler
 }
 
 object Channel {

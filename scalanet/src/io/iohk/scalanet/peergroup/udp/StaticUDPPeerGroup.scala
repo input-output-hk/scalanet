@@ -5,8 +5,7 @@ import cats.effect.Resource
 import cats.implicits._
 import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.monix_subject.ConnectableSubject
-import io.iohk.scalanet.peergroup.{Channel, Release}
-import io.iohk.scalanet.peergroup.{InetMultiAddress}
+import io.iohk.scalanet.peergroup.{Channel, Release, InetMultiAddress, CloseableQueue}
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, MessageReceived, DecodingError, UnexpectedError}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
@@ -36,6 +35,7 @@ import monix.execution.Scheduler
 import scala.util.control.NonFatal
 import scodec.{Codec, Attempt}
 import scodec.bits.BitVector
+import monix.execution.BufferCapacity
 
 /**
   * PeerGroup implementation on top of UDP that uses the same local port
@@ -93,7 +93,8 @@ class StaticUDPPeerGroup[M] private (
           nettyChannel = serverBinding.channel,
           localAddress = localAddress,
           remoteAddress = remoteAddress,
-          role = ChannelImpl.Client
+          role = ChannelImpl.Client,
+          capacity = config.channelCapacity
         ).allocated.flatMap {
           case (channel, release) =>
             // Register the channel as belonging to the remote address so that
@@ -148,7 +149,8 @@ class StaticUDPPeerGroup[M] private (
                 nettyChannel = serverBinding.channel,
                 localAddress = config.bindAddress,
                 remoteAddress = remoteAddress,
-                role = ChannelImpl.Server
+                role = ChannelImpl.Server,
+                capacity = config.channelCapacity
               ).allocated.flatMap {
                 case (channel, release) =>
                   val remove = for {
@@ -303,10 +305,12 @@ class StaticUDPPeerGroup[M] private (
 object StaticUDPPeerGroup extends StrictLogging {
   case class Config(
       bindAddress: InetSocketAddress,
-      processAddress: InetMultiAddress
+      processAddress: InetMultiAddress,
+      channelCapacity: Int
   )
   object Config {
-    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, InetMultiAddress(bindAddress))
+    def apply(bindAddress: InetSocketAddress, channelCapacity: Int = 100): Config =
+      Config(bindAddress, InetMultiAddress(bindAddress), channelCapacity)
   }
 
   private type ChannelAlloc[M] = (ChannelImpl[M], Release)
@@ -346,16 +350,22 @@ object StaticUDPPeerGroup extends StrictLogging {
       nettyChannel: io.netty.channel.Channel,
       localAddress: InetSocketAddress,
       remoteAddress: InetSocketAddress,
-      messageSubject: ConnectableSubject[ChannelEvent[M]],
+      messageQueue: CloseableQueue[ChannelEvent[M]],
       // Prevent race conditions between closing the channel and publishing messages.
       subjectSemaphore: Semaphore[Task],
       isClosedRef: Ref[Task, Boolean],
       role: ChannelImpl.Role
-  )(implicit codec: Codec[M])
+  )(implicit codec: Codec[M], scheduler: Scheduler)
       extends Channel[InetMultiAddress, M]
       with StrictLogging {
-    override val to = InetMultiAddress(remoteAddress)
-    override val in = messageSubject
+
+    protected override val s = scheduler
+
+    override val to =
+      InetMultiAddress(remoteAddress)
+
+    override def nextMessage() =
+      messageQueue.next()
 
     private val raiseIfClosed =
       isClosedRef.get.ifM(
@@ -405,14 +415,13 @@ object StaticUDPPeerGroup extends StrictLogging {
         for {
           _ <- raiseIfClosed
           _ <- isClosedRef.set(true)
-          _ <- Task(messageSubject.onComplete())
+          // Initiated by the consumer, so discard messages.
+          _ <- messageQueue.close(discard = true)
         } yield ()
       }
 
-    private def publish(event: ChannelEvent[M]): Task[Unit] = {
-      // Maybe it should be `.startAndForget`? This is were we should just push to a queue.
-      Task.deferFuture(messageSubject.onNext(event)).void
-    }
+    private def publish(event: ChannelEvent[M]): Task[Unit] =
+      messageQueue.tryOffer(event).void
   }
 
   private object ChannelImpl {
@@ -429,17 +438,19 @@ object StaticUDPPeerGroup extends StrictLogging {
         nettyChannel: io.netty.channel.Channel,
         localAddress: InetSocketAddress,
         remoteAddress: InetSocketAddress,
-        role: Role
+        role: Role,
+        capacity: Int
     )(implicit scheduler: Scheduler): Resource[Task, ChannelImpl[M]] =
       Resource.make {
         for {
           subjectSemaphore <- Semaphore[Task](1)
           isClosedRef <- Ref[Task].of(false)
+          messageQueue <- CloseableQueue[ChannelEvent[M]](BufferCapacity.Bounded(capacity))
           channel = new ChannelImpl[M](
             nettyChannel,
             localAddress,
             remoteAddress,
-            ConnectableSubject[ChannelEvent[M]](),
+            messageQueue,
             subjectSemaphore,
             isClosedRef,
             role
