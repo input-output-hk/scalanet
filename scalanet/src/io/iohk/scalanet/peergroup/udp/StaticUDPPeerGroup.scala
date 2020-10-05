@@ -163,7 +163,7 @@ class StaticUDPPeerGroup[M] private (
 
                   val add = for {
                     _ <- serverChannelsRef.update(_.updated(remoteAddress, channel -> release))
-                    _ <- serverQueue.tryOffer(ChannelCreated(channel, remove))
+                    _ <- serverQueue.offer(ChannelCreated(channel, remove))
                     _ <- Task(logger.debug(s"Added UDP server channel from $remoteAddress to $localAddress"))
                   } yield channel
 

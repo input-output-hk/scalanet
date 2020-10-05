@@ -262,7 +262,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       .addLast(new MessageNotifier(messageQueue, codec))
 
     private def handleEvent(event: ServerEvent[PeerInfo, M]): Unit =
-      serverQueue.tryOffer(event).void.runSyncUnsafe()
+      serverQueue.offer(event).void.runSyncUnsafe()
   }
 
   class ServerChannelImpl[M](

@@ -172,7 +172,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
                     )
                     potentialNewChannel.closePromise.addListener(closeChannelListener)
                     serverQueue
-                      .tryOffer(ChannelCreated(potentialNewChannel, potentialNewChannel.close()))
+                      .offer(ChannelCreated(potentialNewChannel, potentialNewChannel.close()))
                       .runSyncUnsafe()
                     handleIncomingMessage(potentialNewChannel, datagram)
                 }
