@@ -8,7 +8,8 @@ import monix.execution.{BufferCapacity, ChannelType}
 import scala.util.{Left, Right}
 
 /** Wraps an underlying concurrent queue so that polling can return None when
-  * the producer side is finished.
+  * the producer side is finished, or vice versa the producer can tell when
+  * the consumer is no longer interested in receiving more values.
   *
   *
   * @param closed indicates whether the producer side has finished and whether
@@ -52,6 +53,7 @@ class CloseableQueue[A](
     // be that crucial to serve clients who overproduce.
     unlessClosed(queue.tryOffer(item))
 
+  /** Try to put a new item in the queue unless the queue has already been closed. Waits if the capacity has been reached. */
   def offer(item: A): Task[Either[Closed, Unit]] =
     unlessClosed {
       Task.race(closed.get, queue.offer(item)).map(_.leftMap(_ => Closed))

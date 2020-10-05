@@ -61,7 +61,7 @@ object ConnectableSubject {
     }
   }
 
-  /** Repeatedly evaludate a task until it returns None,
+  /** Repeatedly evaluate a task until it returns None,
     * buffering the events until downstream subscribers connect.
     */
   def repeatEvalNext[T](task: => Task[Option[T]])(implicit s: Scheduler): ConnectableObservable[T] =
