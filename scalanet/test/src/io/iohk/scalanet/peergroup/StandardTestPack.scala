@@ -1,5 +1,6 @@
 package io.iohk.scalanet.peergroup
 
+import cats.implicits._
 import io.iohk.scalanet.peergroup.Channel.MessageReceived
 import io.iohk.scalanet.peergroup.PeerGroup.ChannelSetupException
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
@@ -22,15 +23,17 @@ object StandardTestPack {
 
     (for {
       bobReceiver <- bob.server.collectChannelCreated
-        .mapEval {
+        .mergeMap {
           case (channel, release) =>
-            channel.sendMessage(bobsMessage) >>
-              channel.in
-                .collect {
-                  case MessageReceived(m) => m
-                }
-                .headL
-                .guarantee(release)
+            channel.in
+              .collect {
+                case MessageReceived(m) => m
+              }
+              .take(1)
+              .mapEval { msg =>
+                channel.sendMessage(bobsMessage).as(msg)
+              }
+              .guarantee(release)
         }
         .headL
         .start

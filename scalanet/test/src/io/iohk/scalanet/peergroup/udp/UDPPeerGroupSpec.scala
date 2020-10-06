@@ -27,6 +27,7 @@ abstract class UDPPeerGroupSpec[PG <: UDPPeerGroupSpec.TestGroup[_]](name: Strin
     extends FlatSpec
     with EitherValues
     with Eventually {
+  import UDPPeerGroupSpec.TestGroup
   import scala.language.reflectiveCalls
 
   implicit val scheduler = Scheduler.fixedPool("test", 16)
@@ -37,7 +38,37 @@ abstract class UDPPeerGroupSpec[PG <: UDPPeerGroupSpec.TestGroup[_]](name: Strin
 
   def initUdpPeerGroup[M](
       address: InetSocketAddress = aRandomAddress()
-  )(implicit s: Scheduler, c: Codec[M]): Resource[Task, UDPPeerGroupSpec.TestGroup[M]]
+  )(implicit s: Scheduler, c: Codec[M]): Resource[Task, TestGroup[M]]
+
+  def randomUDPPeerGroup[M](
+      implicit scheduler: Scheduler,
+      codec: Codec[M]
+  ): Resource[Task, TestGroup[M]] =
+    initUdpPeerGroup()
+
+  def withTwoRandomUDPPeerGroups[M](
+      testCode: (TestGroup[M], TestGroup[M]) => Task[_]
+  )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
+    (for {
+      pg1 <- randomUDPPeerGroup[M]
+      pg2 <- randomUDPPeerGroup[M]
+    } yield (pg1, pg2))
+      .use {
+        case (pg1, pg2) =>
+          testCode(pg1, pg2).void
+      }
+      .runSyncUnsafe(15.seconds)
+  }
+
+  def withARandomUDPPeerGroup[M](
+      testCode: TestGroup[M] => Task[_]
+  )(implicit scheduler: Scheduler, codec: Codec[M]): Unit = {
+    randomUDPPeerGroup[M]
+      .use { pg =>
+        testCode(pg).void
+      }
+      .runSyncUnsafe(15.seconds)
+  }
 
   it should "report an error for sending a message greater than the MTU" in
     withARandomUDPPeerGroup[ByteVector] { alice =>
