@@ -52,27 +52,35 @@ object KNetwork {
 
     override lazy val kRequests: Observable[(KRequest[A], Option[KResponse[A]] => Task[Unit])] = {
       peerGroup.server.refCount.collectChannelCreated
-        .mapEval {
+        .mergeMap {
           case (channel: Channel[A, KMessage[A]], release: Task[Unit]) =>
-            channel.in.refCount
-              .collect { case MessageReceived(req: KRequest[A]) => req }
-              .headL
-              .timeout(requestTimeout)
-              .map { request =>
-                Some {
-                  request -> { (maybeResponse: Option[KResponse[A]]) =>
-                    maybeResponse
-                      .fold(Task.unit) { response =>
-                        channel.sendMessage(response).timeout(requestTimeout)
-                      }
-                      .guarantee(release)
+            // NOTE: We cannot use mapEval with a Task here, because that would hold up
+            // the handling of further incoming requests. For example if instead of a
+            // request we got an incoming "response" type message that the collect
+            // discards, `headL` would eventually time out but while we wait for
+            // that the next incoming channel would not be picked up.
+            Observable.fromTask {
+              channel.in.refCount
+                .collect { case MessageReceived(req: KRequest[A]) => req }
+                .headL
+                .timeout(requestTimeout)
+                .map { request =>
+                  Some {
+                    request -> { (maybeResponse: Option[KResponse[A]]) =>
+                      maybeResponse
+                        .fold(Task.unit) { response =>
+                          channel.sendMessage(response).timeout(requestTimeout)
+                        }
+                        .guarantee(release)
+                    }
                   }
                 }
-              }
-              .onErrorHandleWith {
-                case NonFatal(ex) =>
-                  release.as(None)
-              }
+                .onErrorHandleWith {
+                  case NonFatal(_) =>
+                    // Most likely it wasn't a request that initiated the channel.
+                    release.as(None)
+                }
+            }
         }
         .collect { case Some(pair) => pair }
     }

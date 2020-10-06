@@ -18,6 +18,7 @@ import monix.reactive.{Consumer, Observable, OverflowStrategy}
 import scodec.bits.BitVector
 import scala.collection.immutable.SortedSet
 
+// KRouter is the component that implements the protocol, does the recursive lookups, keeps the state.
 class KRouter[A](
     val config: Config[A],
     network: KNetwork[A],
@@ -267,8 +268,10 @@ class KRouter[A](
 
     def handleQuery(to: NodeRecord[A]): Task[QueryResult[A]] = {
       query(to).attempt.flatMap {
-        case Left(_) =>
-          Task.now(QueryResult.failed(to))
+        case Left(ex) =>
+          Task(logger.debug(s"findNodes request for $to failed: $ex")) >>
+            Task.now(QueryResult.failed(to))
+
         case Right(nodes) =>
           // Adding node to kbuckets in background to not block lookup process
           add(to).startAndForget.as(QueryResult.succeed(to, nodes))
@@ -498,7 +501,7 @@ object KRouter {
       .flatMap { state =>
         Task.now(new KRouter(config, network, state, clock, uuidSource)).flatMap { router =>
           Task.parMap3(
-            router.enroll(),
+            router.enroll(), // The results should be ready when we return the router.
             router.startServerHandling().startAndForget,
             router.startRefreshCycle().startAndForget
           )((_, _, _) => router)

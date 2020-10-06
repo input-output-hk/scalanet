@@ -161,7 +161,7 @@ class KBuckets private (
   }
 
   private def bucketToString(bucket: TimeSet[BitVector]): String = {
-    s"${bucket.iterator.map(id => s"(id=${id.toBin}, d=${Xor.d(id, baseId)})").mkString(", ")}"
+    s"${bucket.iterator.map(id => s"(id=${id.toBin} / ${id.toHex}, d=${Xor.d(id, baseId)})").mkString(", ")}"
   }
 
   private def bucketOp(nodeId: BitVector)(op: (Int, TimeSet[BitVector]) => KBuckets): KBuckets = {
