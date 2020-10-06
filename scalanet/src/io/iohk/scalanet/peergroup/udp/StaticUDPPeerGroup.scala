@@ -59,6 +59,7 @@ class StaticUDPPeerGroup[M] private (
     workerGroup: NioEventLoopGroup,
     isShutdownRef: Ref[Task, Boolean],
     serverSubject: ConnectableSubject[ServerEvent[InetMultiAddress, M]],
+    serverChannelSemaphore: Semaphore[Task],
     serverChannelsRef: Ref[Task, Map[InetSocketAddress, StaticUDPPeerGroup.ChannelAlloc[M]]],
     clientChannelsRef: Ref[Task, Map[InetSocketAddress, Set[StaticUDPPeerGroup.ChannelAlloc[M]]]]
 )(implicit scheduler: Scheduler, codec: Codec[M])
@@ -135,29 +136,36 @@ class StaticUDPPeerGroup[M] private (
         Task.pure(channel)
 
       case None =>
-        // All incoming messages are handled on the same event loop, by the same channel,
-        // so we don't have to worry about multiple server channels for the same remote,
-        // it will only try to create one channel at a time.
-        ChannelImpl[M](
-          nettyChannel = serverBinding.channel,
-          localAddress = config.bindAddress,
-          remoteAddress = remoteAddress,
-          role = ChannelImpl.Server
-        ).allocated.flatMap {
-          case (channel, release) =>
-            val remove = for {
-              _ <- serverChannelsRef.update(_ - remoteAddress)
-              _ <- release
-              _ <- Task(logger.debug(s"Removed UDP server channel from $remoteAddress to $localAddress"))
-            } yield ()
+        // Use a semaphore to make sure we only create one channel.
+        // This way we can handle incoming messages asynchronously.
+        serverChannelSemaphore.withPermit {
+          serverChannelsRef.get.map(_.get(remoteAddress)).flatMap {
+            case Some((channel, _)) =>
+              Task.pure(channel)
 
-            val add = for {
-              _ <- serverChannelsRef.update(_.updated(remoteAddress, channel -> release))
-              _ <- Task.deferFuture(serverSubject.onNext(ChannelCreated(channel, remove)))
-              _ <- Task(logger.debug(s"Added UDP server channel from $remoteAddress to $localAddress"))
-            } yield channel
+            case None =>
+              ChannelImpl[M](
+                nettyChannel = serverBinding.channel,
+                localAddress = config.bindAddress,
+                remoteAddress = remoteAddress,
+                role = ChannelImpl.Server
+              ).allocated.flatMap {
+                case (channel, release) =>
+                  val remove = for {
+                    _ <- serverChannelsRef.update(_ - remoteAddress)
+                    _ <- release
+                    _ <- Task(logger.debug(s"Removed UDP server channel from $remoteAddress to $localAddress"))
+                  } yield ()
 
-            add.as(channel)
+                  val add = for {
+                    _ <- serverChannelsRef.update(_.updated(remoteAddress, channel -> release))
+                    _ <- Task.deferFuture(serverSubject.onNext(ChannelCreated(channel, remove)))
+                    _ <- Task(logger.debug(s"Added UDP server channel from $remoteAddress to $localAddress"))
+                  } yield channel
+
+                  add.as(channel)
+              }
+          }
         }
     }
   }
@@ -190,22 +198,18 @@ class StaticUDPPeerGroup[M] private (
       remoteAddress: InetSocketAddress,
       maybeMessage: Attempt[M]
   ): Unit =
-    executeSync {
+    executeAsync {
       replicateToChannels(remoteAddress)(_.handleMessage(maybeMessage))
     }
 
   private def handleError(remoteAddress: InetSocketAddress, error: Throwable): Unit =
-    executeSync {
+    executeAsync {
       replicateToChannels(remoteAddress)(_.handleError(error))
     }
 
-  // We cannot execute right on the channel's event loop because that's already
-  // occupied with handing the incoming message, so it would deadlock.
-  // The event loop will wait, but we have to delegate the execution elsewhere.
-  // The alternative would be to use the normal concurrent data structures
-  // that do internal locking without Tasks.
-  private def executeSync(task: Task[Unit]): Unit = {
-    task.runSyncUnsafe()
+  // Execute the task asynchronously. Has to be thread safe.
+  private def executeAsync(task: Task[Unit]): Unit = {
+    task.runAsyncAndForget
   }
 
   private def tryDecodeDatagram(datagram: DatagramPacket): Attempt[M] =
@@ -312,14 +316,16 @@ object StaticUDPPeerGroup extends StrictLogging {
       Resource.make {
         for {
           isShutdownRef <- Ref[Task].of(false)
-          clientChannelsRef <- Ref[Task].of(Map.empty[InetSocketAddress, Set[ChannelAlloc[M]]])
-          serverChannelsRef <- Ref[Task].of(Map.empty[InetSocketAddress, ChannelAlloc[M]])
           serverSubject = ConnectableSubject[ServerEvent[InetMultiAddress, M]]()
+          serverChannelSemaphore <- Semaphore[Task](1)
+          serverChannelsRef <- Ref[Task].of(Map.empty[InetSocketAddress, ChannelAlloc[M]])
+          clientChannelsRef <- Ref[Task].of(Map.empty[InetSocketAddress, Set[ChannelAlloc[M]]])
           peerGroup = new StaticUDPPeerGroup[M](
             config,
             workerGroup,
             isShutdownRef,
             serverSubject,
+            serverChannelSemaphore,
             serverChannelsRef,
             clientChannelsRef
           )
