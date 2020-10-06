@@ -307,7 +307,9 @@ object UDPPeerGroupSpec {
   }
 
   // echo server which closes every incoming channel after response
-  def runEchoServer[M](peerGroup: PeerGroup[InetMultiAddress, M])(implicit s: Scheduler): Task[Unit] = {
+  def runEchoServer[M](peerGroup: PeerGroup[InetMultiAddress, M], doRelease: Boolean = true)(
+      implicit s: Scheduler
+  ): Task[Unit] = {
     peerGroup.server.refCount.collectChannelCreated
       .mergeMap {
         case (channel, release) =>
@@ -319,7 +321,7 @@ object UDPPeerGroupSpec {
       }
       .foreachL {
         case (channel, release, msg) =>
-          channel.sendMessage(msg).guarantee(release).runAsyncAndForget
+          channel.sendMessage(msg).guarantee(release.whenA(doRelease)).runAsyncAndForget
       }
   }
 

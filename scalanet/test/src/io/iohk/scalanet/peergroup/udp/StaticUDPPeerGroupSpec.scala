@@ -123,7 +123,10 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
       .use {
         case (pg1, client21, client31a, client31b) =>
           for {
-            _ <- runEchoServer(pg1).startAndForget
+            // Not releasing the incoming channel immediately because then it may or may not
+            // be there when the next message arrives on another channel. In this test we
+            // want to show that if there are two client channels they both see the messages.
+            _ <- runEchoServer(pg1, doRelease = false).startAndForget
 
             _ <- client21.sendMessage("Two to One")
             _ <- client31a.sendMessage("Three to One A")
