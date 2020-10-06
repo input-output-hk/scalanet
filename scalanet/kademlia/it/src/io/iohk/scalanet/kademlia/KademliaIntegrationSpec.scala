@@ -7,22 +7,32 @@ import cats.implicits._
 import io.iohk.scalanet.kademlia.KNetwork.KNetworkScalanetImpl
 import io.iohk.scalanet.kademlia.KRouter.NodeRecord
 import io.iohk.scalanet.peergroup.{InetMultiAddress, InetPeerGroupUtils}
-import io.iohk.scalanet.peergroup.udp.StaticUDPPeerGroup
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.scalatest.{Assertion, AsyncFlatSpec, BeforeAndAfterAll}
 import org.scalatest.Matchers._
-import KademliaIntegrationSpec._
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 
 import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
+import io.iohk.scalanet.peergroup.PeerGroup
 
-class KademliaIntegrationSpec extends AsyncFlatSpec with BeforeAndAfterAll with Eventually with IntegrationPatience {
+abstract class KademliaIntegrationSpec(peerGroupName: String)
+    extends AsyncFlatSpec
+    with BeforeAndAfterAll
+    with Eventually
+    with IntegrationPatience {
+  import io.iohk.scalanet.codec.DefaultCodecs._
+  import io.iohk.scalanet.kademlia.codec.DefaultCodecs._
+  import scodec.codecs.implicits._
+  import KademliaIntegrationSpec._
+
   val threadPool = Executors.newFixedThreadPool(16)
   val testContext = ExecutionContext.fromExecutor(threadPool)
+
   implicit val scheduler = Scheduler(testContext)
+  implicit val codec = implicitly[scodec.Codec[KMessage[InetMultiAddress]]]
 
   override def afterAll(): Unit = {
     threadPool.shutdown()
@@ -30,7 +40,40 @@ class KademliaIntegrationSpec extends AsyncFlatSpec with BeforeAndAfterAll with 
     ()
   }
 
-  behavior of "Kademlia"
+  def makePeerGroup(
+      selfRecord: NodeRecord[InetMultiAddress]
+  ): Resource[Task, PeerGroup[InetMultiAddress, KMessage[InetMultiAddress]]]
+
+  def startRouter(
+      selfRecord: NodeRecord[InetMultiAddress],
+      routerConfig: KRouter.Config[InetMultiAddress]
+  ): Resource[Task, KRouter[InetMultiAddress]] = {
+    for {
+      peerGroup <- makePeerGroup(selfRecord)
+      kademliaNetwork = new KNetworkScalanetImpl(peerGroup)
+      router <- Resource.liftF(KRouter.startRouterWithServerPar(routerConfig, kademliaNetwork))
+    } yield router
+  }
+
+  def startNode(
+      selfRecord: NodeRecord[InetMultiAddress] = generateNodeRecord(),
+      initialNodes: Set[NodeRecord[InetMultiAddress]] = Set(),
+      testConfig: TestNodeKademliaConfig = defaultConfig
+  ): Resource[Task, TestNode] = {
+    val routerConfig = KRouter.Config(
+      selfRecord,
+      initialNodes,
+      alpha = testConfig.alpha,
+      k = testConfig.k,
+      serverBufferSize = testConfig.serverBufferSize,
+      refreshRate = testConfig.refreshRate
+    )
+    for {
+      router <- startRouter(selfRecord, routerConfig)
+    } yield TestNode(selfRecord, router)
+  }
+
+  behavior of s"Kademlia with $peerGroupName"
 
   it should "only find self node when there are no bootstrap nodes" in taskTestCase {
     startNode().use { node =>
@@ -217,23 +260,6 @@ object KademliaIntegrationSpec {
   val randomGen = new SecureRandom()
   val testBitLength = 16
 
-  import io.iohk.scalanet.codec.DefaultCodecs._
-  import io.iohk.scalanet.kademlia.codec.DefaultCodecs._
-  import scodec.codecs.implicits._
-
-  def startRouter(
-      udpConfig: StaticUDPPeerGroup.Config,
-      routerConfig: KRouter.Config[InetMultiAddress]
-  )(
-      implicit s: Scheduler
-  ): Resource[Task, KRouter[InetMultiAddress]] = {
-    for {
-      udpPeerGroup <- StaticUDPPeerGroup[KMessage[InetMultiAddress]](udpConfig)
-      kademliaNetwork = new KNetworkScalanetImpl(udpPeerGroup)
-      router <- Resource.liftF(KRouter.startRouterWithServerPar(routerConfig, kademliaNetwork))
-    } yield router
-  }
-
   case class TestNode(
       self: NodeRecord[InetMultiAddress],
       router: KRouter[InetMultiAddress]
@@ -258,31 +284,31 @@ object KademliaIntegrationSpec {
     NodeRecord(id, address, address)
   }
 
-  //val builder = (selfRecord, initialNodes) => KRouter.Config(selfRecord, initialNodes)
-
-  def startNode(
-      selfRecord: NodeRecord[InetMultiAddress] = generateNodeRecord(),
-      initialNodes: Set[NodeRecord[InetMultiAddress]] = Set(),
-      testConfig: TestNodeKademliaConfig = defaultConfig
-  )(implicit s: Scheduler): Resource[Task, TestNode] = {
-    val udpConfig = StaticUDPPeerGroup.Config(selfRecord.routingAddress.inetSocketAddress, channelCapacity = 100)
-    val routerConfig = KRouter.Config(
-      selfRecord,
-      initialNodes,
-      alpha = testConfig.alpha,
-      k = testConfig.k,
-      serverBufferSize = testConfig.serverBufferSize,
-      refreshRate = testConfig.refreshRate
-    )
-
-    for {
-      router <- startRouter(udpConfig, routerConfig)
-    } yield TestNode(selfRecord, router)
-  }
-
   def haveSameNumberOfPeers(nodes: Seq[TestNode], expectedNumber: Int): Task[Boolean] = {
     (Task.traverse(nodes)(node => node.getPeers)).map { peers =>
       peers.forall(nodePeers => nodePeers.size == expectedNumber)
     }
+  }
+}
+
+class StaticUDPKademliaIntegrationSpec extends KademliaIntegrationSpec("StaticUDP") {
+  import io.iohk.scalanet.peergroup.udp.StaticUDPPeerGroup
+
+  override def makePeerGroup(
+      selfRecord: NodeRecord[InetMultiAddress]
+  ) = {
+    val udpConfig = StaticUDPPeerGroup.Config(selfRecord.routingAddress.inetSocketAddress, channelCapacity = 100)
+    StaticUDPPeerGroup[KMessage[InetMultiAddress]](udpConfig)
+  }
+}
+
+class DynamicUDPKademliaIntegrationSpec extends KademliaIntegrationSpec("DynamicUDP") {
+  import io.iohk.scalanet.peergroup.udp.DynamicUDPPeerGroup
+
+  override def makePeerGroup(
+      selfRecord: NodeRecord[InetMultiAddress]
+  ) = {
+    val udpConfig = DynamicUDPPeerGroup.Config(selfRecord.routingAddress.inetSocketAddress, channelCapacity = 100)
+    DynamicUDPPeerGroup[KMessage[InetMultiAddress]](udpConfig)
   }
 }
