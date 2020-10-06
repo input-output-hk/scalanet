@@ -353,8 +353,6 @@ object StaticUDPPeerGroup extends StrictLogging {
       localAddress: InetSocketAddress,
       remoteAddress: InetSocketAddress,
       messageQueue: CloseableQueue[ChannelEvent[M]],
-      // Prevent race conditions between closing the channel and publishing messages.
-      subjectSemaphore: Semaphore[Task],
       isClosedRef: Ref[Task, Boolean],
       role: ChannelImpl.Role
   )(implicit codec: Codec[M], scheduler: Scheduler)
@@ -393,36 +391,30 @@ object StaticUDPPeerGroup extends StrictLogging {
       } yield ()
 
     def handleMessage(maybeMessage: Attempt[M]): Task[Unit] = {
-      subjectSemaphore.withPermit {
-        isClosedRef.get.ifM(
-          Task.unit,
-          maybeMessage match {
-            case Attempt.Successful(message) =>
-              publish(MessageReceived(message))
-            case Attempt.Failure(err) =>
-              publish(DecodingError)
-          }
-        )
-      }
+      isClosedRef.get.ifM(
+        Task.unit,
+        maybeMessage match {
+          case Attempt.Successful(message) =>
+            publish(MessageReceived(message))
+          case Attempt.Failure(err) =>
+            publish(DecodingError)
+        }
+      )
     }
 
     def handleError(error: Throwable): Task[Unit] =
-      subjectSemaphore.withPermit {
-        isClosedRef.get.ifM(
-          Task.unit,
-          publish(UnexpectedError(error))
-        )
-      }
+      isClosedRef.get.ifM(
+        Task.unit,
+        publish(UnexpectedError(error))
+      )
 
     private def close() =
-      subjectSemaphore.withPermit {
-        for {
-          _ <- raiseIfClosed
-          _ <- isClosedRef.set(true)
-          // Initiated by the consumer, so discard messages.
-          _ <- messageQueue.close(discard = true)
-        } yield ()
-      }
+      for {
+        _ <- raiseIfClosed
+        _ <- isClosedRef.set(true)
+        // Initiated by the consumer, so discard messages.
+        _ <- messageQueue.close(discard = true)
+      } yield ()
 
     private def publish(event: ChannelEvent[M]): Task[Unit] =
       messageQueue.tryOffer(event).void
@@ -447,7 +439,6 @@ object StaticUDPPeerGroup extends StrictLogging {
     )(implicit scheduler: Scheduler): Resource[Task, ChannelImpl[M]] =
       Resource.make {
         for {
-          subjectSemaphore <- Semaphore[Task](1)
           isClosedRef <- Ref[Task].of(false)
           messageQueue <- CloseableQueue[ChannelEvent[M]](capacity, ChannelType.SPMC)
           channel = new ChannelImpl[M](
@@ -455,7 +446,6 @@ object StaticUDPPeerGroup extends StrictLogging {
             localAddress,
             remoteAddress,
             messageQueue,
-            subjectSemaphore,
             isClosedRef,
             role
           )
