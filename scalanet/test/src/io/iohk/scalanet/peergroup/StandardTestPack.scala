@@ -9,7 +9,6 @@ import monix.eval.Task
 import org.scalatest.Matchers._
 import org.scalatest.RecoverMethods.{recoverToExceptionIf}
 import org.scalatest.concurrent.ScalaFutures._
-
 import scala.util.Random
 
 object StandardTestPack {
@@ -60,6 +59,45 @@ object StandardTestPack {
       bobReceived <- bobReceiver.join
       aliceReceived <- aliceReceiver.join
       _ <- aliceClient._2
+    } yield {
+      bobReceived shouldBe alicesMessage
+      aliceReceived shouldBe bobsMessage
+    }).void
+  }
+
+  // Same as messagingTest but without using the ConnectableObservables.
+  def messagingTestNext[A](alice: PeerGroup[A, String], bob: PeerGroup[A, String])(
+      implicit scheduler: Scheduler
+  ): Task[Unit] = {
+    val alicesMessage = "Hi Bob!"
+    val bobsMessage = "Hi Alice!"
+
+    def sendAndReceive(msgOut: String, channel: Channel[A, String]): Task[String] = {
+      channel.sendMessage(msgOut) >>
+        channel
+          .nextMessage() // In this test we know there shouldn't be any other message arriving; in practice we'd use an Iterant.
+          .flatMap {
+            case Some(MessageReceived(msgIn)) => Task.pure(msgIn)
+            case other => Task.raiseError(new RuntimeException(s"Unexpected channel event: $other"))
+          }
+    }
+
+    (for {
+      bobReceiver <- bob
+        .nextServerEvent() // In this test we know there won't be any other incoming connection; in practice we'd spawn a Fiber.
+        .flatMap {
+          case Some(ChannelCreated(channel, release)) =>
+            sendAndReceive(bobsMessage, channel).guarantee(release)
+          case other =>
+            Task.raiseError(new RuntimeException(s"Unexpected server event: $other"))
+        }
+        .start
+
+      aliceReceived <- alice.client(bob.processAddress).use { channel =>
+        sendAndReceive(alicesMessage, channel)
+      }
+
+      bobReceived <- bobReceiver.join
     } yield {
       bobReceived shouldBe alicesMessage
       aliceReceived shouldBe bobsMessage
