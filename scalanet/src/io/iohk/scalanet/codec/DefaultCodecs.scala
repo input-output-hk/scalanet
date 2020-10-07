@@ -11,7 +11,8 @@ import scodec.bits._
 
 /**
   *
-  * Default encodings for different objects provided by scalanet
+  * Default encodings for different objects provided by scalanet,
+  * using scodec specific codecs.
   *
   */
 object DefaultCodecs {
