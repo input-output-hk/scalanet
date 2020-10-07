@@ -105,7 +105,7 @@ object scalanet extends ScalanetModule with PublishModule {
   // object test extends ScoverageTests {
   object test extends TestModule
 
-  object kademlia extends SubModule {
+  object discovery extends SubModule {
     object test extends TestModule {
       override def moduleDeps: Seq[JavaModule] =
         super.moduleDeps ++ Seq(scalanet.test)
@@ -126,7 +126,7 @@ object scalanet extends ScalanetModule with PublishModule {
     )
 
     override def moduleDeps: Seq[JavaModule] =
-      super.moduleDeps ++ Seq(scalanet.kademlia)
+      super.moduleDeps ++ Seq(scalanet.discovery)
 
     object test extends TestModule
   }
