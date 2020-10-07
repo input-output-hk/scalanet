@@ -1,9 +1,10 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
-import io.iohk.scalanet.discovery.ethereum.Node
+import io.iohk.scalanet.discovery.ethereum.{Node, Crypto, Hash}
 import io.iohk.scalanet.discovery.ethereum.EthereumNodeRecord
-import scodec.bits.{ByteVector}
-import scodec.{Codec, Attempt}
+import scodec.bits.BitVectork
+import scodec.{Codec, Attempt, Decoder, Err, Encoder}
+import scodec.DecodeResult
 
 /** Discovery protocol messages from https://github.com/ethereum/devp2p/blob/master/discv4.md
   *
@@ -33,7 +34,7 @@ object Payload {
       // Copy of `to` from the corresponding ping packet.
       to: Node.Address,
       // Hash of the corresponding ping packet.
-      pingHash: ByteVector,
+      pingHash: BitVector,
       expiration: Long,
       // Current ENR of the sender of Pong.
       enrSeq: Option[Long]
@@ -41,7 +42,7 @@ object Payload {
 
   case class FindNode(
       // 65-byte secp256k1 public key
-      target: ByteVector,
+      target: Crypto.PublicKey,
       expiration: Long
   ) extends Request
 
@@ -55,32 +56,71 @@ object Payload {
   ) extends Request
 
   case class ENRResponse(
-      requestHash: ByteVector,
+      requestHash: BitVector,
       enr: EthereumNodeRecord
   ) extends Response
 }
 
 /** Data as it goes over the wire. The packet type is included in the data. */
 case class Packet(
-    hash: ByteVector,
-    signature: ByteVector,
-    data: ByteVector
-) {
-  def toBytes: ByteVector =
-    hash ++ signature ++ data
-
-  def decodePayload(implicit codec: Codec[Payload]): Attempt[Payload] =
-    codec.decodeValue(data.toBitVector)
-}
+    hash: BitVector,
+    signature: BitVector,
+    data: BitVector
+)
 
 object Packet {
-  // TODO: Crypto
-  type PrivateKey = ByteVector
-  type PublicKey = ByteVector
+  val MacBitsSize = 256 // 32 bytes
+  val SigBitsSize = 520 // 65 bytes
+
+  /** Consume a given number of bits. */
+  private def decodeN(size: Int) =
+    Decoder[BitVector] { (bits: BitVector) =>
+      bits.consumeThen(size)(
+        err => Attempt.failure(Err.InsufficientBits(size, bits.size, List(err))),
+        (range, remainder) => Attempt.successful(DecodeResult(range, remainder))
+      )
+    }
+
+  /** Consume the remaining bits. */
+  private val decodeRest =
+    Decoder[BitVector] { (bits: BitVector) =>
+      Attempt.successful(DecodeResult(bits, BitVector.empty))
+    }
+
+  private val packetDecoder: Decoder[Packet] =
+    for {
+      hash <- decodeN(MacBitsSize)
+      signature <- decodeN(SigBitsSize)
+      data <- decodeRest
+    } yield Packet(hash, signature, data)
+
+  private val packetEncoder: Encoder[Packet] =
+    Encoder[Packet] { (packet: Packet) =>
+      Attempt.successful {
+        packet.hash ++ packet.signature ++ packet.data
+      }
+    }
+
+  implicit val packetCodec: Codec[Packet] =
+    Codec[Packet](packetEncoder, packetDecoder)
 
   /** Serialize the payload, sign the data and compute the hash. */
-  def pack(payload: Payload, privateKey: PrivateKey)(implicit codec: Codec[Payload]): Attempt[Packet] = ???
+  def pack(
+      payload: Payload,
+      privateKey: Crypto.PrivateKey
+  )(implicit codec: Codec[Payload], crypto: Crypto): Attempt[Packet] =
+    codec.encode(payload).map { data =>
+      val signature = crypto.sign(privateKey, data)
+      val hash = Hash.keccak(signature ++ data)
+      Packet(hash, signature, data)
+    }
 
-  /** Deserialize data, validate the hash, validate the signature and recover the public key. */
-  def unpack(bytes: ByteVector): Attempt[(Packet, PublicKey)] = ???
+  /** Validate the hash, recover the public key by validating the signature, and deserialize the payload. */
+  def unpack(packet: Packet)(implicit codec: Codec[Payload], crypto: Crypto): Attempt[(Payload, Crypto.PublicKey)] =
+    for {
+      hash <- Attempt.successful(Hash.keccak(packet.signature ++ packet.data))
+      _ <- Attempt.guard(hash == packet.hash, "Invalid message hash.")
+      publicKey <- crypto.recoverPublicKey(packet.signature, packet.data)
+      payload <- codec.decodeValue(packet.data)
+    } yield (payload, publicKey)
 }
