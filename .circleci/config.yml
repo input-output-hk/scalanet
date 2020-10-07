@@ -17,7 +17,7 @@ jobs:
 
       - run:
           name: install scalafmt
-          command: ./coursier bootstrap org.scalameta:scalafmt-cli_2.12:2.0.0-RC4 -r bintray:scalameta/maven -o scalafmt --main org.scalafmt.cli.Cli
+          command: ./coursier bootstrap org.scalameta:scalafmt-cli_2.12:2.7.0 -r bintray:scalameta/maven -o scalafmt --main org.scalafmt.cli.Cli
 
       - run:
           name: install mill
