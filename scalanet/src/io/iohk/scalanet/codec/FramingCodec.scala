@@ -3,8 +3,9 @@ package io.iohk.scalanet.codec
 import monix.execution.atomic.AtomicAny
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
-import scodec.codecs._
+import scodec.codecs.{ulong, variableSizeBitsLong}
 
+// NB: Uses scodec specific encoding to delineate frames.
 class FramingCodec[T](val messageCodec: Codec[T], lengthFieldLength: Int = 32) extends StreamCodec[T] {
 
   private val lengthFieldCodec = ulong(lengthFieldLength)

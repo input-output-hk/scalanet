@@ -158,13 +158,24 @@ class ReqResponseProtocol[A, M](
 }
 
 object ReqResponseProtocol {
-  import scodec.codecs.implicits._
-
   // ChannelMap contains channels created with their release method.
   type ChannelMap[A, M] = Map[ChannelId, (Channel[A, MessageEnvelope[M]], Release)]
 
-  // Default scodec product codec deriviation due to implicits
   final case class MessageEnvelope[M](id: UUID, m: M)
+  object MessageEnvelope {
+
+    /** scodec specific framing codec for streaming. */
+    def framingCodec[M: Codec]: FramingCodec[MessageEnvelope[M]] = {
+      new FramingCodec(defaultCodec[M])
+    }
+
+    /** scodec scpecific codec for a single message. */
+    def defaultCodec[M: Codec]: Codec[MessageEnvelope[M]] = {
+      import scodec.codecs.implicits._
+      // Default scodec product codec deriviation due to implicits
+      implicitly[Codec[MessageEnvelope[M]]]
+    }
+  }
 
   private def buildProtocol[A, M](
       group: PeerGroup[A, MessageEnvelope[M]]
@@ -212,8 +223,7 @@ object ReqResponseProtocol {
   def getTlsReqResponseProtocolClient[M](
       address: InetSocketAddress
   )(implicit s: Scheduler, c: Codec[M]): Resource[Task, ReqResponseProtocol[PeerInfo, M]] = {
-    val codec = implicitly[Codec[MessageEnvelope[M]]]
-    implicit lazy val framingCodec = new FramingCodec[MessageEnvelope[M]](codec)
+    implicit lazy val framingCodec = MessageEnvelope.framingCodec[M]
     val rnd = new SecureRandom()
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
 
@@ -227,6 +237,7 @@ object ReqResponseProtocol {
   def getDynamicUdpReqResponseProtocolClient[M](
       address: InetSocketAddress
   )(implicit s: Scheduler, c: Codec[M]): Resource[Task, ReqResponseProtocol[InetMultiAddress, M]] = {
+    implicit val codec = MessageEnvelope.defaultCodec[M]
     for {
       pg <- DynamicUDPPeerGroup[MessageEnvelope[M]](DynamicUDPPeerGroup.Config(address))
       prot <- buildProtocol(pg)

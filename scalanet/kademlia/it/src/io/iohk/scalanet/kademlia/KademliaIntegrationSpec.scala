@@ -20,6 +20,7 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
 class KademliaIntegrationSpec extends AsyncFlatSpec with BeforeAndAfterAll with Eventually with IntegrationPatience {
+
   val threadPool = Executors.newFixedThreadPool(16)
   val testContext = ExecutionContext.fromExecutor(threadPool)
   implicit val scheduler = Scheduler(testContext)
@@ -214,7 +215,6 @@ object KademliaIntegrationSpec {
 
   import io.iohk.scalanet.codec.DefaultCodecs._
   import io.iohk.scalanet.kademlia.codec.DefaultCodecs._
-  import scodec.codecs.implicits._
 
   def startRouter(
       udpConfig: DynamicUDPPeerGroup.Config,

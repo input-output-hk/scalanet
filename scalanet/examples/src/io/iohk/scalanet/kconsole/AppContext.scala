@@ -9,10 +9,8 @@ import io.iohk.scalanet.peergroup.{InetMultiAddress}
 import io.iohk.scalanet.peergroup.udp.DynamicUDPPeerGroup
 import monix.execution.Scheduler
 import monix.eval.Task
-import scodec.codecs.implicits._
 
 object AppContext {
-
   def apply(
       nodeConfig: KRouter.Config[InetMultiAddress]
   )(implicit scheduler: Scheduler): Resource[Task, KRouter[InetMultiAddress]] = {
