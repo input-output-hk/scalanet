@@ -1,10 +1,9 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
 import cats.implicits._
-import cats.effect.Clock
+import cats.effect.{Clock}
 import com.typesafe.scalalogging.LazyLogging
 import io.iohk.scalanet.discovery.crypto.{PrivateKey, PublicKey, SigAlg}
-import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord}
 import io.iohk.scalanet.discovery.hash.Hash
 import io.iohk.scalanet.peergroup.PeerGroup
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
@@ -12,7 +11,9 @@ import io.iohk.scalanet.peergroup.Channel
 import io.iohk.scalanet.peergroup.Channel.MessageReceived
 import java.util.concurrent.TimeoutException
 import monix.eval.Task
-import monix.reactive.Observable
+import monix.tail.Iterant
+import monix.catnap.CancelableF
+import monix.execution.cancelables.BooleanCancelable
 import scala.concurrent.duration._
 import scodec.{Codec, Attempt}
 import scala.util.control.NonFatal
@@ -21,75 +22,14 @@ import scala.util.control.NonFatal
   * that correspond to the discovery protocol messages on top
   * of the peer group representing the other nodes.
   */
-trait DiscoveryNetwork[A] {
-  import DiscoveryNetwork.{CallIn, CallOut, Proc}
+trait DiscoveryNetwork[A] extends DiscoveryRPC[A] {
 
-  /** A stream of incoming requests. */
-  def requests: Observable[CallIn[A, _]]
-
-  /** Sends a Ping request to the node, waits for the correct Pong response,
-    * and returns the ENR sequence, if the Pong had one.
-    */
-  def ping: CallOut[A, Proc.Ping]
-
-  /** Sends a FindNode request to the node and collects Neighbours responses
-    * until a timeout or if the maximum expected number of nodes are returned.
-    */
-  def findNode: CallOut[A, Proc.FindNode]
-
-  /** Sends an ENRRequest to the node and waits for the correct ENRResponse,
-    * returning the ENR from it.
-    */
-  def enrRequest: CallOut[A, Proc.ENRRequest]
+  /** Start handling incoming requests using the local RPC interface.
+    * The remote side is identified by its ID and address.*/
+  def startHandling(handler: DiscoveryRPC[(PublicKey, A)]): Task[CancelableF[Task]]
 }
 
 object DiscoveryNetwork {
-  type ENRSeq = Long
-
-  /** Pair up requests with responses in the RPC. */
-  sealed trait Proc {
-    type Req
-    type Res
-  }
-  object Proc {
-    trait Ping extends Proc {
-      type Req = Option[ENRSeq]
-      type Res = Option[ENRSeq]
-    }
-
-    trait FindNode extends Proc {
-      type Req = PublicKey
-      type Res = Seq[Node]
-    }
-
-    trait ENRRequest extends Proc {
-      type Req = Unit
-      type Res = EthereumNodeRecord
-    }
-  }
-
-  /** Represents a request-response call to a remote address.
-    *
-    * Raises TimeoutException if the peer doesn't respond.
-    */
-  type CallOut[A, P <: Proc] = A => P#Req => Task[P#Res]
-
-  /** The identity and address of the remote caller as deducted from the incoming packet. */
-  case class Caller[A](publicKey: PublicKey, address: A)
-
-  /** Incoming request with its handler. */
-  case class Call[P <: Proc](request: P#Req, respond: P#Res => Task[Unit])
-
-  /** An incoming call the local peer should respond to. */
-  sealed trait CallIn[A, P <: Proc] {
-    def caller: Caller[A]
-    def call: Call[P]
-  }
-  object CallIn {
-    case class Ping[A](caller: Caller[A], call: Call[Proc.Ping]) extends CallIn[A, Proc.Ping]
-    case class FindNode[A](caller: Caller[A], call: Call[Proc.FindNode]) extends CallIn[A, Proc.FindNode]
-    case class ENRRequest[A](caller: Caller[A], call: Call[Proc.ENRRequest]) extends CallIn[A, Proc.ENRRequest]
-  }
 
   def apply[A](
       peerGroup: PeerGroup[A, Packet],
@@ -104,114 +44,127 @@ object DiscoveryNetwork {
   )(implicit codec: Codec[Payload], sigalg: SigAlg, clock: Clock[Task]): Task[DiscoveryNetwork[A]] = Task {
     new DiscoveryNetwork[A] with LazyLogging {
 
+      import DiscoveryRPC.ENRSeq
+
       private val expirationMillis = messageExpiration.toMillis
 
       private val currentTimeMillis = clock.monotonic(MILLISECONDS)
 
       private val maxNeighborsPerPacket = getMaxNeighborsPerPacket
 
-      /** Merge incoming connections and the requests arriving on them into a common
-        * stream that can be responded to concurrently.
-        */
-      override val requests: Observable[CallIn[A, _]] =
-        peerGroup
-          .nextServerEvent()
-          .toObservable
-          .collect {
-            case ChannelCreated(channel, release) => channel -> release
-          }
-          .mergeMap {
-            case (channel, release) =>
-              observeChannel(channel).guarantee(release).onErrorHandleWith {
-                case ex: TimeoutException =>
-                  Observable.empty
-                case NonFatal(ex) =>
-                  logger.debug(s"Error on channel from ${channel.to}: $ex")
-                  Observable.empty
-              }
-          }
+      override def startHandling(handler: DiscoveryRPC[(PublicKey, A)]): Task[CancelableF[Task]] =
+        for {
+          cancelToken <- Task(BooleanCancelable())
+          cancelable <- CancelableF[Task](Task(cancelToken.cancel()))
+          _ <- peerGroup
+            .nextServerEvent()
+            .toIterant
+            .takeWhile(_ => !cancelToken.isCanceled)
+            .collect {
+              case ChannelCreated(channel, release) => channel -> release
+            }
+            .mapEval {
+              case (channel, release) =>
+                handleChannel(handler, channel, cancelToken)
+                  .guarantee(release)
+                  .onErrorRecover {
+                    case ex: TimeoutException =>
+                    case NonFatal(ex) =>
+                      logger.debug(s"Error on channel from ${channel.to}: $ex")
+                  }
+                  .startAndForget
+            }
+            .completedL
+            .startAndForget
+        } yield cancelable
 
-      /** Collect the incoming requests into a stream of calls. */
-      private def observeChannel(channel: Channel[A, Packet]): Observable[CallIn[A, _]] = {
+      private def handleChannel(
+          handler: DiscoveryRPC[(PublicKey, A)],
+          channel: Channel[A, Packet],
+          cancelToken: BooleanCancelable
+      ): Task[Unit] = {
         channel
           .nextMessage()
-          .toObservable
-          .timeoutOnSlowUpstream(messageExpiration) // Messages older than this would be ignored anyway.
+          .timeout(messageExpiration) // Messages older than this would be ignored anyway.
+          .toIterant
+          .takeWhile(_ => !cancelToken.isCanceled)
           .collect {
             case MessageReceived(packet) => packet
           }
           .mapEval { packet =>
-            currentTimeMillis.map(packet -> _)
-          }
-          .flatMap {
-            case (packet, timestamp) =>
+            currentTimeMillis.flatMap { timestamp =>
               Packet.unpack(packet) match {
                 case Attempt.Successful((payload, remotePublicKey)) =>
                   payload match {
                     case _: Payload.Response =>
                       // Not relevant on the server channel.
-                      Observable.empty
+                      Task.unit
 
                     case p: Payload.HasExpiration[_] if p.expiration < timestamp - expirationMillis =>
-                      logger.debug(s"Ignoring expired message from ${channel.to}")
-                      Observable.empty
+                      Task(logger.debug(s"Ignoring expired message from ${channel.to}"))
 
                     case p: Payload.Request =>
-                      Observable.pure[CallIn[A, _]] {
-                        toCallIn(channel, remotePublicKey, packet.hash, p)
-                      }
+                      handleRequest(handler, channel, remotePublicKey, packet.hash, p)
                   }
 
                 case Attempt.Failure(err) =>
-                  Observable.raiseError(
+                  Task.raiseError(
                     new IllegalArgumentException(s"Failed to unpack message: $err")
                   )
               }
+            }
           }
+          .completedL
       }
 
-      /** Turn a request payload from a given peer into a call, pairing up the
-        * request with the appropriate response handling.
-        */
-      private def toCallIn(
+      private def handleRequest(
+          handler: DiscoveryRPC[(PublicKey, A)],
           channel: Channel[A, Packet],
           remotePublicKey: PublicKey,
           hash: Hash,
           payload: Payload.Request
-      ): CallIn[A, _] = {
+      ): Task[Unit] = {
         import Payload._
-        val caller = Caller(remotePublicKey, channel.to)
+
+        val caller = (remotePublicKey, channel.to)
 
         payload match {
           case Ping(_, _, to, _, maybeRemoteEnrSeq) =>
-            val call = Call[Proc.Ping](
-              maybeRemoteEnrSeq,
-              maybeLocalEnrSeq => send(channel, Pong(to, hash, 0, maybeLocalEnrSeq))
-            )
-            CallIn.Ping(caller, call)
+            maybeRespond {
+              handler.ping(caller)(maybeRemoteEnrSeq)
+            } { maybeLocalEnrSeq =>
+              send(channel, Pong(to, hash, 0, maybeLocalEnrSeq))
+            }
 
           case FindNode(target, expiration) =>
-            val call = Call[Proc.FindNode](
-              target,
-              nodes =>
-                nodes
-                  .grouped(maxNeighborsPerPacket)
-                  .toList
-                  .traverse { group =>
-                    send(channel, Neighbors(group, 0))
-                  }
-                  .void
-            )
-            CallIn.FindNode(caller, call)
+            maybeRespond {
+              handler.findNode(caller)(target)
+            } { nodes =>
+              nodes
+                .grouped(maxNeighborsPerPacket)
+                .toList
+                .traverse { group =>
+                  send(channel, Neighbors(group, 0))
+                }
+                .void
+            }
 
           case ENRRequest(_) =>
-            val call = Call[Proc.ENRRequest](
-              (),
-              enr => send(channel, ENRResponse(hash, enr))
-            )
-            CallIn.ENRRequest(caller, call)
+            maybeRespond {
+              handler.enrRequest(caller)(())
+            } { enr =>
+              send(channel, ENRResponse(hash, enr))
+            }
         }
       }
+
+      private def maybeRespond[Res](maybeResponse: Task[Option[Res]])(
+          f: Res => Task[Unit]
+      ): Task[Unit] =
+        maybeResponse.flatMap {
+          case Some(response) => f(response)
+          case None => Task.unit
+        }
 
       private def send(channel: Channel[A, Packet], payload: Payload): Task[Unit] = {
         for {
@@ -246,8 +199,8 @@ object DiscoveryNetwork {
   }
 
   private implicit class NextOps[A](next: Task[Option[A]]) {
-    def toObservable: Observable[A] =
-      Observable.repeatEvalF(next).takeWhile(_.isDefined).map(_.get)
+    def toIterant: Iterant[Task, A] =
+      Iterant.repeatEvalF(next).takeWhile(_.isDefined).map(_.get)
   }
 
   def getMaxNeighborsPerPacket(implicit codec: Codec[Packet]) =
