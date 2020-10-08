@@ -4,6 +4,7 @@ import cats.implicits._
 import cats.effect.{Clock}
 import com.typesafe.scalalogging.LazyLogging
 import io.iohk.scalanet.discovery.crypto.{PrivateKey, PublicKey, SigAlg}
+import io.iohk.scalanet.discovery.ethereum.Node
 import io.iohk.scalanet.discovery.hash.Hash
 import io.iohk.scalanet.peergroup.PeerGroup
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
@@ -40,7 +41,8 @@ object DiscoveryNetwork {
       // Timeout for collecting multiple potential Neighbors responses.
       kademliaTimeout: FiniteDuration = 7.seconds,
       // Max number of neighbours to expect.
-      kademliaBucketSize: Int = 16
+      kademliaBucketSize: Int = 16,
+      toAddress: A => Node.Address
   )(implicit codec: Codec[Payload], sigalg: SigAlg, clock: Clock[Task]): Task[DiscoveryNetwork[A]] = Task {
     new DiscoveryNetwork[A] with LazyLogging {
 
@@ -51,6 +53,8 @@ object DiscoveryNetwork {
       private val currentTimeMillis = clock.monotonic(MILLISECONDS)
 
       private val maxNeighborsPerPacket = getMaxNeighborsPerPacket
+
+      private val localAddress = toAddress(peerGroup.processAddress)
 
       override def startHandling(handler: DiscoveryRPC[(PublicKey, A)]): Task[CancelableF[Task]] =
         for {
@@ -133,7 +137,7 @@ object DiscoveryNetwork {
             maybeRespond {
               handler.ping(caller)(maybeRemoteEnrSeq)
             } { maybeLocalEnrSeq =>
-              send(channel, Pong(to, hash, 0, maybeLocalEnrSeq))
+              channel.send(Pong(to, hash, 0, maybeLocalEnrSeq)).void
             }
 
           case FindNode(target, expiration) =>
@@ -144,7 +148,7 @@ object DiscoveryNetwork {
                 .grouped(maxNeighborsPerPacket)
                 .toList
                 .traverse { group =>
-                  send(channel, Neighbors(group, 0))
+                  channel.send(Neighbors(group, 0))
                 }
                 .void
             }
@@ -153,7 +157,7 @@ object DiscoveryNetwork {
             maybeRespond {
               handler.enrRequest(caller)(())
             } { enr =>
-              send(channel, ENRResponse(hash, enr))
+              channel.send(ENRResponse(hash, enr)).void
             }
         }
       }
@@ -165,14 +169,6 @@ object DiscoveryNetwork {
           case Some(response) => f(response)
           case None => Task.unit
         }
-
-      private def send(channel: Channel[A, Packet], payload: Payload): Task[Unit] = {
-        for {
-          expiring <- setExpiration(payload)
-          packet <- pack(expiring)
-          _ <- channel.sendMessage(packet)
-        } yield ()
-      }
 
       private def pack(payload: Payload): Task[Packet] =
         Packet
@@ -191,9 +187,84 @@ object DiscoveryNetwork {
         }
       }
 
-      override val ping = (to: A) => (localEnrSeq: Option[ENRSeq]) => ???
+      override val ping = (to: A) =>
+        (localEnrSeq: Option[ENRSeq]) =>
+          peerGroup.client(to).use { channel =>
+            channel
+              .send(
+                Payload.Ping(version = 4, from = localAddress, to = toAddress(to), 0, localEnrSeq)
+              )
+              .flatMap { packet =>
+                channel.collectFirstResponse {
+                  case Payload.Pong(_, pingHash, _, maybeRemoteEnrSeq) if pingHash == packet.hash =>
+                    maybeRemoteEnrSeq
+                }
+              }
+          }
+
       override val findNode = (to: A) => (target: PublicKey) => ???
-      override val enrRequest = (to: A) => (_: Unit) => ???
+
+      override val enrRequest = (to: A) =>
+        (_: Unit) =>
+          peerGroup.client(to).use { channel =>
+            channel
+              .send(
+                Payload.ENRRequest(0)
+              )
+              .flatMap { packet =>
+                channel.collectFirstResponse {
+                  case Payload.ENRResponse(requestHash, enr) if requestHash == packet.hash =>
+                    enr
+                }
+              }
+          }
+
+      private implicit class ChannelOps(channel: Channel[A, Packet]) {
+        def send(payload: Payload): Task[Packet] = {
+          for {
+            expiring <- setExpiration(payload)
+            packet <- pack(expiring)
+            _ <- channel.sendMessage(packet)
+          } yield packet
+        }
+
+        def collectFirstResponse[T](pf: PartialFunction[Payload.Response, T]): Task[Option[T]] =
+          channel
+            .nextMessage()
+            .timeout(requestTimeout)
+            .toIterant
+            .collect {
+              case MessageReceived(packet) => packet
+            }
+            .mapEval { packet =>
+              currentTimeMillis.flatMap { timestamp =>
+                Packet.unpack(packet) match {
+                  case Attempt.Successful((payload, remotePublicKey)) =>
+                    payload match {
+                      case _: Payload.Request =>
+                        // Not relevant on the client channel.
+                        Task.pure(None)
+
+                      case p: Payload.HasExpiration[_] if p.expiration < timestamp - expirationMillis =>
+                        Task.pure(None)
+
+                      case p: Payload.Response =>
+                        Task.pure(Some(p))
+                    }
+
+                  case Attempt.Failure(err) =>
+                    Task.raiseError(
+                      new IllegalArgumentException(s"Failed to unpack message: $err")
+                    )
+                }
+              }
+            }
+            .collect {
+              case Some(response) => response
+            }
+            .collect(pf)
+            .headOptionL
+      }
 
     }
   }
