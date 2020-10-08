@@ -440,7 +440,9 @@ object StaticUDPPeerGroup extends StrictLogging {
       Resource.make {
         for {
           isClosedRef <- Ref[Task].of(false)
-          messageQueue <- CloseableQueue[ChannelEvent[M]](capacity, ChannelType.SPMC)
+          // The publishing of messages happens asynchronously in this class,
+          // so there can be multiple publications going on at the same time.
+          messageQueue <- CloseableQueue[ChannelEvent[M]](capacity, ChannelType.MPMC)
           channel = new ChannelImpl[M](
             nettyChannel,
             localAddress,
