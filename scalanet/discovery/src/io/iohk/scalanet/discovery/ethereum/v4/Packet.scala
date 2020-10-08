@@ -20,6 +20,12 @@ object Payload {
   sealed trait Request extends Payload
   sealed trait Response extends Payload
 
+  trait HasExpiration[T] {
+    // Absolute UNIX timestamp.
+    def expiration: Long
+    def withExpiration(e: Long): T
+  }
+
   case class Ping(
       // Must be 4.
       version: Int,
@@ -30,6 +36,9 @@ object Payload {
       // Current ENR sequence number of the sender.
       enrSeq: Option[Long]
   ) extends Request
+      with HasExpiration[Ping] {
+    def withExpiration(e: Long) = copy(expiration = e)
+  }
 
   case class Pong(
       // Copy of `to` from the corresponding ping packet.
@@ -40,21 +49,33 @@ object Payload {
       // Current ENR of the sender of Pong.
       enrSeq: Option[Long]
   ) extends Response
+      with HasExpiration[Pong] {
+    def withExpiration(e: Long) = copy(expiration = e)
+  }
 
   case class FindNode(
       // 65-byte secp256k1 public key
       target: PublicKey,
       expiration: Long
   ) extends Request
+      with HasExpiration[FindNode] {
+    def withExpiration(e: Long) = copy(expiration = e)
+  }
 
   case class Neighbors(
       nodes: Seq[Node],
       expiration: Long
   ) extends Response
+      with HasExpiration[Neighbors] {
+    def withExpiration(e: Long) = copy(expiration = e)
+  }
 
   case class ENRRequest(
       expiration: Long
   ) extends Request
+      with HasExpiration[ENRRequest] {
+    def withExpiration(e: Long) = copy(expiration = e)
+  }
 
   case class ENRResponse(
       requestHash: Hash,
