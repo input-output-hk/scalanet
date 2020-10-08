@@ -1,8 +1,9 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
-import io.iohk.scalanet.discovery.ethereum.{Node, Crypto, Hash}
-import io.iohk.scalanet.discovery.ethereum.EthereumNodeRecord
-import scodec.bits.BitVectork
+import io.iohk.scalanet.discovery.crypto.{SigAlg, PrivateKey, PublicKey, Signature}
+import io.iohk.scalanet.discovery.hash.{Hash, Keccak}
+import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord}
+import scodec.bits.BitVector
 import scodec.{Codec, Attempt, Decoder, Err, Encoder}
 import scodec.DecodeResult
 
@@ -42,7 +43,7 @@ object Payload {
 
   case class FindNode(
       // 65-byte secp256k1 public key
-      target: Crypto.PublicKey,
+      target: PublicKey,
       expiration: Long
   ) extends Request
 
@@ -56,24 +57,23 @@ object Payload {
   ) extends Request
 
   case class ENRResponse(
-      requestHash: BitVector,
+      requestHash: Hash,
       enr: EthereumNodeRecord
   ) extends Response
 }
 
 /** Data as it goes over the wire. The packet type is included in the data. */
 case class Packet(
-    hash: BitVector,
-    signature: BitVector,
+    hash: Hash,
+    signature: Signature,
     data: BitVector
 )
 
 object Packet {
-  val MacBitsSize = 256 // 32 bytes
-  val SigBitsSize = 520 // 65 bytes
+  val MacBitsSize = 256 // 32 bytes; Keccak
+  val SigBitsSize = 520 // 65 bytes, Secp256k1
 
-  /** Consume a given number of bits. */
-  private def decodeN(size: Int) =
+  private def consumeNBits(size: Int) =
     Decoder[BitVector] { (bits: BitVector) =>
       bits.consumeThen(size)(
         err => Attempt.failure(Err.InsufficientBits(size, bits.size, List(err))),
@@ -81,17 +81,16 @@ object Packet {
       )
     }
 
-  /** Consume the remaining bits. */
-  private val decodeRest =
+  private val consumeRemainingBits =
     Decoder[BitVector] { (bits: BitVector) =>
       Attempt.successful(DecodeResult(bits, BitVector.empty))
     }
 
   private val packetDecoder: Decoder[Packet] =
     for {
-      hash <- decodeN(MacBitsSize)
-      signature <- decodeN(SigBitsSize)
-      data <- decodeRest
+      hash <- consumeNBits(MacBitsSize).map(Hash(_))
+      signature <- consumeNBits(SigBitsSize).map(Signature(_))
+      data <- consumeRemainingBits
     } yield Packet(hash, signature, data)
 
   private val packetEncoder: Encoder[Packet] =
@@ -107,20 +106,22 @@ object Packet {
   /** Serialize the payload, sign the data and compute the hash. */
   def pack(
       payload: Payload,
-      privateKey: Crypto.PrivateKey
-  )(implicit codec: Codec[Payload], crypto: Crypto): Attempt[Packet] =
-    codec.encode(payload).map { data =>
-      val signature = crypto.sign(privateKey, data)
-      val hash = Hash.keccak(signature ++ data)
-      Packet(hash, signature, data)
-    }
+      privateKey: PrivateKey
+  )(implicit codec: Codec[Payload], sigalg: SigAlg): Attempt[Packet] =
+    for {
+      data <- codec.encode(payload)
+      signature = sigalg.sign(privateKey, data)
+      _ <- Attempt.guard(signature.size == SigBitsSize, "Unexpected signature size.")
+      hash = Keccak(signature ++ data)
+      _ <- Attempt.guard(hash.size == MacBitsSize, "Unexpected MAC size.")
+    } yield Packet(hash, signature, data)
 
   /** Validate the hash, recover the public key by validating the signature, and deserialize the payload. */
-  def unpack(packet: Packet)(implicit codec: Codec[Payload], crypto: Crypto): Attempt[(Payload, Crypto.PublicKey)] =
+  def unpack(packet: Packet)(implicit codec: Codec[Payload], sigalg: SigAlg): Attempt[(Payload, PublicKey)] =
     for {
-      hash <- Attempt.successful(Hash.keccak(packet.signature ++ packet.data))
+      hash <- Attempt.successful(Keccak(packet.signature ++ packet.data))
       _ <- Attempt.guard(hash == packet.hash, "Invalid message hash.")
-      publicKey <- crypto.recoverPublicKey(packet.signature, packet.data)
+      publicKey <- sigalg.recoverPublicKey(packet.signature, packet.data)
       payload <- codec.decodeValue(packet.data)
     } yield (payload, publicKey)
 }
