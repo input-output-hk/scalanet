@@ -1,9 +1,9 @@
 package io.iohk.scalanet.discovery.ethereum
 
 import java.net.InetAddress
-import scodec.bits.ByteVector
+import scodec.bits.BitVector
 
-case class Node(id: ByteVector, address: Node.Address)
+case class Node(id: BitVector, address: Node.Address)
 
 object Node {
   case class Address(
