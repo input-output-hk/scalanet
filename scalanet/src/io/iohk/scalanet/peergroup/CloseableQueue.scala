@@ -28,7 +28,8 @@ class CloseableQueue[A](
   def next(): Task[Option[A]] =
     closed.tryGet.flatMap {
       case Some(true) =>
-        Task.pure(None)
+        // `clear` must be called by the consumer side.
+        queue.clear.as(None)
 
       case Some(false) =>
         queue.tryPoll
@@ -47,7 +48,7 @@ class CloseableQueue[A](
     * could have closed the queue before.
     */
   def close(discard: Boolean): Task[Unit] =
-    closed.complete(discard).attempt >> queue.clear.whenA(discard)
+    closed.complete(discard).attempt.void
 
   /** Close the queue and discard any remaining items in it. */
   def closeAndDiscard(): Task[Unit] = close(discard = true)

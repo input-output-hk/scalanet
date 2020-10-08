@@ -68,14 +68,14 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
     }
   }
 
-  it should "not throw if close is called multiple times" in testQueue() { queue =>
+  it should "not throw if close is called multiple times and use the first discard flag" in testQueue() { queue =>
     for {
       _ <- queue.offer("Spam")
       _ <- queue.close(discard = false)
-      _ <- queue.close(discard = true)
+      _ <- queue.close(discard = true) // Does nothing.
       m <- queue.next()
     } yield {
-      m shouldBe None
+      m shouldBe Some("Spam")
     }
   }
 
