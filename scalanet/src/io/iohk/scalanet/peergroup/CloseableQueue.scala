@@ -49,6 +49,12 @@ class CloseableQueue[A](
   def close(discard: Boolean): Task[Unit] =
     closed.complete(discard).attempt >> queue.clear.whenA(discard)
 
+  /** Close the queue and discard any remaining items in it. */
+  def closeAndDiscard(): Task[Unit] = close(discard = true)
+
+  /** Close the queue but allow the consumer to pull the remaining items from it. */
+  def closeAndKeep(): Task[Unit] = close(discard = false)
+
   /** Try to put a new item in the queue, unless the capactiy has been reached or the queue has been closed. */
   def tryOffer(item: A): Task[Either[Closed, Boolean]] =
     // We could drop the oldest item if the queue is full, rather than drop the latest,
