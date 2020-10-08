@@ -20,7 +20,7 @@ object Payload {
   sealed trait Request extends Payload
   sealed trait Response extends Payload
 
-  trait HasExpiration[T] {
+  trait HasExpiration[T <: Payload] {
     // Absolute UNIX timestamp.
     def expiration: Long
     def withExpiration(e: Long): T
@@ -93,6 +93,7 @@ case class Packet(
 object Packet {
   val MacBitsSize = 256 // 32 bytes; Keccak
   val SigBitsSize = 520 // 65 bytes, Secp256k1
+  val MaxPacketSize = 1280
 
   private def consumeNBits(size: Int) =
     Decoder[BitVector] { (bits: BitVector) =>
@@ -116,9 +117,12 @@ object Packet {
 
   private val packetEncoder: Encoder[Packet] =
     Encoder[Packet] { (packet: Packet) =>
-      Attempt.successful {
-        packet.hash ++ packet.signature ++ packet.data
-      }
+      for {
+        bits <- Attempt.successful {
+          packet.hash ++ packet.signature ++ packet.data
+        }
+        _ <- Attempt.guard(bits.size < MaxPacketSize, "Exceeded maximum packet size.")
+      } yield bits
     }
 
   implicit val packetCodec: Codec[Packet] =
