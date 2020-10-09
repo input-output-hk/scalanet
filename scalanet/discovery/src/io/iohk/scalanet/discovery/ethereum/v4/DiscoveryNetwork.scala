@@ -18,6 +18,8 @@ import monix.catnap.CancelableF
 import scala.concurrent.duration._
 import scodec.{Codec, Attempt}
 import scala.util.control.NonFatal
+import scodec.bits.BitVector
+import io.iohk.scalanet.discovery.ethereum.v4.Payload.Neighbors
 
 /** Present a stateless facade implementing the RPC methods
   * that correspond to the discovery protocol messages on top
@@ -337,7 +339,26 @@ object DiscoveryNetwork {
       }
   }
 
-  def getMaxNeighborsPerPacket(implicit codec: Codec[Packet]) =
-    // TODO: Iteratively expand the number of neighbors until we hit 1280 bits.
-    4
+  def getMaxNeighborsPerPacket(implicit codec: Codec[Payload], sigalg: SigAlg): Int = {
+    val sampleNode = Node(
+      id = PublicKey(BitVector(Array.fill[Byte](sigalg.PublicKeyBytesSize)(0xff.toByte))),
+      address = Node.Address(
+        ip = BitVector(Array.fill[Byte](4)(0xff.toByte)),
+        udpPort = 40000,
+        tcpPort = 50000
+      )
+    )
+    val expiration = System.currentTimeMillis
+
+    Stream
+      .iterate(List(sampleNode))(sampleNode :: _)
+      .map { nodes =>
+        val payload = Neighbors(nodes, expiration)
+        // Take a shortcut here so we don't need a valid private key and sign all incremental messages.
+        val dataBitsSize = codec.encode(payload).require.size
+        Packet.MacBitsSize + Packet.SigBitsSize + dataBitsSize
+      }
+      .takeWhile(_ <= Packet.MaxPacketSize)
+      .length
+  }
 }
