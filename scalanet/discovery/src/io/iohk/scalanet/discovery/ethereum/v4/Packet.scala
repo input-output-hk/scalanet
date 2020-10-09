@@ -110,6 +110,14 @@ object Packet {
 
   private val packetDecoder: Decoder[Packet] =
     for {
+      _ <- Decoder { bits =>
+        Attempt
+          .guard(
+            bits.size <= MaxPacketSize,
+            "Packet to decode exceeds maximum packet size."
+          )
+          .map(_ => DecodeResult((), bits))
+      }
       hash <- consumeNBits(MacBitsSize).map(Hash(_))
       signature <- consumeNBits(SigBitsSize).map(Signature(_))
       data <- consumeRemainingBits
@@ -121,7 +129,7 @@ object Packet {
         bits <- Attempt.successful {
           packet.hash ++ packet.signature ++ packet.data
         }
-        _ <- Attempt.guard(bits.size < MaxPacketSize, "Exceeded maximum packet size.")
+        _ <- Attempt.guard(bits.size <= MaxPacketSize, "Encoded packet exceeded maximum packet size.")
       } yield bits
     }
 
