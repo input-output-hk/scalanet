@@ -2,6 +2,7 @@ package io.iohk.scalanet.discovery.ethereum.v4
 
 import cats.implicits._
 import cats.effect.{Clock}
+import cats.effect.concurrent.Deferred
 import com.typesafe.scalalogging.LazyLogging
 import io.iohk.scalanet.discovery.crypto.{PrivateKey, PublicKey, SigAlg}
 import io.iohk.scalanet.discovery.ethereum.Node
@@ -14,7 +15,6 @@ import java.util.concurrent.TimeoutException
 import monix.eval.Task
 import monix.tail.Iterant
 import monix.catnap.CancelableF
-import monix.execution.cancelables.BooleanCancelable
 import scala.concurrent.duration._
 import scodec.{Codec, Attempt}
 import scala.util.control.NonFatal
@@ -56,19 +56,21 @@ object DiscoveryNetwork {
 
       private val localAddress = toAddress(peerGroup.processAddress)
 
+      /** Start a fiber that accepts incoming channels and starts a dedicated fiber
+        * to handle every channel separtely, processing their messages one by one.
+        * This is fair: every remote connection can be throttled independently
+        * of each other, as well as based on operation type by the `handler` itself.
+        */
       override def startHandling(handler: DiscoveryRPC[(PublicKey, A)]): Task[CancelableF[Task]] =
         for {
-          cancelToken <- Task(BooleanCancelable())
-          cancelable <- CancelableF[Task](Task(cancelToken.cancel()))
+          cancelToken <- Deferred[Task, Unit]
           _ <- peerGroup
             .nextServerEvent()
+            .withCancelToken(cancelToken)
             .toIterant
-            .takeWhile(_ => !cancelToken.isCanceled)
-            .collect {
-              case ChannelCreated(channel, release) => channel -> release
-            }
             .mapEval {
-              case (channel, release) =>
+              case ChannelCreated(channel, release) =>
+                channel -> release
                 handleChannel(handler, channel, cancelToken)
                   .guarantee(release)
                   .onErrorRecover {
@@ -77,21 +79,24 @@ object DiscoveryNetwork {
                       logger.debug(s"Error on channel from ${channel.to}: $ex")
                   }
                   .startAndForget
+              case _ =>
+                Task.unit
             }
             .completedL
             .startAndForget
+          cancelable <- CancelableF[Task](cancelToken.complete(()))
         } yield cancelable
 
       private def handleChannel(
           handler: DiscoveryRPC[(PublicKey, A)],
           channel: Channel[A, Packet],
-          cancelToken: BooleanCancelable
+          cancelToken: Deferred[Task, Unit]
       ): Task[Unit] = {
         channel
           .nextMessage()
+          .withCancelToken(cancelToken)
           .timeout(messageExpiration) // Messages older than this would be ignored anyway.
           .toIterant
-          .takeWhile(_ => !cancelToken.isCanceled)
           .collect {
             case MessageReceived(packet) => packet
           }
@@ -272,6 +277,12 @@ object DiscoveryNetwork {
   private implicit class NextOps[A](next: Task[Option[A]]) {
     def toIterant: Iterant[Task, A] =
       Iterant.repeatEvalF(next).takeWhile(_.isDefined).map(_.get)
+
+    def withCancelToken(token: Deferred[Task, Unit]): Task[Option[A]] =
+      Task.race(token.get, next).map {
+        case Left(()) => None
+        case Right(x) => x
+      }
   }
 
   def getMaxNeighborsPerPacket(implicit codec: Codec[Packet]) =
