@@ -1,7 +1,7 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
+import io.iohk.scalanet.discovery.hash.{Hash, Keccak256}
 import io.iohk.scalanet.discovery.crypto.{SigAlg, PrivateKey, PublicKey, Signature}
-import io.iohk.scalanet.discovery.hash.{Hash, Keccak}
 import scodec.bits.BitVector
 import scodec.{Codec, Attempt, Decoder, Err, Encoder}
 import scodec.DecodeResult
@@ -17,7 +17,7 @@ case class Packet(
 )
 
 object Packet {
-  val MacBitsSize = 256 // 32 bytes; Keccak
+  val MacBitsSize = 256 // 32 bytes; Keccak256
   val SigBitsSize = 520 // 65 bytes, Secp256k1
   val MaxPacketBitsSize = 1280
 
@@ -72,13 +72,13 @@ object Packet {
     for {
       data <- codec.encode(payload)
       signature = sigalg.sign(privateKey, data)
-      hash = Keccak(signature ++ data)
+      hash = Keccak256(signature ++ data)
     } yield Packet(hash, signature, data)
 
   /** Validate the hash, recover the public key by validating the signature, and deserialize the payload. */
   def unpack(packet: Packet)(implicit codec: Codec[Payload], sigalg: SigAlg): Attempt[(Payload, PublicKey)] =
     for {
-      hash <- Attempt.successful(Keccak(packet.signature ++ packet.data))
+      hash <- Attempt.successful(Keccak256(packet.signature ++ packet.data))
       _ <- Attempt.guard(hash == packet.hash, "Invalid message hash.")
       publicKey <- sigalg.recoverPublicKey(packet.signature, packet.data)
       payload <- codec.decodeValue(packet.data)

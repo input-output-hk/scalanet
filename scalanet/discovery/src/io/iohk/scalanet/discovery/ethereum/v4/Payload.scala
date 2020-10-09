@@ -1,7 +1,7 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
-import io.iohk.scalanet.discovery.crypto.PublicKey
 import io.iohk.scalanet.discovery.hash.Hash
+import io.iohk.scalanet.discovery.crypto.PublicKey
 import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord}
 import scodec.bits.BitVector
 
