@@ -126,6 +126,8 @@ object Packet {
   private val packetEncoder: Encoder[Packet] =
     Encoder[Packet] { (packet: Packet) =>
       for {
+        _ <- Attempt.guard(packet.hash.size == MacBitsSize, "Unexpected MAC size.")
+        _ <- Attempt.guard(packet.signature.size == SigBitsSize, "Unexpected signature size.")
         bits <- Attempt.successful {
           packet.hash ++ packet.signature ++ packet.data
         }
@@ -144,9 +146,7 @@ object Packet {
     for {
       data <- codec.encode(payload)
       signature = sigalg.sign(privateKey, data)
-      _ <- Attempt.guard(signature.size == SigBitsSize, "Unexpected signature size.")
       hash = Keccak(signature ++ data)
-      _ <- Attempt.guard(hash.size == MacBitsSize, "Unexpected MAC size.")
     } yield Packet(hash, signature, data)
 
   /** Validate the hash, recover the public key by validating the signature, and deserialize the payload. */
