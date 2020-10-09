@@ -18,6 +18,8 @@ import monix.catnap.CancelableF
 import scala.concurrent.duration._
 import scodec.{Codec, Attempt}
 import scala.util.control.NonFatal
+import io.iohk.scalanet.peergroup.Channel.DecodingError
+import io.iohk.scalanet.peergroup.Channel.UnexpectedError
 
 /** Present a stateless facade implementing the RPC methods
   * that correspond to the discovery protocol messages on top
@@ -79,6 +81,7 @@ object DiscoveryNetwork {
                       logger.debug(s"Error on channel from ${channel.to}: $ex")
                   }
                   .startAndForget
+
               case _ =>
                 Task.unit
             }
@@ -97,31 +100,35 @@ object DiscoveryNetwork {
           .withCancelToken(cancelToken)
           .timeout(messageExpiration) // Messages older than this would be ignored anyway.
           .toIterant
-          .collect {
-            case MessageReceived(packet) => packet
-          }
-          .mapEval { packet =>
-            currentTimeMillis.flatMap { timestamp =>
-              Packet.unpack(packet) match {
-                case Attempt.Successful((payload, remotePublicKey)) =>
-                  payload match {
-                    case _: Payload.Response =>
-                      // Not relevant on the server channel.
-                      Task.unit
+          .mapEval {
+            case MessageReceived(packet) =>
+              currentTimeMillis.flatMap { timestamp =>
+                Packet.unpack(packet) match {
+                  case Attempt.Successful((payload, remotePublicKey)) =>
+                    payload match {
+                      case _: Payload.Response =>
+                        // Not relevant on the server channel.
+                        Task.unit
 
-                    case p: Payload.HasExpiration[_] if p.expiration < timestamp - expirationMillis =>
-                      Task(logger.debug(s"Ignoring expired message from ${channel.to}"))
+                      case p: Payload.HasExpiration[_] if p.expiration < timestamp - expirationMillis =>
+                        Task(logger.debug(s"Ignoring expired message from ${channel.to}"))
 
-                    case p: Payload.Request =>
-                      handleRequest(handler, channel, remotePublicKey, packet.hash, p)
-                  }
+                      case p: Payload.Request =>
+                        handleRequest(handler, channel, remotePublicKey, packet.hash, p)
+                    }
 
-                case Attempt.Failure(err) =>
-                  Task.raiseError(
-                    new IllegalArgumentException(s"Failed to unpack message: $err")
-                  )
+                  case Attempt.Failure(err) =>
+                    Task.raiseError(
+                      new IllegalArgumentException(s"Failed to unpack message: $err")
+                    )
+                }
               }
-            }
+
+            case DecodingError =>
+              Task.raiseError(new IllegalArgumentException("Failed to decode a message."))
+
+            case UnexpectedError(ex) =>
+              Task.raiseError(ex)
           }
           .completedL
       }
