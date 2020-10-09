@@ -1,13 +1,18 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
-import io.iohk.scalanet.discovery.crypto.Signature
-import io.iohk.scalanet.discovery.hash.Hash
+import io.iohk.scalanet.discovery.crypto.{Signature, PrivateKey, PublicKey}
+import io.iohk.scalanet.discovery.hash.{Hash, Keccak256}
+import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs
+import io.iohk.scalanet.discovery.ethereum.v4.mocks.MockSigAlg
 import org.scalatest._
-import scodec.{Attempt, Codec}
+import scodec.{Attempt, Codec, Err}
 import scodec.bits.BitVector
 import scala.util.Random
 
 class PacketSpec extends FlatSpec with Matchers {
+
+  import DefaultCodecs._
+  implicit val sigalg = new MockSigAlg()
 
   val MaxPacketBytesSize = Packet.MaxPacketBitsSize / 8
   val MacBytesSize = Packet.MacBitsSize / 8
@@ -51,7 +56,7 @@ class PacketSpec extends FlatSpec with Matchers {
   }
 
   it should "fail if the hash has wrong size" in {
-    expectFailure("Unexpected MAC size.") {
+    expectFailure("Unexpected hash size.") {
       Codec.encode(randomPacket(hashBytesSize = MacBytesSize * 2))
     }
   }
@@ -75,7 +80,7 @@ class PacketSpec extends FlatSpec with Matchers {
   }
   it should "fail if there's less data than the hash size" in {
     expectFailure(
-      s"MAC: cannot acquire ${Packet.MacBitsSize} bits from a vector that contains ${Packet.MacBitsSize - 8} bits"
+      s"Hash: cannot acquire ${Packet.MacBitsSize} bits from a vector that contains ${Packet.MacBitsSize - 8} bits"
     ) {
       Codec.decode[Packet](nBytesAsBits(MacBytesSize - 1))
     }
@@ -89,11 +94,59 @@ class PacketSpec extends FlatSpec with Matchers {
     }
   }
 
-  behavior of "unpack"
-  it should "fail if the hash is incorrect" in (pending)
-  it should "fail if the signature is incorrect" in (pending)
+  trait PackFixture {
+    val payload = Payload.FindNode(
+      target = PublicKey(nBytesAsBits(sigalg.PublicKeyBytesSize)),
+      expiration = System.currentTimeMillis
+    )
+    val privateKey = PrivateKey(nBytesAsBits(sigalg.PrivateKeyBytesSize))
+    val publicKey = PublicKey(privateKey) // This is how the MockSignature will recover it.
+    val packet = Packet.pack(payload, privateKey).require
+  }
 
   behavior of "pack"
-  it should "calculate the signature based on the data" in (pending)
-  it should "calculate the hash based on the signature and the data" in (pending)
+
+  it should "serialize the payload into the data" in new PackFixture {
+    packet.data shouldBe Codec.encode[Payload](payload).require
+    Codec[Payload].decodeValue(packet.data).require shouldBe payload
+  }
+
+  it should "calculate the signature based on the data" in new PackFixture {
+    packet.signature shouldBe sigalg.sign(privateKey, packet.data)
+  }
+
+  it should "calculate the hash based on the signature and the data" in new PackFixture {
+    packet.hash shouldBe Keccak256(packet.signature ++ packet.data)
+  }
+
+  behavior of "unpack"
+
+  it should "deserialize the data into the payload" in new PackFixture {
+    Packet.unpack(packet).require._1 shouldBe payload
+  }
+
+  it should "recover the public key" in new PackFixture {
+    Packet.unpack(packet).require._2 shouldBe publicKey
+  }
+
+  it should "fail if the hash is incorrect" in new PackFixture {
+    val corrupt = packet.copy(hash = Hash(nBytesAsBits(32)))
+
+    expectFailure("Invalid hash.") {
+      Packet.unpack(corrupt)
+    }
+  }
+
+  it should "fail if the signature is incorrect" in new PackFixture {
+    implicit val sigalg = new MockSigAlg {
+      override def recoverPublicKey(signature: Signature, data: BitVector): Attempt[PublicKey] =
+        Attempt.failure(Err("Invalid signature."))
+    }
+    val randomSig = Signature(nBytesAsBits(32))
+    val corrupt = packet.copy(signature = randomSig, hash = Keccak256(randomSig ++ packet.data))
+
+    expectFailure("Invalid signature.") {
+      Packet.unpack(corrupt)
+    }
+  }
 }

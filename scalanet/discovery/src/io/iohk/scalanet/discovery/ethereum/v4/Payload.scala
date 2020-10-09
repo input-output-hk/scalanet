@@ -61,7 +61,7 @@ object Payload {
   }
 
   case class Neighbors(
-      nodes: Seq[Node],
+      nodes: List[Node],
       expiration: Long
   ) extends Response
       with HasExpiration[Neighbors] {

@@ -44,7 +44,7 @@ object Packet {
           )
           .map(_ => DecodeResult((), bits))
       }
-      hash <- consumeNBits("MAC", MacBitsSize).map(Hash(_))
+      hash <- consumeNBits("Hash", MacBitsSize).map(Hash(_))
       signature <- consumeNBits("Signature", SigBitsSize).map(Signature(_))
       data <- consumeRemainingBits
     } yield Packet(hash, signature, data)
@@ -52,7 +52,7 @@ object Packet {
   private val packetEncoder: Encoder[Packet] =
     Encoder[Packet] { (packet: Packet) =>
       for {
-        _ <- Attempt.guard(packet.hash.size == MacBitsSize, "Unexpected MAC size.")
+        _ <- Attempt.guard(packet.hash.size == MacBitsSize, "Unexpected hash size.")
         _ <- Attempt.guard(packet.signature.size == SigBitsSize, "Unexpected signature size.")
         bits <- Attempt.successful {
           packet.hash ++ packet.signature ++ packet.data
@@ -79,7 +79,7 @@ object Packet {
   def unpack(packet: Packet)(implicit codec: Codec[Payload], sigalg: SigAlg): Attempt[(Payload, PublicKey)] =
     for {
       hash <- Attempt.successful(Keccak256(packet.signature ++ packet.data))
-      _ <- Attempt.guard(hash == packet.hash, "Invalid message hash.")
+      _ <- Attempt.guard(hash == packet.hash, "Invalid hash.")
       publicKey <- sigalg.recoverPublicKey(packet.signature, packet.data)
       payload <- codec.decodeValue(packet.data)
     } yield (payload, publicKey)

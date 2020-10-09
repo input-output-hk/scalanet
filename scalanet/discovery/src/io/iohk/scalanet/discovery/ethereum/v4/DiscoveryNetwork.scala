@@ -159,7 +159,7 @@ object DiscoveryNetwork {
                 .grouped(maxNeighborsPerPacket)
                 .toList
                 .traverse { group =>
-                  channel.send(Neighbors(group, 0))
+                  channel.send(Neighbors(group.toList, 0))
                 }
                 .void
             }

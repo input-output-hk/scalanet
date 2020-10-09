@@ -3,12 +3,13 @@ package io.iohk.scalanet.discovery.ethereum
 import scodec.bits.ByteVector
 import scala.collection.SortedMap
 import java.nio.charset.StandardCharsets
+import io.iohk.scalanet.discovery.crypto.Signature
 
 /** ENR corresponding to https://github.com/ethereum/devp2p/blob/master/enr.md */
 case class EthereumNodeRecord(
     // Nodes should increment this number whenever their properties change, like their address, and re-publish.
     seq: Long,
-    signature: ByteVector,
+    signature: Signature,
     attrs: SortedMap[ByteVector, ByteVector]
 )
 
