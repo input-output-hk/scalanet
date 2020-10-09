@@ -19,12 +19,12 @@ case class Packet(
 object Packet {
   val MacBitsSize = 256 // 32 bytes; Keccak
   val SigBitsSize = 520 // 65 bytes, Secp256k1
-  val MaxPacketSize = 1280
+  val MaxPacketBitsSize = 1280
 
-  private def consumeNBits(size: Int) =
+  private def consumeNBits(context: String, size: Int) =
     Decoder[BitVector] { (bits: BitVector) =>
       bits.consumeThen(size)(
-        err => Attempt.failure(Err.InsufficientBits(size, bits.size, List(err))),
+        err => Attempt.failure(Err.InsufficientBits(size, bits.size, List(context))),
         (range, remainder) => Attempt.successful(DecodeResult(range, remainder))
       )
     }
@@ -39,13 +39,13 @@ object Packet {
       _ <- Decoder { bits =>
         Attempt
           .guard(
-            bits.size <= MaxPacketSize,
-            "Packet to decode exceeds maximum packet size."
+            bits.size <= MaxPacketBitsSize,
+            "Packet to decode exceeds maximum size."
           )
           .map(_ => DecodeResult((), bits))
       }
-      hash <- consumeNBits(MacBitsSize).map(Hash(_))
-      signature <- consumeNBits(SigBitsSize).map(Signature(_))
+      hash <- consumeNBits("MAC", MacBitsSize).map(Hash(_))
+      signature <- consumeNBits("Signature", SigBitsSize).map(Signature(_))
       data <- consumeRemainingBits
     } yield Packet(hash, signature, data)
 
@@ -57,7 +57,7 @@ object Packet {
         bits <- Attempt.successful {
           packet.hash ++ packet.signature ++ packet.data
         }
-        _ <- Attempt.guard(bits.size <= MaxPacketSize, "Encoded packet exceeded maximum packet size.")
+        _ <- Attempt.guard(bits.size <= MaxPacketBitsSize, "Encoded packet exceeded maximum size.")
       } yield bits
     }
 

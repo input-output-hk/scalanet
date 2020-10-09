@@ -358,7 +358,7 @@ object DiscoveryNetwork {
         val dataBitsSize = codec.encode(payload).require.size
         Packet.MacBitsSize + Packet.SigBitsSize + dataBitsSize
       }
-      .takeWhile(_ <= Packet.MaxPacketSize)
+      .takeWhile(_ <= Packet.MaxPacketBitsSize)
       .length
   }
 }
