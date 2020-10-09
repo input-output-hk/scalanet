@@ -15,7 +15,7 @@ import io.iohk.scalanet.peergroup.{Channel, InetMultiAddress, PeerGroup, Closeab
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.{ByteBuf, Unpooled}
 import io.netty.channel.socket.SocketChannel
-import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter, ChannelInitializer}
+import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter, ChannelInitializer, EventLoop}
 import io.netty.handler.ssl.{SslContext, SslHandshakeCompletionEvent}
 import javax.net.ssl.{SSLException, SSLHandshakeException, SSLKeyException}
 import monix.eval.Task
@@ -24,6 +24,7 @@ import scodec.bits.BitVector
 
 import scala.concurrent.Promise
 import scala.util.control.NonFatal
+import io.netty.channel.EventLoop
 
 private[dynamictls] object DynamicTLSPeerGroupInternals {
   implicit class ChannelOps(val channel: io.netty.channel.Channel) {
@@ -36,14 +37,17 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
 
   class MessageNotifier[M](
       messageQueue: CloseableQueue[ChannelEvent[M]],
-      codec: StreamCodec[M]
-  )(implicit scheduler: Scheduler)
-      extends ChannelInboundHandlerAdapter
+      codec: StreamCodec[M],
+      eventLoop: EventLoop
+  ) extends ChannelInboundHandlerAdapter
       with StrictLogging {
+
+    // This should be a single threaded scheduler, so as long as we use `runAsyncAndForget` it shouldn't change the message ordering.
+    val scheduler = Scheduler(eventLoop)
 
     override def channelInactive(channelHandlerContext: ChannelHandlerContext): Unit = {
       logger.debug("Channel to peer {} inactive", channelHandlerContext.channel().remoteAddress())
-      executeSync(messageQueue.close(discard = false))
+      executeAsync(messageQueue.close(discard = false))
     }
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
@@ -80,10 +84,11 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
     }
 
     private def handleEvent(event: ChannelEvent[M]): Unit =
-      executeSync(messageQueue.tryOffer(event).void)
+      // Don't want to lose message, so `offer`, not `tryOffer`.
+      executeAsync(messageQueue.offer(event).void)
 
-    private def executeSync(task: Task[Unit]): Unit =
-      task.runSyncUnsafe()
+    private def executeAsync(task: Task[Unit]): Unit =
+      task.runAsyncAndForget(scheduler)
   }
 
   class ClientChannelImpl[M](
@@ -138,8 +143,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
                 }
               }
             })
-            .addLast(new MessageNotifier[M](messageQueue, codec))
-
+            .addLast(new MessageNotifier[M](messageQueue, codec, ch.eventLoop))
           ()
         }
       })
@@ -259,7 +263,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
           }
         }
       })
-      .addLast(new MessageNotifier(messageQueue, codec))
+      .addLast(new MessageNotifier(messageQueue, codec, nettyChannel.eventLoop))
 
     private def handleEvent(event: ServerEvent[PeerInfo, M]): Unit =
       serverQueue.offer(event).void.runSyncUnsafe()

@@ -287,7 +287,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
     }
 
     def handleEvent(event: ChannelEvent[M]): Unit = {
-      messageQueue.tryOffer(event).void.runSyncUnsafe()
+      messageQueue.tryOffer(event).void.runAsyncAndForget
     }
   }
 
