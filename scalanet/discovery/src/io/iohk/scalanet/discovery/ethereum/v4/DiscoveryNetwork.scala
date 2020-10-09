@@ -10,7 +10,7 @@ import io.iohk.scalanet.discovery.hash.Hash
 import io.iohk.scalanet.peergroup.PeerGroup
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.Channel
-import io.iohk.scalanet.peergroup.Channel.MessageReceived
+import io.iohk.scalanet.peergroup.Channel.{MessageReceived, DecodingError, UnexpectedError}
 import java.util.concurrent.TimeoutException
 import monix.eval.Task
 import monix.tail.Iterant
@@ -18,8 +18,6 @@ import monix.catnap.CancelableF
 import scala.concurrent.duration._
 import scodec.{Codec, Attempt}
 import scala.util.control.NonFatal
-import io.iohk.scalanet.peergroup.Channel.DecodingError
-import io.iohk.scalanet.peergroup.Channel.UnexpectedError
 
 /** Present a stateless facade implementing the RPC methods
   * that correspond to the discovery protocol messages on top
@@ -49,6 +47,7 @@ object DiscoveryNetwork {
     new DiscoveryNetwork[A] with LazyLogging {
 
       import DiscoveryRPC.ENRSeq
+      import Payload._
 
       private val expirationMillis = messageExpiration.toMillis
 
@@ -140,8 +139,6 @@ object DiscoveryNetwork {
           hash: Hash,
           payload: Payload.Request
       ): Task[Unit] = {
-        import Payload._
-
         val caller = (remotePublicKey, channel.to)
 
         payload match {
@@ -204,34 +201,47 @@ object DiscoveryNetwork {
           peerGroup.client(to).use { channel =>
             channel
               .send(
-                Payload.Ping(version = 4, from = localAddress, to = toAddress(to), 0, localEnrSeq)
+                Ping(version = 4, from = localAddress, to = toAddress(to), 0, localEnrSeq)
               )
               .flatMap { packet =>
                 channel.collectFirstResponse {
-                  case Payload.Pong(_, pingHash, _, maybeRemoteEnrSeq) if pingHash == packet.hash =>
+                  case Pong(_, pingHash, _, maybeRemoteEnrSeq) if pingHash == packet.hash =>
                     maybeRemoteEnrSeq
                 }
               }
           }
 
-      override val findNode = (to: A) => (target: PublicKey) => ???
+      override val findNode = (to: A) =>
+        (target: PublicKey) =>
+          peerGroup.client(to).use { channel =>
+            channel.send(FindNode(target, 0)).flatMap { _ =>
+              channel.collectAndFoldResponses(kademliaTimeout, Vector.empty[Node]) {
+                case Neighbors(nodes, _) => nodes
+              } { (acc, nodes) =>
+                val found = (acc ++ nodes).take(kademliaBucketSize)
+                if (found.size < kademliaBucketSize) Left(found) else Right(found)
+              }
+            }
+          }
 
       override val enrRequest = (to: A) =>
         (_: Unit) =>
           peerGroup.client(to).use { channel =>
             channel
-              .send(
-                Payload.ENRRequest(0)
-              )
+              .send(ENRRequest(0))
               .flatMap { packet =>
                 channel.collectFirstResponse {
-                  case Payload.ENRResponse(requestHash, enr) if requestHash == packet.hash =>
+                  case ENRResponse(requestHash, enr) if requestHash == packet.hash =>
                     enr
                 }
               }
           }
 
       private implicit class ChannelOps(channel: Channel[A, Packet]) {
+
+        /** Set the expiration, pack and send the data.
+          * Return the packet so we can use the hash for expected responses.
+          */
         def send(payload: Payload): Task[Packet] = {
           for {
             expiring <- setExpiration(payload)
@@ -240,10 +250,14 @@ object DiscoveryNetwork {
           } yield packet
         }
 
-        def collectFirstResponse[T](pf: PartialFunction[Payload.Response, T]): Task[Option[T]] =
+        /** Collect responses that match a partial function or raise a timeout exception. */
+        def collectResponses[T](
+            // The absolute end we are willing to wait for the correct message to arrive.
+            deadline: Deadline
+        )(pf: PartialFunction[Payload.Response, T]): Iterant[Task, T] =
           channel
             .nextMessage()
-            .timeout(requestTimeout)
+            .timeoutL(Task(requestTimeout.min(deadline.timeLeft)))
             .toIterant
             .collect {
               case MessageReceived(packet) => packet
@@ -275,9 +289,40 @@ object DiscoveryNetwork {
               case Some(response) => response
             }
             .collect(pf)
-            .headOptionL
-      }
 
+        /** Collect the first response that matches the partial function or return None if one cannot be found */
+        def collectFirstResponse[T](pf: PartialFunction[Payload.Response, T]): Task[Option[T]] =
+          channel
+            .collectResponses(requestTimeout.fromNow)(pf)
+            .headOptionL
+            .onErrorRecover {
+              case NonFatal(ex) => None
+            }
+
+        /** Collect responses that match the partial function and fold them while the folder function returns Left.  */
+        def collectAndFoldResponses[T, Z](timeout: FiniteDuration, seed: Z)(pf: PartialFunction[Payload.Response, T])(
+            f: (Z, T) => Either[Z, Z]
+        ): Task[Option[Z]] =
+          channel
+            .collectResponses(timeout.fromNow)(pf)
+            .attempt
+            .foldWhileLeftL((seed -> 0).some) {
+              case (Some((acc, count)), Left(ex: TimeoutException)) if count > 0 =>
+                // We have a timeout but we already accumulated some results, so return those.
+                Right(Some((acc, count)))
+
+              case (_, Left(_)) =>
+                // Unexpected error, discard results, if any.
+                Right(None)
+
+              case (Some((acc, count)), Right(response)) =>
+                // New response, fold it with the existing to decide if we need more.
+                val next = (acc: Z) => Some(acc -> (count + 1))
+                f(acc, response).bimap(next, next)
+            }
+            .map(_.map(_._1))
+
+      }
     }
   }
 

@@ -13,8 +13,8 @@ class DiscoveryNetworkSpec extends FlatSpec {
   it should "send an unexpired FindNode Packet with the given target" in (pending)
   it should "return None if the peer times out" in (pending)
   it should "return Some Nodes if the peer responds" in (pending)
-  it should "collect responses up to the timeout" in (pending)
-  it should "collect responses up to the bucket size" in (pending)
+  it should "collect Nodes up to the timeout" in (pending)
+  it should "collect Nodes up to the bucket size" in (pending)
 
   behavior of "enrRequest"
   it should "send an unexpired ENRRequest Packet" in (pending)
