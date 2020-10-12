@@ -9,6 +9,7 @@ import io.iohk.scalanet.discovery.crypto.Signature
 case class EthereumNodeRecord(
     // Nodes should increment this number whenever their properties change, like their address, and re-publish.
     seq: Long,
+    // Signature over the record contents: [seq, k0, v0, k1, v1, ...]
     signature: Signature,
     attrs: SortedMap[ByteVector, ByteVector]
 )

@@ -3,7 +3,6 @@ package io.iohk.scalanet.discovery.ethereum.v4
 import io.iohk.scalanet.discovery.hash.Hash
 import io.iohk.scalanet.discovery.crypto.PublicKey
 import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord}
-import scodec.bits.BitVector
 
 /** Discovery protocol messages from https://github.com/ethereum/devp2p/blob/master/discv4.md
   *
@@ -42,7 +41,7 @@ object Payload {
       // Copy of `to` from the corresponding ping packet.
       to: Node.Address,
       // Hash of the corresponding ping packet.
-      pingHash: BitVector,
+      pingHash: Hash,
       expiration: Long,
       // Current ENR of the sender of Pong.
       enrSeq: Option[Long]

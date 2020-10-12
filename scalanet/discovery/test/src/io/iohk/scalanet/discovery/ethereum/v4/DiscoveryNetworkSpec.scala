@@ -1,8 +1,9 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
 import cats.implicits._
-import io.iohk.scalanet.discovery.crypto.{PrivateKey, PublicKey, SigAlg}
-import io.iohk.scalanet.discovery.ethereum.Node
+import io.iohk.scalanet.discovery.hash.Hash
+import io.iohk.scalanet.discovery.crypto.{PrivateKey, PublicKey, SigAlg, Signature}
+import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord}
 import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs._
 import io.iohk.scalanet.discovery.ethereum.v4.mocks.{MockSigAlg, MockPeerGroup, MockChannel}
 import io.iohk.scalanet.discovery.ethereum.v4.Payload.Ping
@@ -16,7 +17,8 @@ import monix.eval.Task
 import org.scalatest._
 import scala.concurrent.duration._
 import scala.util.Random
-import scodec.bits.BitVector
+import scala.collection.SortedMap
+import scodec.bits.{BitVector, ByteVector}
 
 class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   import DiscoveryNetworkSpec._
@@ -61,10 +63,11 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "return None if the peer times out" in test {
     new Fixture {
+      override val requestTimeout = 250.millis
       override val test = for {
         result <- network.ping(remoteAddress)(None)
       } yield {
-        result shouldBe empty
+        result shouldBe None
       }
     }
   }
@@ -100,7 +103,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "return None if the Pong hash doesn't match the Ping" in test {
     new Fixture {
-      override val requestTimeout = 1.second
+      override val requestTimeout = 250.millis
 
       override val test = for {
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
@@ -111,7 +114,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         _ <- channel.sendPayloadToSUT(
           Pong(
             toNodeAddress(remoteAddress),
-            pingHash = packet.hash.reverse,
+            pingHash = Hash(packet.hash.reverse),
             expiration = validExpiration,
             enrSeq = None
           ),
@@ -127,7 +130,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "return None if the Pong is expired" in test {
     new Fixture {
-      override val requestTimeout = 1.second
+      override val requestTimeout = 250.millis
 
       override val test = for {
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
@@ -178,10 +181,11 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "return None if the peer times out" in test {
     new Fixture {
+      override val requestTimeout = 250.millis
       override val test = for {
-        nodes <- network.findNode(remoteAddress)(remotePublicKey)
+        result <- network.findNode(remoteAddress)(remotePublicKey)
       } yield {
-        nodes shouldBe None
+        result shouldBe None
       }
     }
   }
@@ -267,7 +271,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "ignore expired neighbors" in test {
     new Fixture {
-      override val requestTimeout = 1.second
+      override val requestTimeout = 250.millis
       override val kademliaTimeout: FiniteDuration = 7.seconds
       override val kademliaBucketSize: Int = 16
 
@@ -287,9 +291,103 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   }
 
   behavior of "enrRequest"
-  it should "send an unexpired ENRRequest Packet" in (pending)
-  it should "return None if the peer times out" in (pending)
-  it should "return Some ENR if the peer responds" in (pending)
+
+  it should "send an unexpired ENRRequest Packet" in test {
+    new Fixture {
+
+      override val test = for {
+        _ <- network.enrRequest(remoteAddress)(())
+        now = System.currentTimeMillis
+
+        channel <- peerGroup.getOrCreateChannel(remoteAddress)
+        msg <- channel.nextMessageFromSUT()
+      } yield {
+        channel.isClosed shouldBe true
+
+        assertMessageFrom(publicKey, msg) {
+          case ENRRequest(expiration) =>
+            assertExpirationSet(now, expiration)
+        }
+      }
+    }
+  }
+
+  it should "return None if the peer times out" in test {
+    new Fixture {
+      override val requestTimeout = 250.millis
+      override val test = for {
+        result <- network.enrRequest(remoteAddress)(())
+      } yield {
+        result shouldBe None
+      }
+    }
+  }
+
+  it should "return Some ENR if the peer responds" in test {
+    new Fixture {
+      override val requestTimeout = 1.second
+
+      val remoteENR = EthereumNodeRecord(
+        seq = 123L,
+        signature = Signature(BitVector(randomBytes(65))),
+        attrs = SortedMap(
+          EthereumNodeRecord.Keys.id -> ByteVector("v4".getBytes),
+          EthereumNodeRecord.Keys.ip -> ByteVector(remoteAddress.getHostName.getBytes),
+          EthereumNodeRecord.Keys.udp -> ByteVector(remoteAddress.getPort)
+        )
+      )
+
+      override val test = for {
+        requesting <- network.enrRequest(remoteAddress)(()).start
+        channel <- peerGroup.getOrCreateChannel(remoteAddress)
+        msg <- channel.nextMessageFromSUT()
+        packet = assertPacketReceived(msg)
+        _ <- channel.sendPayloadToSUT(
+          ENRResponse(
+            requestHash = packet.hash,
+            enr = remoteENR
+          ),
+          remotePrivateKey
+        )
+
+        maybeENR <- requesting.join
+      } yield {
+        maybeENR shouldBe Some(remoteENR)
+      }
+    }
+  }
+
+  it should "ignore ENRResponse if the request hash doesn't match" in test {
+    new Fixture {
+      override val requestTimeout = 250.millis
+
+      val remoteENR = EthereumNodeRecord(
+        seq = 123L,
+        signature = Signature(BitVector(randomBytes(65))),
+        attrs = SortedMap(
+          EthereumNodeRecord.Keys.id -> ByteVector("v4".getBytes)
+        )
+      )
+
+      override val test = for {
+        requesting <- network.enrRequest(remoteAddress)(()).start
+        channel <- peerGroup.getOrCreateChannel(remoteAddress)
+        msg <- channel.nextMessageFromSUT()
+        packet = assertPacketReceived(msg)
+        _ <- channel.sendPayloadToSUT(
+          ENRResponse(
+            requestHash = Hash(packet.hash.reverse),
+            enr = remoteENR
+          ),
+          remotePrivateKey
+        )
+
+        maybeENR <- requesting.join
+      } yield {
+        maybeENR shouldBe None
+      }
+    }
+  }
 
   behavior of "startHandling"
   it should "start handling requests in the background" in (pending)
