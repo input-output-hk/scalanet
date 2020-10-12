@@ -1,5 +1,6 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
+import cats.implicits._
 import io.iohk.scalanet.discovery.crypto.{PrivateKey, PublicKey, SigAlg}
 import io.iohk.scalanet.discovery.ethereum.Node
 import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs._
@@ -17,11 +18,11 @@ import scala.concurrent.duration._
 import scala.util.Random
 import scodec.bits.BitVector
 
-class DiscoveryNetworkSpec extends FlatSpec with Matchers {
+class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   import DiscoveryNetworkSpec._
 
   def test(fixture: Fixture) = {
-    fixture.test.runSyncUnsafe(5.seconds)
+    fixture.test.runToFuture
   }
 
   behavior of "ping"
@@ -84,7 +85,7 @@ class DiscoveryNetworkSpec extends FlatSpec with Matchers {
           Pong(
             to = toNodeAddress(remoteAddress),
             pingHash = packet.hash,
-            expiration = System.currentTimeMillis + messageExpiration.toMillis,
+            expiration = validExpiration,
             enrSeq = Some(remoteENRSeq)
           ),
           remotePrivateKey
@@ -111,7 +112,7 @@ class DiscoveryNetworkSpec extends FlatSpec with Matchers {
           Pong(
             toNodeAddress(remoteAddress),
             pingHash = packet.hash.reverse,
-            expiration = System.currentTimeMillis + messageExpiration.toMillis,
+            expiration = validExpiration,
             enrSeq = None
           ),
           remotePrivateKey
@@ -152,11 +153,138 @@ class DiscoveryNetworkSpec extends FlatSpec with Matchers {
   }
 
   behavior of "findNode"
-  it should "send an unexpired FindNode Packet with the given target" in (pending)
-  it should "return None if the peer times out" in (pending)
-  it should "return Some Nodes if the peer responds" in (pending)
-  it should "collect responses up to the timeout" in (pending)
-  it should "collect responses up to the bucket size" in (pending)
+
+  it should "send an unexpired FindNode Packet with the given target" in test {
+    new Fixture {
+      val (targetPublicKey, _) = randomKeyPair
+
+      override val test = for {
+        _ <- network.findNode(remoteAddress)(targetPublicKey)
+        now = System.currentTimeMillis
+
+        channel <- peerGroup.getOrCreateChannel(remoteAddress)
+        msg <- channel.nextMessageFromSUT()
+      } yield {
+        channel.isClosed shouldBe true
+
+        assertMessageFrom(publicKey, msg) {
+          case FindNode(target, expiration) =>
+            target shouldBe targetPublicKey
+            assertExpirationSet(now, expiration)
+        }
+      }
+    }
+  }
+
+  it should "return None if the peer times out" in test {
+    new Fixture {
+      override val test = for {
+        nodes <- network.findNode(remoteAddress)(remotePublicKey)
+      } yield {
+        nodes shouldBe None
+      }
+    }
+  }
+
+  it should "return Some Nodes if the peer responds" in test {
+    new Fixture {
+      override val requestTimeout = 1.second
+      override val kademliaTimeout: FiniteDuration = 250.millis
+
+      override val test = for {
+        finding <- network.findNode(remoteAddress)(remotePublicKey).start
+        channel <- peerGroup.getOrCreateChannel(remoteAddress)
+        _ <- channel.nextMessageFromSUT()
+        response = Neighbors(
+          nodes = List(Node(remotePublicKey, toNodeAddress(remoteAddress))),
+          expiration = validExpiration
+        )
+        _ <- channel.sendPayloadToSUT(response, remotePrivateKey)
+        nodes <- finding.join
+      } yield {
+        nodes shouldBe Some(response.nodes)
+      }
+    }
+  }
+
+  it should "collect responses up to the timeout" in test {
+    new Fixture {
+      override val requestTimeout = 1.second
+      override val kademliaTimeout: FiniteDuration = 500.millis
+      override val kademliaBucketSize: Int = 16
+
+      val randomNodes = List.fill(kademliaBucketSize)(randomNode)
+
+      override val test = for {
+        finding <- network.findNode(remoteAddress)(remotePublicKey).start
+        channel <- peerGroup.getOrCreateChannel(remoteAddress)
+        _ <- channel.nextMessageFromSUT()
+
+        send = (nodes: List[Node]) => {
+          val neighbors = Neighbors(nodes, validExpiration)
+          channel.sendPayloadToSUT(neighbors, remotePrivateKey)
+        }
+
+        _ <- send(randomNodes.take(3))
+        _ <- send(randomNodes.drop(3).take(7))
+        _ <- send(randomNodes.drop(10)).delayExecution(kademliaTimeout + 50.millis)
+
+        nodes <- finding.join
+      } yield {
+        nodes shouldBe Some(randomNodes.take(10))
+      }
+    }
+  }
+
+  it should "collect responses up to the bucket size" in test {
+    new Fixture {
+      override val requestTimeout = 1.second
+      override val kademliaTimeout: FiniteDuration = 7.seconds
+      override val kademliaBucketSize: Int = 16
+
+      val randomGroups = List.fill(kademliaBucketSize + 6)(randomNode).grouped(6).toList
+
+      override val test = for {
+        finding <- network.findNode(remoteAddress)(remotePublicKey).start
+        channel <- peerGroup.getOrCreateChannel(remoteAddress)
+        _ <- channel.nextMessageFromSUT()
+
+        send = (nodes: List[Node]) => {
+          val neighbors = Neighbors(nodes, validExpiration)
+          channel.sendPayloadToSUT(neighbors, remotePrivateKey)
+        }
+
+        _ <- randomGroups.traverse(send)
+
+        nodes <- finding.join
+      } yield {
+        nodes should not be empty
+        nodes.get should have size kademliaBucketSize
+        nodes.get shouldBe randomGroups.flatten.take(kademliaBucketSize)
+      }
+    }
+  }
+
+  it should "ignore expired neighbors" in test {
+    new Fixture {
+      override val requestTimeout = 1.second
+      override val kademliaTimeout: FiniteDuration = 7.seconds
+      override val kademliaBucketSize: Int = 16
+
+      override val test = for {
+        finding <- network.findNode(remoteAddress)(remotePublicKey).start
+        channel <- peerGroup.getOrCreateChannel(remoteAddress)
+        _ <- channel.nextMessageFromSUT()
+
+        neighbors = Neighbors(List(Node(remotePublicKey, toNodeAddress(remoteAddress))), expiration = 0)
+        _ <- channel.sendPayloadToSUT(neighbors, remotePrivateKey)
+
+        nodes <- finding.join
+      } yield {
+        nodes shouldBe empty
+      }
+    }
+  }
 
   behavior of "enrRequest"
   it should "send an unexpired ENRRequest Packet" in (pending)
@@ -208,6 +336,12 @@ object DiscoveryNetworkSpec extends Matchers {
     publicKey -> privateKey
   }
 
+  def randomNode: Node = {
+    val (publicKey, _) = randomKeyPair
+    val address = aRandomAddress()
+    Node(publicKey, toNodeAddress(address))
+  }
+
   def toNodeAddress(address: InetSocketAddress): Node.Address =
     Node.Address(
       ip = BitVector(address.getHostName.getBytes),
@@ -217,7 +351,7 @@ object DiscoveryNetworkSpec extends Matchers {
 
   trait Fixture {
     // Implement `test` to assert something.
-    def test: Task[_]
+    def test: Task[Assertion]
 
     val requestTimeout = 100.millis
     val messageExpiration = 60.seconds
@@ -249,6 +383,9 @@ object DiscoveryNetworkSpec extends Matchers {
 
     def assertExpirationSet(now: Long, expiration: Long) =
       expiration shouldBe (now + messageExpiration.toMillis) +- 1000
+
+    def validExpiration =
+      System.currentTimeMillis + messageExpiration.toMillis
 
     implicit class ChannelOps(channel: MockChannel[InetSocketAddress, Packet]) {
       def sendPayloadToSUT(
