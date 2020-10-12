@@ -74,7 +74,6 @@ object DiscoveryNetwork {
             .toIterant
             .mapEval {
               case ChannelCreated(channel, release) =>
-                channel -> release
                 handleChannel(handler, channel, cancelToken)
                   .guarantee(release)
                   .onErrorRecover {
