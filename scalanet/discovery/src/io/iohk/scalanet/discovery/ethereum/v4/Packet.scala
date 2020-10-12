@@ -17,9 +17,9 @@ case class Packet(
 )
 
 object Packet {
-  val MacBitsSize = 256 // 32 bytes; Keccak256
-  val SigBitsSize = 520 // 65 bytes, Secp256k1
-  val MaxPacketBitsSize = 1280
+  val MacBitsSize = 32 * 8 // Keccak256
+  val SigBitsSize = 65 * 8 // Secp256k1
+  val MaxPacketBitsSize = 1280 * 8
 
   private def consumeNBits(context: String, size: Int) =
     Decoder[BitVector] { (bits: BitVector) =>

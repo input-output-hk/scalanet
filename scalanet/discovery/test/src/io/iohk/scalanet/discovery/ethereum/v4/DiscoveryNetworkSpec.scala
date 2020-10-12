@@ -1,8 +1,12 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
+import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs._
+import io.iohk.scalanet.discovery.ethereum.v4.mocks.MockSigAlg
 import org.scalatest._
 
-class DiscoveryNetworkSpec extends FlatSpec {
+class DiscoveryNetworkSpec extends FlatSpec with Matchers {
+
+  implicit val sigalg = new MockSigAlg
 
   behavior of "ping"
   it should "send an unexpired correctly versioned Ping Packet with the the local and remote addresses" in (pending)
@@ -38,5 +42,11 @@ class DiscoveryNetworkSpec extends FlatSpec {
   it should "respond with an ENRResponse with the correct hash if the handler returns Some ENR" in (pending)
 
   behavior of "getMaxNeighborsPerPacket"
-  it should "correctly estimate the maximum number" in (pending)
+  it should "correctly estimate the maximum number" in {
+    val maxNeighborsPerPacket = DiscoveryNetwork.getMaxNeighborsPerPacket
+    // We're using scodec encoding here, so it's not exactly the same as RLP,
+    // but it should be less than the default Kademlia bucket size of 16.
+    maxNeighborsPerPacket should be > 1
+    maxNeighborsPerPacket should be < 16
+  }
 }
