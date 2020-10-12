@@ -469,10 +469,12 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         )
         channel <- peerGroup.createServerChannel(from = remoteAddress)
         _ <- channel.sendPayloadToSUT(Neighbors(Nil, validExpiration), remotePrivateKey)
+        msg1 <- channel.nextMessageFromSUT(timeout = 200.millis)
         _ <- channel.sendPayloadToSUT(FindNode(remotePublicKey, validExpiration), remotePrivateKey)
-        msg <- channel.nextMessageFromSUT()
+        msg2 <- channel.nextMessageFromSUT(timeout = 200.millis)
       } yield {
-        msg should not be empty
+        msg1 shouldBe empty
+        msg2 should not be empty
       }
     }
   }
@@ -525,7 +527,12 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       override val test = for {
         _ <- network.startHandling {
           StubDiscoveryRPC(
-            ping = _ => _ => Task.pure(Some(Some(localENRSeq)))
+            ping = caller =>
+              _ =>
+                Task {
+                  caller shouldBe (remotePublicKey, remoteAddress)
+                  Some(Some(localENRSeq))
+                }
           )
         }
         channel <- peerGroup.createServerChannel(from = remoteAddress)
@@ -587,7 +594,12 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       override val test = for {
         _ <- network.startHandling {
           StubDiscoveryRPC(
-            findNode = _ => _ => Task.pure(Some(randomNodes))
+            findNode = caller =>
+              _ =>
+                Task {
+                  caller shouldBe (remotePublicKey, remoteAddress)
+                  Some(randomNodes)
+                }
           )
         }
         channel <- peerGroup.createServerChannel(from = remoteAddress)
@@ -662,7 +674,12 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       override val test = for {
         _ <- network.startHandling {
           StubDiscoveryRPC(
-            enrRequest = _ => _ => Task.pure(Some(localENR))
+            enrRequest = caller =>
+              _ =>
+                Task {
+                  caller shouldBe (remotePublicKey, remoteAddress)
+                  Some(localENR)
+                }
           )
         }
         channel <- peerGroup.createServerChannel(from = remoteAddress)
