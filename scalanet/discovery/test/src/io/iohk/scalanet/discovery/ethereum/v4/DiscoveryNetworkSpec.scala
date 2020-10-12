@@ -500,26 +500,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
-  it should "not respond with a Pong if the handler returns None" in test {
-    new Fixture {
-      @volatile var called = false
-      override val test = for {
-        _ <- network.startHandling(
-          StubDiscoveryRPC(
-            ping = _ => _ => Task { called = true; None }
-          )
-        )
-        channel <- peerGroup.createServerChannel(from = remoteAddress)
-        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(localAddress), validExpiration, None)
-        _ <- channel.sendPayloadToSUT(ping, remotePrivateKey)
-        msg <- channel.nextMessageFromSUT()
-      } yield {
-        msg shouldBe empty
-        called shouldBe true
-      }
-    }
-  }
-
   it should "respond with an unexpired Pong with the correct hash if the handler returns Some ENRSEQ" in test {
     new Fixture {
       val localENRSeq = 123L
@@ -561,24 +541,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         }
         channel <- peerGroup.createServerChannel(from = remoteAddress)
         findNode = FindNode(remotePublicKey, invalidExpiration)
-        packet <- channel.sendPayloadToSUT(findNode, remotePrivateKey)
-        msg <- channel.nextMessageFromSUT()
-      } yield {
-        msg shouldBe None
-      }
-    }
-  }
-
-  it should "not respond with Neighbors if the handler returns None" in test {
-    new Fixture {
-      override val test = for {
-        _ <- network.startHandling {
-          StubDiscoveryRPC(
-            findNode = _ => _ => Task.pure(None)
-          )
-        }
-        channel <- peerGroup.createServerChannel(from = remoteAddress)
-        findNode = FindNode(remotePublicKey, validExpiration)
         packet <- channel.sendPayloadToSUT(findNode, remotePrivateKey)
         msg <- channel.nextMessageFromSUT()
       } yield {
@@ -651,24 +613,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
-  it should "not respond with ENRResponse if the handler returns None" in test {
-    new Fixture {
-      override val test = for {
-        _ <- network.startHandling {
-          StubDiscoveryRPC(
-            enrRequest = _ => _ => Task.pure(None)
-          )
-        }
-        channel <- peerGroup.createServerChannel(from = remoteAddress)
-        enrRequest = ENRRequest(validExpiration)
-        _ <- channel.sendPayloadToSUT(enrRequest, remotePrivateKey)
-        msg <- channel.nextMessageFromSUT(250.millis)
-      } yield {
-        msg shouldBe empty
-      }
-    }
-  }
-
   it should "respond with an ENRResponse with the correct hash if the handler returns Some ENR" in test {
     new Fixture {
       override val test = for {
@@ -692,6 +636,36 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
           case ENRResponse(requestHash, enr) =>
             requestHash shouldBe packet.hash
             enr shouldBe localENR
+        }
+      }
+    }
+  }
+
+  trait GenericRPCFixture extends Fixture {
+    val requestMap: Map[String, Payload] = Map(
+      "ping" -> Ping(4, toNodeAddress(remoteAddress), toNodeAddress(localAddress), validExpiration, None),
+      "findNode" -> FindNode(remotePublicKey, validExpiration),
+      "enrRequest" -> ENRRequest(validExpiration)
+    )
+  }
+
+  List("ping", "findNode", "enrRequest").foreach { rpc =>
+    it should s"not respond to $rpc if the handler returns None" in test {
+      new GenericRPCFixture {
+        override val test = for {
+          _ <- network.startHandling {
+            StubDiscoveryRPC(
+              ping = _ => _ => Task.pure(None),
+              findNode = _ => _ => Task.pure(None),
+              enrRequest = _ => _ => Task.pure(None)
+            )
+          }
+          channel <- peerGroup.createServerChannel(from = remoteAddress)
+          request = requestMap(rpc)
+          _ <- channel.sendPayloadToSUT(request, remotePrivateKey)
+          msg <- channel.nextMessageFromSUT(250.millis)
+        } yield {
+          msg shouldBe empty
         }
       }
     }
