@@ -64,7 +64,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "return None if the peer times out" in test {
     new Fixture {
-      override val requestTimeout = 250.millis
       override val test = for {
         result <- network.ping(remoteAddress)(None)
       } yield {
@@ -76,8 +75,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   it should "return Some ENRSEQ if the peer responds" in test {
     new Fixture {
       val remoteENRSeq = 123L
-
-      override val requestTimeout = 1.second
 
       override val test = for {
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
@@ -104,8 +101,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "return None if the Pong hash doesn't match the Ping" in test {
     new Fixture {
-      override val requestTimeout = 250.millis
-
       override val test = for {
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         pinging <- network.ping(remoteAddress)(None).start
@@ -131,8 +126,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "return None if the Pong is expired" in test {
     new Fixture {
-      override val requestTimeout = 250.millis
-
       override val test = for {
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         pinging <- network.ping(remoteAddress)(None).start
@@ -181,7 +174,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "return None if the peer times out" in test {
     new Fixture {
-      override val requestTimeout = 250.millis
       override val test = for {
         result <- network.findNode(remoteAddress)(remotePublicKey)
       } yield {
@@ -192,7 +184,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "return Some Nodes if the peer responds" in test {
     new Fixture {
-      override val requestTimeout = 1.second
       override val kademliaTimeout: FiniteDuration = 250.millis
 
       override val test = for {
@@ -213,7 +204,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "collect responses up to the timeout" in test {
     new Fixture {
-      override val requestTimeout = 1.second
       override val kademliaTimeout: FiniteDuration = 500.millis
       override val kademliaBucketSize: Int = 16
 
@@ -242,7 +232,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "collect responses up to the bucket size" in test {
     new Fixture {
-      override val requestTimeout = 1.second
       override val kademliaTimeout: FiniteDuration = 7.seconds
       override val kademliaBucketSize: Int = 16
 
@@ -271,7 +260,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "ignore expired neighbors" in test {
     new Fixture {
-      override val requestTimeout = 250.millis
       override val kademliaTimeout: FiniteDuration = 7.seconds
       override val kademliaBucketSize: Int = 16
 
@@ -313,7 +301,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "return None if the peer times out" in test {
     new Fixture {
-      override val requestTimeout = 250.millis
       override val test = for {
         result <- network.enrRequest(remoteAddress)(())
       } yield {
@@ -324,8 +311,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "return Some ENR if the peer responds" in test {
     new Fixture {
-      override val requestTimeout = 1.second
-
       override val test = for {
         requesting <- network.enrRequest(remoteAddress)(()).start
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
@@ -348,8 +333,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "ignore ENRResponse if the request hash doesn't match" in test {
     new Fixture {
-      override val requestTimeout = 250.millis
-
       override val test = for {
         requesting <- network.enrRequest(remoteAddress)(()).start
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
