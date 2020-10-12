@@ -479,27 +479,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
-  it should "not respond to expired Ping" in test {
-    new Fixture {
-      @volatile var called = false
-      override val test = for {
-        _ <- network.startHandling(
-          StubDiscoveryRPC(
-            ping = _ => _ => Task { called = true; Some(None) }
-          )
-        )
-        channel <- peerGroup.createServerChannel(from = remoteAddress)
-        expiration = invalidExpiration
-        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(localAddress), expiration, None)
-        _ <- channel.sendPayloadToSUT(ping, remotePrivateKey)
-        msg <- channel.nextMessageFromSUT()
-      } yield {
-        msg shouldBe empty
-        called shouldBe false
-      }
-    }
-  }
-
   it should "respond with an unexpired Pong with the correct hash if the handler returns Some ENRSEQ" in test {
     new Fixture {
       val localENRSeq = 123L
@@ -527,24 +506,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
             assertExpirationSet(expiration)
             enrSeq shouldBe Some(localENRSeq)
         }
-      }
-    }
-  }
-
-  it should "not respond to expired FindNode" in test {
-    new Fixture {
-      override val test = for {
-        _ <- network.startHandling {
-          StubDiscoveryRPC(
-            findNode = _ => _ => Task.pure(Some(List(randomNode)))
-          )
-        }
-        channel <- peerGroup.createServerChannel(from = remoteAddress)
-        findNode = FindNode(remotePublicKey, invalidExpiration)
-        packet <- channel.sendPayloadToSUT(findNode, remotePrivateKey)
-        msg <- channel.nextMessageFromSUT()
-      } yield {
-        msg shouldBe None
       }
     }
   }
@@ -595,24 +556,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
-  it should "not respond to expired ENRRequest" in test {
-    new Fixture {
-      override val test = for {
-        _ <- network.startHandling {
-          StubDiscoveryRPC(
-            enrRequest = _ => _ => Task.pure(Some(localENR))
-          )
-        }
-        channel <- peerGroup.createServerChannel(from = remoteAddress)
-        enrRequest = ENRRequest(System.currentTimeMillis - messageExpiration.toMillis * 2)
-        _ <- channel.sendPayloadToSUT(enrRequest, remotePrivateKey)
-        msg <- channel.nextMessageFromSUT(250.millis)
-      } yield {
-        msg shouldBe empty
-      }
-    }
-  }
-
   it should "respond with an ENRResponse with the correct hash if the handler returns Some ENR" in test {
     new Fixture {
       override val test = for {
@@ -641,14 +584,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
-  trait GenericRPCFixture extends Fixture {
-    val requestMap: Map[String, Payload] = Map(
-      "ping" -> Ping(4, toNodeAddress(remoteAddress), toNodeAddress(localAddress), validExpiration, None),
-      "findNode" -> FindNode(remotePublicKey, validExpiration),
-      "enrRequest" -> ENRRequest(validExpiration)
-    )
-  }
-
   List("ping", "findNode", "enrRequest").foreach { rpc =>
     it should s"not respond to $rpc if the handler returns None" in test {
       new GenericRPCFixture {
@@ -666,6 +601,31 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
           msg <- channel.nextMessageFromSUT(250.millis)
         } yield {
           msg shouldBe empty
+        }
+      }
+    }
+
+    it should s"not respond to $rpc if the request is expired" in test {
+      new GenericRPCFixture {
+        @volatile var called = false
+        override val test = for {
+          _ <- network.startHandling(
+            StubDiscoveryRPC(
+              ping = _ => _ => Task { called = true; None },
+              findNode = _ => _ => Task { called = true; None },
+              enrRequest = _ => _ => Task { called = true; None }
+            )
+          )
+          channel <- peerGroup.createServerChannel(from = remoteAddress)
+          (request: Payload) = requestMap(rpc) match {
+            case p: Payload.HasExpiration[_] => p.withExpiration(invalidExpiration)
+            case p => p
+          }
+          _ <- channel.sendPayloadToSUT(request, remotePrivateKey)
+          msg <- channel.nextMessageFromSUT()
+        } yield {
+          msg shouldBe empty
+          called shouldBe false
         }
       }
     }
@@ -811,6 +771,15 @@ object DiscoveryNetworkSpec extends Matchers {
         findNode: DiscoveryRPC.Call[RemoteCaller, DiscoveryRPC.Proc.FindNode] = _ => ???,
         enrRequest: DiscoveryRPC.Call[RemoteCaller, DiscoveryRPC.Proc.ENRRequest] = _ => ???
     ) extends DiscoveryRPC[RemoteCaller]
+  }
+
+  // Facilitate tests that are common among all RPC calls.
+  trait GenericRPCFixture extends Fixture {
+    val requestMap: Map[String, Payload] = Map(
+      "ping" -> Ping(4, toNodeAddress(remoteAddress), toNodeAddress(localAddress), validExpiration, None),
+      "findNode" -> FindNode(remotePublicKey, validExpiration),
+      "enrRequest" -> ENRRequest(validExpiration)
+    )
   }
 
   def assertPacketReceived(maybeEvent: Option[ChannelEvent[Packet]]): Packet = {
