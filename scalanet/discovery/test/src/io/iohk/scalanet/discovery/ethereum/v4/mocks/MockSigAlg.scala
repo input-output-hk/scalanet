@@ -14,9 +14,16 @@ class MockSigAlg extends SigAlg {
   override val SignatureBytesSize = 65
 
   override def sign(privateKey: PrivateKey, data: BitVector): Signature =
-    // Using XOR twice recovers the original data.
-    Signature((privateKey ^ data).take(SignatureBytesSize * 8))
+    Signature(xor(privateKey, data))
 
-  override def recoverPublicKey(signature: Signature, data: BitVector): Attempt[PublicKey] =
-    Attempt.successful(PublicKey((signature ^ data).take(PublicKeyBytesSize * 8)))
+  override def recoverPublicKey(signature: Signature, data: BitVector): Attempt[PublicKey] = {
+    Attempt.successful(PublicKey(xor(signature, data)))
+  }
+
+  // Using XOR twice recovers the original data.
+  // Pad the data so we don't lose the key if the data is shorter.
+  private def xor(key: BitVector, data: BitVector): BitVector = {
+    val padded = if (data.length < key.length) data.padTo(key.length) else data
+    (key ^ padded).take(key.length)
+  }
 }

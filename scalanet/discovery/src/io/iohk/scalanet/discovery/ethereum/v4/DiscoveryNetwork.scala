@@ -37,14 +37,14 @@ object DiscoveryNetwork {
   def apply[A](
       peerGroup: PeerGroup[A, Packet],
       privateKey: PrivateKey,
+      toNodeAddress: A => Node.Address,
       messageExpiration: FiniteDuration = 60.seconds,
       // Timeout for individual requests.
       requestTimeout: FiniteDuration = 3.seconds,
       // Timeout for collecting multiple potential Neighbors responses.
       kademliaTimeout: FiniteDuration = 7.seconds,
       // Max number of neighbours to expect.
-      kademliaBucketSize: Int = 16,
-      toAddress: A => Node.Address
+      kademliaBucketSize: Int = 16
   )(implicit codec: Codec[Payload], sigalg: SigAlg, clock: Clock[Task]): Task[DiscoveryNetwork[A]] = Task {
     new DiscoveryNetwork[A] with LazyLogging {
 
@@ -53,11 +53,11 @@ object DiscoveryNetwork {
 
       private val expirationMillis = messageExpiration.toMillis
 
-      private val currentTimeMillis = clock.monotonic(MILLISECONDS)
+      private val currentTimeMillis = clock.realTime(MILLISECONDS)
 
       private val maxNeighborsPerPacket = getMaxNeighborsPerPacket
 
-      private val localAddress = toAddress(peerGroup.processAddress)
+      private val localNodeAddress = toNodeAddress(peerGroup.processAddress)
 
       /** Start a fiber that accepts incoming channels and starts a dedicated fiber
         * to handle every channel separtely, processing their messages one by one.
@@ -203,7 +203,7 @@ object DiscoveryNetwork {
           peerGroup.client(to).use { channel =>
             channel
               .send(
-                Ping(version = 4, from = localAddress, to = toAddress(to), 0, localEnrSeq)
+                Ping(version = 4, from = localNodeAddress, to = toNodeAddress(to), 0, localEnrSeq)
               )
               .flatMap { packet =>
                 channel.collectFirstResponse {
