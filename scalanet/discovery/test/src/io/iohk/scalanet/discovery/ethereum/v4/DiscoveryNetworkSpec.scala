@@ -38,7 +38,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       override val test = for {
         _ <- network.ping(remoteAddress)(None)
         _ <- network.ping(remoteAddress)(Some(remoteENRSeq))
-        now = System.currentTimeMillis
 
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         msg1 <- channel.nextMessageFromSUT()
@@ -49,9 +48,9 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         assertMessageFrom(publicKey, msg1) {
           case Ping(version, from, to, expiration, enrSeq) =>
             version shouldBe 4
-            from shouldBe toNodeAddress(peerGroup.processAddress)
+            from shouldBe toNodeAddress(localAddress)
             to shouldBe toNodeAddress(remoteAddress)
-            assertExpirationSet(now, expiration)
+            assertExpirationSet(expiration)
             enrSeq shouldBe empty
         }
 
@@ -165,7 +164,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
       override val test = for {
         _ <- network.findNode(remoteAddress)(targetPublicKey)
-        now = System.currentTimeMillis
 
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         msg <- channel.nextMessageFromSUT()
@@ -175,7 +173,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         assertMessageFrom(publicKey, msg) {
           case FindNode(target, expiration) =>
             target shouldBe targetPublicKey
-            assertExpirationSet(now, expiration)
+            assertExpirationSet(expiration)
         }
       }
     }
@@ -299,7 +297,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
       override val test = for {
         _ <- network.enrRequest(remoteAddress)(())
-        now = System.currentTimeMillis
 
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         msg <- channel.nextMessageFromSUT()
@@ -308,7 +305,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
         assertMessageFrom(publicKey, msg) {
           case ENRRequest(expiration) =>
-            assertExpirationSet(now, expiration)
+            assertExpirationSet(expiration)
         }
       }
     }
@@ -328,16 +325,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   it should "return Some ENR if the peer responds" in test {
     new Fixture {
       override val requestTimeout = 1.second
-
-      val remoteENR = EthereumNodeRecord(
-        seq = 123L,
-        signature = Signature(BitVector(randomBytes(65))),
-        attrs = SortedMap(
-          EthereumNodeRecord.Keys.id -> ByteVector("v4".getBytes),
-          EthereumNodeRecord.Keys.ip -> ByteVector(remoteAddress.getHostName.getBytes),
-          EthereumNodeRecord.Keys.udp -> ByteVector(remoteAddress.getPort)
-        )
-      )
 
       override val test = for {
         requesting <- network.enrRequest(remoteAddress)(()).start
@@ -362,14 +349,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   it should "ignore ENRResponse if the request hash doesn't match" in test {
     new Fixture {
       override val requestTimeout = 250.millis
-
-      val remoteENR = EthereumNodeRecord(
-        seq = 123L,
-        signature = Signature(BitVector(randomBytes(65))),
-        attrs = SortedMap(
-          EthereumNodeRecord.Keys.id -> ByteVector("v4".getBytes)
-        )
-      )
 
       override val test = for {
         requesting <- network.enrRequest(remoteAddress)(()).start
@@ -404,7 +383,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         // The fact that we moved on from `startHandling` shows that it's not
         // running in the foreground.
         channel <- peerGroup.createServerChannel(from = remoteAddress)
-        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(peerGroup.processAddress), validExpiration, None)
+        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(localAddress), validExpiration, None)
         _ <- channel.sendPayloadToSUT(ping, remotePrivateKey)
         msg <- channel.nextMessageFromSUT()
       } yield {
@@ -429,7 +408,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         channels <- remotes.traverse {
           case (from, _) => peerGroup.createServerChannel(from)
         }
-        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(peerGroup.processAddress), validExpiration, None)
+        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(localAddress), validExpiration, None)
         _ <- (channels zip remotes).traverse {
           case (channel, (remoteAddress, (_, remotePrivateKey))) =>
             channel.sendPayloadToSUT(ping, remotePrivateKey)
@@ -450,7 +429,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
           )
         }
         channel <- peerGroup.createServerChannel(from = remoteAddress)
-        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(peerGroup.processAddress), validExpiration, None)
+        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(localAddress), validExpiration, None)
 
         _ <- channel.sendPayloadToSUT(ping, remotePrivateKey)
         msg1 <- channel.nextMessageFromSUT(250.millis)
@@ -508,8 +487,8 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
           )
         )
         channel <- peerGroup.createServerChannel(from = remoteAddress)
-        expiration = System.currentTimeMillis - 3 * messageExpiration.toMillis
-        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(peerGroup.processAddress), expiration, None)
+        expiration = invalidExpiration
+        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(localAddress), expiration, None)
         _ <- channel.sendPayloadToSUT(ping, remotePrivateKey)
         msg <- channel.nextMessageFromSUT()
       } yield {
@@ -529,7 +508,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
           )
         )
         channel <- peerGroup.createServerChannel(from = remoteAddress)
-        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(peerGroup.processAddress), validExpiration, None)
+        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(localAddress), validExpiration, None)
         _ <- channel.sendPayloadToSUT(ping, remotePrivateKey)
         msg <- channel.nextMessageFromSUT()
       } yield {
@@ -550,15 +529,15 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
           )
         }
         channel <- peerGroup.createServerChannel(from = remoteAddress)
-        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(peerGroup.processAddress), validExpiration, None)
+        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(localAddress), validExpiration, None)
         packet <- channel.sendPayloadToSUT(ping, remotePrivateKey)
         msg <- channel.nextMessageFromSUT()
       } yield {
         assertMessageFrom(publicKey, msg) {
           case Pong(to, pingHash, expiration, enrSeq) =>
-            to shouldBe toNodeAddress(peerGroup.processAddress)
+            to shouldBe toNodeAddress(localAddress)
             pingHash shouldBe packet.hash
-            assertExpirationSet(System.currentTimeMillis, expiration)
+            assertExpirationSet(expiration)
             enrSeq shouldBe Some(localENRSeq)
         }
       }
@@ -574,7 +553,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
           )
         }
         channel <- peerGroup.createServerChannel(from = remoteAddress)
-        findNode = FindNode(remotePublicKey, System.currentTimeMillis - messageExpiration.toMillis)
+        findNode = FindNode(remotePublicKey, invalidExpiration)
         packet <- channel.sendPayloadToSUT(findNode, remotePrivateKey)
         msg <- channel.nextMessageFromSUT()
       } yield {
@@ -611,7 +590,6 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
             findNode = _ => _ => Task.pure(Some(randomNodes))
           )
         }
-        now = System.currentTimeMillis
         channel <- peerGroup.createServerChannel(from = remoteAddress)
         findNode = FindNode(remotePublicKey, validExpiration)
         packet <- channel.sendPayloadToSUT(findNode, remotePrivateKey)
@@ -634,7 +612,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         val nodes = msgs.map { msg =>
           assertMessageFrom(publicKey, msg) {
             case Neighbors(nodes, expiration) =>
-              assertExpirationSet(now, expiration)
+              assertExpirationSet(expiration)
               nodes
           }
         }
@@ -643,9 +621,64 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
-  it should "not respond to expired ENRRequest" in (pending)
-  it should "not respond with ENRResponse if the handler returns None" in (pending)
-  it should "respond with an ENRResponse with the correct hash if the handler returns Some ENR" in (pending)
+  it should "not respond to expired ENRRequest" in test {
+    new Fixture {
+      override val test = for {
+        _ <- network.startHandling {
+          StubDiscoveryRPC(
+            enrRequest = _ => _ => Task.pure(Some(localENR))
+          )
+        }
+        channel <- peerGroup.createServerChannel(from = remoteAddress)
+        enrRequest = ENRRequest(System.currentTimeMillis - messageExpiration.toMillis * 2)
+        _ <- channel.sendPayloadToSUT(enrRequest, remotePrivateKey)
+        msg <- channel.nextMessageFromSUT(250.millis)
+      } yield {
+        msg shouldBe empty
+      }
+    }
+  }
+
+  it should "not respond with ENRResponse if the handler returns None" in test {
+    new Fixture {
+      override val test = for {
+        _ <- network.startHandling {
+          StubDiscoveryRPC(
+            enrRequest = _ => _ => Task.pure(None)
+          )
+        }
+        channel <- peerGroup.createServerChannel(from = remoteAddress)
+        enrRequest = ENRRequest(validExpiration)
+        _ <- channel.sendPayloadToSUT(enrRequest, remotePrivateKey)
+        msg <- channel.nextMessageFromSUT(250.millis)
+      } yield {
+        msg shouldBe empty
+      }
+    }
+  }
+
+  it should "respond with an ENRResponse with the correct hash if the handler returns Some ENR" in test {
+    new Fixture {
+      override val test = for {
+        _ <- network.startHandling {
+          StubDiscoveryRPC(
+            enrRequest = _ => _ => Task.pure(Some(localENR))
+          )
+        }
+        channel <- peerGroup.createServerChannel(from = remoteAddress)
+        enrRequest = ENRRequest(validExpiration)
+        packet <- channel.sendPayloadToSUT(enrRequest, remotePrivateKey)
+        msg <- channel.nextMessageFromSUT(250.millis)
+      } yield {
+        msg should not be empty
+        assertMessageFrom(publicKey, msg) {
+          case ENRResponse(requestHash, enr) =>
+            requestHash shouldBe packet.hash
+            enr shouldBe localENR
+        }
+      }
+    }
+  }
 
   behavior of "getMaxNeighborsPerPacket"
 
@@ -715,16 +748,37 @@ object DiscoveryNetworkSpec extends Matchers {
     val kademliaTimeout = 250.millis
     val kademliaBucketSize = 16
 
+    lazy val localAddress = aRandomAddress
     // Keys for the System Under Test.
     lazy val (publicKey, privateKey) = randomKeyPair
+
+    lazy val localENR = EthereumNodeRecord(
+      seq = 456L,
+      signature = Signature(BitVector(randomBytes(65))),
+      attrs = SortedMap(
+        EthereumNodeRecord.Keys.id -> ByteVector("v4".getBytes),
+        EthereumNodeRecord.Keys.ip -> ByteVector(localAddress.getAddress.getAddress),
+        EthereumNodeRecord.Keys.udp -> ByteVector(localAddress.getPort)
+      )
+    )
 
     // A random peer to talk to.
     lazy val remoteAddress = aRandomAddress
     lazy val (remotePublicKey, remotePrivateKey) = randomKeyPair
 
+    lazy val remoteENR = EthereumNodeRecord(
+      seq = 123L,
+      signature = Signature(BitVector(randomBytes(65))),
+      attrs = SortedMap(
+        EthereumNodeRecord.Keys.id -> ByteVector("v4".getBytes),
+        EthereumNodeRecord.Keys.ip -> ByteVector(remoteAddress.getAddress.getAddress),
+        EthereumNodeRecord.Keys.udp -> ByteVector(remoteAddress.getPort)
+      )
+    )
+
     lazy val peerGroup: MockPeerGroup[InetSocketAddress, Packet] =
       new MockPeerGroup(
-        processAddress = aRandomAddress
+        processAddress = localAddress
       )
 
     lazy val network: DiscoveryNetwork[InetSocketAddress] =
@@ -738,11 +792,14 @@ object DiscoveryNetworkSpec extends Matchers {
         kademliaBucketSize = kademliaBucketSize
       ).runSyncUnsafe()
 
-    def assertExpirationSet(now: Long, expiration: Long) =
-      expiration shouldBe (now + messageExpiration.toMillis) +- 1000
+    def assertExpirationSet(expiration: Long) =
+      expiration shouldBe (System.currentTimeMillis + messageExpiration.toMillis) +- 3000
 
     def validExpiration =
       System.currentTimeMillis + messageExpiration.toMillis
+
+    def invalidExpiration =
+      System.currentTimeMillis - messageExpiration.toMillis * 2
 
     implicit class ChannelOps(channel: MockChannel[InetSocketAddress, Packet]) {
       def sendPayloadToSUT(
