@@ -19,6 +19,8 @@ import scala.concurrent.duration._
 import scala.util.Random
 import scala.collection.SortedMap
 import scodec.bits.{BitVector, ByteVector}
+import monix.tail.Iterant
+import java.net.InetAddress
 
 class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   import DiscoveryNetworkSpec._
@@ -390,17 +392,257 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   }
 
   behavior of "startHandling"
-  it should "start handling requests in the background" in (pending)
-  it should "handle multiple channels in parallel" in (pending)
-  it should "stop handling when canceled" in (pending)
-  it should "close idle channels" in (pending)
-  it should "ignore incoming response messages" in (pending)
-  it should "not respond to expired Ping" in (pending)
-  it should "not respond with a Pong if the handler returns None" in (pending)
-  it should "respond with an unexpired Pong with the correct hash if the handler returns Some ENRSEQ" in (pending)
-  it should "not respond to expired FindNode" in (pending)
-  it should "not respond with Neighbors if the handler returns None" in (pending)
-  it should "respond with multiple unexpired Neighbors each within the packet size limit if the handler returns Some Nodes" in (pending)
+
+  it should "start handling requests in the background" in test {
+    new Fixture {
+      override val test = for {
+        token <- network.startHandling {
+          StubDiscoveryRPC(
+            ping = _ => _ => Task.pure(Some(None))
+          )
+        }
+        // The fact that we moved on from `startHandling` shows that it's not
+        // running in the foreground.
+        channel <- peerGroup.createServerChannel(from = remoteAddress)
+        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(peerGroup.processAddress), validExpiration, None)
+        _ <- channel.sendPayloadToSUT(ping, remotePrivateKey)
+        msg <- channel.nextMessageFromSUT()
+      } yield {
+        msg should not be empty
+      }
+    }
+  }
+
+  // This is testing that we didn't do something silly in the handler such as
+  // for example use flatMap with Iterants that could wait until the messages
+  // from earlier channels are exhausted before it would handle later ones.
+  it should "handle multiple channels in concurrently" in test {
+    new Fixture {
+      val remotes = List.fill(5)(aRandomAddress -> randomKeyPair)
+
+      override val test = for {
+        _ <- network.startHandling {
+          StubDiscoveryRPC(
+            ping = _ => _ => Task.pure(Some(None))
+          )
+        }
+        channels <- remotes.traverse {
+          case (from, _) => peerGroup.createServerChannel(from)
+        }
+        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(peerGroup.processAddress), validExpiration, None)
+        _ <- (channels zip remotes).traverse {
+          case (channel, (remoteAddress, (_, remotePrivateKey))) =>
+            channel.sendPayloadToSUT(ping, remotePrivateKey)
+        }
+        messages <- channels.traverse(_.nextMessageFromSUT())
+      } yield {
+        Inspectors.forAll(messages)(_ should not be empty)
+      }
+    }
+  }
+
+  it should "stop handling when canceled" in test {
+    new Fixture {
+      override val test = for {
+        token <- network.startHandling {
+          StubDiscoveryRPC(
+            ping = _ => _ => Task.pure(Some(None))
+          )
+        }
+        channel <- peerGroup.createServerChannel(from = remoteAddress)
+        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(peerGroup.processAddress), validExpiration, None)
+
+        _ <- channel.sendPayloadToSUT(ping, remotePrivateKey)
+        msg1 <- channel.nextMessageFromSUT(250.millis)
+
+        _ <- token.cancel
+
+        _ <- channel.sendPayloadToSUT(ping, remotePrivateKey)
+        msg2 <- channel.nextMessageFromSUT(250.millis)
+      } yield {
+        msg1 should not be empty
+        msg2 shouldBe empty
+      }
+    }
+  }
+
+  it should "close idle channels" in test {
+    new Fixture {
+      override val messageExpiration: FiniteDuration = 500.millis
+
+      override val test = for {
+        _ <- network.startHandling(StubDiscoveryRPC())
+        channel <- peerGroup.createServerChannel(from = remoteAddress)
+        _ <- Task.sleep(messageExpiration + 100.millis)
+      } yield {
+        channel.isClosed shouldBe true
+      }
+    }
+  }
+
+  it should "ignore incoming response messages" in test {
+    new Fixture {
+      override val test = for {
+        _ <- network.startHandling(
+          StubDiscoveryRPC(
+            findNode = _ => _ => Task.pure(Some(List(randomNode)))
+          )
+        )
+        channel <- peerGroup.createServerChannel(from = remoteAddress)
+        _ <- channel.sendPayloadToSUT(Neighbors(Nil, validExpiration), remotePrivateKey)
+        _ <- channel.sendPayloadToSUT(FindNode(remotePublicKey, validExpiration), remotePrivateKey)
+        msg <- channel.nextMessageFromSUT()
+      } yield {
+        msg should not be empty
+      }
+    }
+  }
+
+  it should "not respond to expired Ping" in test {
+    new Fixture {
+      @volatile var called = false
+      override val test = for {
+        _ <- network.startHandling(
+          StubDiscoveryRPC(
+            ping = _ => _ => Task { called = true; Some(None) }
+          )
+        )
+        channel <- peerGroup.createServerChannel(from = remoteAddress)
+        expiration = System.currentTimeMillis - 3 * messageExpiration.toMillis
+        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(peerGroup.processAddress), expiration, None)
+        _ <- channel.sendPayloadToSUT(ping, remotePrivateKey)
+        msg <- channel.nextMessageFromSUT()
+      } yield {
+        msg shouldBe empty
+        called shouldBe false
+      }
+    }
+  }
+
+  it should "not respond with a Pong if the handler returns None" in test {
+    new Fixture {
+      @volatile var called = false
+      override val test = for {
+        _ <- network.startHandling(
+          StubDiscoveryRPC(
+            ping = _ => _ => Task { called = true; None }
+          )
+        )
+        channel <- peerGroup.createServerChannel(from = remoteAddress)
+        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(peerGroup.processAddress), validExpiration, None)
+        _ <- channel.sendPayloadToSUT(ping, remotePrivateKey)
+        msg <- channel.nextMessageFromSUT()
+      } yield {
+        msg shouldBe empty
+        called shouldBe true
+      }
+    }
+  }
+
+  it should "respond with an unexpired Pong with the correct hash if the handler returns Some ENRSEQ" in test {
+    new Fixture {
+      val localENRSeq = 123L
+
+      override val test = for {
+        _ <- network.startHandling {
+          StubDiscoveryRPC(
+            ping = _ => _ => Task.pure(Some(Some(localENRSeq)))
+          )
+        }
+        channel <- peerGroup.createServerChannel(from = remoteAddress)
+        ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(peerGroup.processAddress), validExpiration, None)
+        packet <- channel.sendPayloadToSUT(ping, remotePrivateKey)
+        msg <- channel.nextMessageFromSUT()
+      } yield {
+        assertMessageFrom(publicKey, msg) {
+          case Pong(to, pingHash, expiration, enrSeq) =>
+            to shouldBe toNodeAddress(peerGroup.processAddress)
+            pingHash shouldBe packet.hash
+            assertExpirationSet(System.currentTimeMillis, expiration)
+            enrSeq shouldBe Some(localENRSeq)
+        }
+      }
+    }
+  }
+
+  it should "not respond to expired FindNode" in test {
+    new Fixture {
+      override val test = for {
+        _ <- network.startHandling {
+          StubDiscoveryRPC(
+            findNode = _ => _ => Task.pure(Some(List(randomNode)))
+          )
+        }
+        channel <- peerGroup.createServerChannel(from = remoteAddress)
+        findNode = FindNode(remotePublicKey, System.currentTimeMillis - messageExpiration.toMillis)
+        packet <- channel.sendPayloadToSUT(findNode, remotePrivateKey)
+        msg <- channel.nextMessageFromSUT()
+      } yield {
+        msg shouldBe None
+      }
+    }
+  }
+
+  it should "not respond with Neighbors if the handler returns None" in test {
+    new Fixture {
+      override val test = for {
+        _ <- network.startHandling {
+          StubDiscoveryRPC(
+            findNode = _ => _ => Task.pure(None)
+          )
+        }
+        channel <- peerGroup.createServerChannel(from = remoteAddress)
+        findNode = FindNode(remotePublicKey, validExpiration)
+        packet <- channel.sendPayloadToSUT(findNode, remotePrivateKey)
+        msg <- channel.nextMessageFromSUT()
+      } yield {
+        msg shouldBe None
+      }
+    }
+  }
+
+  it should "respond with multiple unexpired Neighbors each within the packet size limit, in total no more than the bucket size, if the handler returns Some Nodes" in test {
+    new Fixture {
+      val randomNodes = List.fill(kademliaBucketSize * 2)(randomNode)
+
+      override val test = for {
+        _ <- network.startHandling {
+          StubDiscoveryRPC(
+            findNode = _ => _ => Task.pure(Some(randomNodes))
+          )
+        }
+        now = System.currentTimeMillis
+        channel <- peerGroup.createServerChannel(from = remoteAddress)
+        findNode = FindNode(remotePublicKey, validExpiration)
+        packet <- channel.sendPayloadToSUT(findNode, remotePrivateKey)
+        msgs <- Iterant
+          .repeatEvalF(channel.nextMessageFromSUT(100.millis))
+          .takeWhile(_.isDefined)
+          .toListL
+      } yield {
+        // We should receive at least 2 messages because of the packet size limit.
+        msgs(0) should not be empty
+        msgs(1) should not be empty
+
+        Inspectors.forAll(msgs) {
+          case Some(MessageReceived(packet)) =>
+            val packetSize = packet.hash.size + packet.signature.size + packet.data.size
+            assert(packetSize <= Packet.MaxPacketBitsSize)
+          case _ =>
+        }
+
+        val nodes = msgs.map { msg =>
+          assertMessageFrom(publicKey, msg) {
+            case Neighbors(nodes, expiration) =>
+              assertExpirationSet(now, expiration)
+              nodes
+          }
+        }
+        nodes.flatten shouldBe randomNodes.take(kademliaBucketSize)
+      }
+    }
+  }
+
   it should "not respond to expired ENRRequest" in (pending)
   it should "not respond with ENRResponse if the handler returns None" in (pending)
   it should "respond with an ENRResponse with the correct hash if the handler returns Some ENR" in (pending)
@@ -409,10 +651,27 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "correctly estimate the maximum number" in {
     val maxNeighborsPerPacket = DiscoveryNetwork.getMaxNeighborsPerPacket
+
     // We're using scodec encoding here, so it's not exactly the same as RLP,
     // but it should be less than the default Kademlia bucket size of 16.
     maxNeighborsPerPacket should be > 1
     maxNeighborsPerPacket should be < 16
+
+    val randomIPv6Node = {
+      val node = randomNode
+      node.copy(address = node.address.copy(ip = InetAddress.getByName("2001:0db8:85a3:0000:0000:8a2e:0370:7334")))
+    }
+
+    def packetSizeOfNNeihbours(n: Int) = {
+      val neighbours = Neighbors(List.fill(n)(randomIPv6Node), System.currentTimeMillis)
+      val (_, privateKey) = randomKeyPair
+      val packet = Packet.pack(neighbours, privateKey).require
+      val packetSize = packet.hash.size + packet.signature.size + packet.data.size
+      packetSize
+    }
+
+    assert(packetSizeOfNNeihbours(maxNeighborsPerPacket) <= Packet.MaxPacketBitsSize)
+    assert(packetSizeOfNNeihbours(maxNeighborsPerPacket + 1) > Packet.MaxPacketBitsSize)
   }
 }
 
@@ -442,7 +701,7 @@ object DiscoveryNetworkSpec extends Matchers {
 
   def toNodeAddress(address: InetSocketAddress): Node.Address =
     Node.Address(
-      ip = BitVector(address.getHostName.getBytes),
+      ip = address.getAddress,
       udpPort = address.getPort,
       tcpPort = address.getPort
     )
@@ -489,10 +748,21 @@ object DiscoveryNetworkSpec extends Matchers {
       def sendPayloadToSUT(
           payload: Payload,
           privateKey: PrivateKey
-      ): Task[Unit] = {
-        channel.sendMessageToSUT(Packet.pack(payload, privateKey).require)
+      ): Task[Packet] = {
+        for {
+          packet <- Task(Packet.pack(payload, privateKey).require)
+          _ <- channel.sendMessageToSUT(packet)
+        } yield packet
       }
     }
+
+    type RemoteCaller = (PublicKey, InetSocketAddress)
+
+    case class StubDiscoveryRPC(
+        ping: DiscoveryRPC.Call[RemoteCaller, DiscoveryRPC.Proc.Ping] = _ => ???,
+        findNode: DiscoveryRPC.Call[RemoteCaller, DiscoveryRPC.Proc.FindNode] = _ => ???,
+        enrRequest: DiscoveryRPC.Call[RemoteCaller, DiscoveryRPC.Proc.ENRRequest] = _ => ???
+    ) extends DiscoveryRPC[RemoteCaller]
   }
 
   def assertPacketReceived(maybeEvent: Option[ChannelEvent[Packet]]): Packet = {

@@ -2,6 +2,8 @@ package io.iohk.scalanet.discovery.ethereum.v4.mocks
 
 import cats.effect.Resource
 import io.iohk.scalanet.peergroup.PeerGroup
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, MessageReceived}
 import io.iohk.scalanet.peergroup.Channel
 import monix.eval.Task
@@ -17,9 +19,11 @@ class MockPeerGroup[A, M](
     extends PeerGroup[A, M] {
 
   private val channels = TrieMap.empty[A, MockChannel[A, M]]
+  private val serverEvents = ConcurrentQueue[Task].unsafe[ServerEvent[A, M]](BufferCapacity.Unbounded())
 
   // Intended for the System Under Test to read incoming channels.
-  override def nextServerEvent(): Task[Option[PeerGroup.ServerEvent[A, M]]] = ???
+  override def nextServerEvent(): Task[Option[PeerGroup.ServerEvent[A, M]]] =
+    serverEvents.poll.map(Some(_))
 
   // Intended for the System Under Test to open outgoing channels.
   override def client(to: A): Resource[Task, Channel[A, M]] = {
@@ -35,6 +39,14 @@ class MockPeerGroup[A, M](
 
   def getOrCreateChannel(to: A): Task[MockChannel[A, M]] =
     Task(channels.getOrElseUpdate(to, new MockChannel[A, M](to)))
+
+  def createServerChannel(from: A): Task[MockChannel[A, M]] =
+    for {
+      channel <- Task(new MockChannel[A, M](from))
+      _ <- Task(channel.refCount.increment())
+      event = ChannelCreated(channel, Task(channel.refCount.decrement()))
+      _ <- serverEvents.offer(event)
+    } yield channel
 }
 
 class MockChannel[A, M](
@@ -65,5 +77,5 @@ class MockChannel[A, M](
     messagesToSUT.offer(MessageReceived(message))
 
   def nextMessageFromSUT(timeout: FiniteDuration = 1.second): Task[Option[ChannelEvent[M]]] =
-    messagesFromSUT.poll.map(Some(_)).timeout(timeout)
+    messagesFromSUT.poll.map(Some(_)).timeoutTo(timeout, Task.pure(None))
 }
