@@ -46,7 +46,7 @@ import scala.util.control.NonFatal
 class DynamicTLSPeerGroup[M] private (val config: Config)(
     implicit codec: StreamCodec[M],
     scheduler: Scheduler
-) extends TerminalPeerGroup[PeerInfo, M]()
+) extends TerminalPeerGroup[PeerInfo, M]
     with StrictLogging {
 
   private val sslServerCtx: SslContext = DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForServer, config)

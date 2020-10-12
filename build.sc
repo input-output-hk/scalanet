@@ -24,6 +24,7 @@ trait ScalanetModule extends ScalaModule {
     "-Xlint:unsound-match",
     "-Ywarn-inaccessible",
     "-Ywarn-unused-import",
+    "-Ywarn-value-discard",
     "-Ypartial-unification",
     "-J-Xmx1.5G",
     "-J-Xms1.5G",

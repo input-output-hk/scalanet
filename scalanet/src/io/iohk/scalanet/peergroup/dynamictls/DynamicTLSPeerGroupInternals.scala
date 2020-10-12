@@ -54,6 +54,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
           case Left(value) =>
             logger.error("Unexpected decoding error {} from peer {}", value: Any, ctx.channel().remoteAddress(): Any)
             messageSubject.onNext(DecodingError)
+            ()
 
           case Right(value) =>
             value.foreach { m =>
@@ -62,9 +63,12 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
             }
         }
       } catch {
-        case NonFatal(e) => messageSubject.onNext(UnexpectedError(e))
+        case NonFatal(e) =>
+          messageSubject.onNext(UnexpectedError(e))
+          ()
       } finally {
         byteBuf.release()
+        ()
       }
     }
 
@@ -76,6 +80,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
         ctx.channel().remoteAddress(): Any
       )
       messageSubject.onNext(UnexpectedError(cause))
+      ()
     }
   }
 
@@ -130,6 +135,8 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
               }
             })
             .addLast(new MessageNotifier[M](messageSubject, codec))
+
+          ()
         }
       })
 
@@ -230,6 +237,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
                 )
                 val channel = new ServerChannelImpl[M](nettyChannel, peerId, codec, messageSubject)
                 serverSubject.onNext(ChannelCreated(channel, channel.close()))
+                ()
               } else {
                 logger.debug("Ssl handshake failed from peer with address {}", remoteAddress)
                 // Handshake failed we do not have id of remote peer
@@ -238,6 +246,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
                     PeerGroup.ServerEvent
                       .HandshakeFailed(new HandshakeException(PeerInfo(BitVector.empty, remoteAddress), e.cause()))
                   )
+                ()
               }
             case ev =>
               logger.debug(

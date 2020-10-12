@@ -197,7 +197,7 @@ class KRouterSpec extends FreeSpec with Eventually {
             bin"1110",
             bin"1111"
           )
-        })
+        }.void)
       }
 
       "when a bucket is full and the head unresponsive, that head entry should be evicted and sender inserted at the tail " in {
@@ -215,7 +215,7 @@ class KRouterSpec extends FreeSpec with Eventually {
           krouter.kBuckets.runSyncUnsafe().buckets(1) shouldBe TimeSet(bin"0010", bin"0011")
           krouter.kBuckets.runSyncUnsafe().buckets(2) shouldBe TimeSet(bin"0101", bin"0110", bin"0111")
           krouter.kBuckets.runSyncUnsafe().buckets(3) shouldBe TimeSet(bin"1101", bin"1110", bin"1111")
-        })
+        }.void)
       }
 
       "when the bucket is full and the head responsive, that head entry should be moved to the tail and the sender discarded" in {
@@ -229,7 +229,7 @@ class KRouterSpec extends FreeSpec with Eventually {
           krouter.kBuckets.runSyncUnsafe().buckets(1) shouldBe TimeSet(bin"0010", bin"0011")
           krouter.kBuckets.runSyncUnsafe().buckets(2) shouldBe TimeSet(bin"0101", bin"0110", bin"0100")
           krouter.kBuckets.runSyncUnsafe().buckets(3) shouldBe TimeSet(bin"1010", bin"1000", bin"1001")
-        })
+        }.void)
       }
     }
 
@@ -532,6 +532,8 @@ object KRouterSpec {
       Observable.fromIterable(ids.map(id => (Ping(uuid, aRandomNodeRecord(bitLength).copy(id = id)), handler)))
 
     when(knetwork.kRequests).thenReturn(kRequests)
+
+    ()
   }
 
   private def mockEnrollment(
@@ -546,6 +548,8 @@ object KRouterSpec {
         val to = invocation.getArgument(0).asInstanceOf[NodeRecord[String]]
         Task.now(Nodes(uuid, to, otherNodes))
       })
+
+    ()
   }
 
   private def anyOf[T](s: Set[T]): T = {

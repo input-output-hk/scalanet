@@ -26,6 +26,7 @@ class TransportPeerGroupAsyncSpec extends AsyncFlatSpec with BeforeAndAfterAll {
   override def afterAll(): Unit = {
     threadPool.shutdown()
     threadPool.awaitTermination(60, TimeUnit.SECONDS)
+    ()
   }
 
   private val rpcs = Table(

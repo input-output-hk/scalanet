@@ -39,7 +39,7 @@ import scala.util.control.NonFatal
 class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
     implicit codec: Codec[M],
     scheduler: Scheduler
-) extends TerminalPeerGroup[InetMultiAddress, M]()
+) extends TerminalPeerGroup[InetMultiAddress, M]
     with StrictLogging {
 
   import DynamicUDPPeerGroup.Internals.{UDPChannelId, ChannelType, ClientChannel, ServerChannel}
@@ -68,15 +68,18 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
     activeChannels.remove(channel.channelId)
     channel.messageSubject.onComplete()
     channel.closePromise.removeListener(closeChannelListener)
+    ()
   }
 
   private def handleIncomingMessage(channel: ChannelImpl, datagramPacket: DatagramPacket): Unit = {
     codec.decodeValue(BitVector(datagramPacket.content().nioBuffer())) match {
       case Attempt.Successful(msg) =>
         channel.messageSubject.onNext(MessageReceived(msg))
+        ()
       case Attempt.Failure(err) =>
         logger.debug(s"Message decoding failed due to ${err}", err)
         channel.messageSubject.onNext(DecodingError)
+        ()
     }
   }
 
@@ -107,12 +110,13 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
               val localAddress = datagram.recipient()
               val udpChannelId = UDPChannelId(ctx.channel().id(), remoteAddress, localAddress)
               try {
-                logger.info(s"Client channel read message with remote $remoteAddress and local $localAddress")
+                logger.debug(s"Client channel read message with remote $remoteAddress and local $localAddress")
                 Option(activeChannels.get(udpChannelId)).foreach(handleIncomingMessage(_, datagram))
               } catch {
                 case NonFatal(e) => handleError(udpChannelId, e)
               } finally {
                 datagram.content().release()
+                ()
               }
             }
 
@@ -133,6 +137,8 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
               handleError(udpChannelId, cause)
             }
           })
+
+        ()
       }
     })
 
@@ -149,7 +155,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
               val datagram = msg.asInstanceOf[DatagramPacket]
               val remoteAddress = datagram.sender()
               val localAddress = datagram.recipient()
-              logger.info(s"Server accepted incoming channel from $remoteAddress")
+              logger.debug(s"Server accepted incoming channel from $remoteAddress")
               val serverChannel: NioDatagramChannel = ctx.channel().asInstanceOf[NioDatagramChannel]
               val potentialNewChannel = new ChannelImpl(
                 serverChannel,
@@ -174,6 +180,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
                 case NonFatal(e) => handleError(potentialNewChannel.channelId, e)
               } finally {
                 datagram.content().release()
+                ()
               }
             }
 
@@ -182,6 +189,8 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
               logger.error(s"Unexpected server error ${cause.getMessage}")
             }
           })
+
+        ()
       }
     })
 
@@ -247,7 +256,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
       if (closePromise.isDone) {
         Task.now(())
       } else {
-        closeChannel().guarantee(Task(closePromise.trySuccess(this)))
+        closeChannel().guarantee(Task(closePromise.trySuccess(this)).void)
       }
     }
 
