@@ -28,7 +28,7 @@ import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
 import java.io.IOException
-import java.net.{InetSocketAddress, PortUnreachableException}
+import java.net.InetSocketAddress
 import monix.eval.Task
 import monix.execution.{Scheduler, ChannelType}
 import scala.util.control.NonFatal
@@ -257,17 +257,10 @@ class StaticUDPPeerGroup[M] private (
                 val channelId = ctx.channel().id()
                 val remoteAddress = ctx.channel.remoteAddress().asInstanceOf[InetSocketAddress]
                 cause match {
-                  case _: PortUnreachableException =>
-                    // We do not want ugly exception, but we do not close the channel,
-                    // it is entirely up to user to close not responding channels.
-                    logger.info(s"Peer with ip $remoteAddress not available")
-                  case _ =>
-                    super.exceptionCaught(ctx, cause)
-                }
-                cause match {
                   case NonFatal(ex) =>
                     handleError(remoteAddress, ex)
                 }
+                super.exceptionCaught(ctx, cause)
               }
             })
 
