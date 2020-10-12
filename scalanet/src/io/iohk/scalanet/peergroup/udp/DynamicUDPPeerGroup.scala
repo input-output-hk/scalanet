@@ -6,8 +6,7 @@ import java.util.concurrent.ConcurrentHashMap
 import cats.effect.Resource
 import cats.syntax.functor._
 import com.typesafe.scalalogging.StrictLogging
-import io.iohk.scalanet.monix_subject.ConnectableSubject
-import io.iohk.scalanet.peergroup.{Channel, InetMultiAddress}
+import io.iohk.scalanet.peergroup.{Channel, InetMultiAddress, CloseableQueue}
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived, UnexpectedError}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
@@ -22,8 +21,7 @@ import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
 import io.netty.util.concurrent.{Future, GenericFutureListener, Promise}
 import monix.eval.Task
-import monix.execution.Scheduler
-import monix.reactive.observables.ConnectableObservable
+import monix.execution.{Scheduler, ChannelType}
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec}
 import scala.util.control.NonFatal
@@ -42,9 +40,11 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
 ) extends TerminalPeerGroup[InetMultiAddress, M]
     with StrictLogging {
 
+  override protected val s = scheduler
+
   import DynamicUDPPeerGroup.Internals.{UDPChannelId, ChannelType, ClientChannel, ServerChannel}
 
-  val serverSubject = ConnectableSubject[ServerEvent[InetMultiAddress, M]]()
+  val serverQueue = CloseableQueue.unbounded[ServerEvent[InetMultiAddress, M]](ChannelType.SPMC).runSyncUnsafe()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -66,7 +66,6 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
 
   private def removeChannel(channel: ChannelImpl): Unit = {
     activeChannels.remove(channel.channelId)
-    channel.messageSubject.onComplete()
     channel.closePromise.removeListener(closeChannelListener)
     ()
   }
@@ -74,12 +73,11 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
   private def handleIncomingMessage(channel: ChannelImpl, datagramPacket: DatagramPacket): Unit = {
     codec.decodeValue(BitVector(datagramPacket.content().nioBuffer())) match {
       case Attempt.Successful(msg) =>
-        channel.messageSubject.onNext(MessageReceived(msg))
-        ()
+        channel.handleEvent(MessageReceived(msg))
+
       case Attempt.Failure(err) =>
         logger.debug(s"Message decoding failed due to ${err}", err)
-        channel.messageSubject.onNext(DecodingError)
-        ()
+        channel.handleEvent(DecodingError)
     }
   }
 
@@ -87,7 +85,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
     // Inform about error only if channel is available and open
     Option(activeChannels.get(channelId)).foreach { ch =>
       logger.debug(s"Unexpected error ${error} on channel ${channelId}")
-      ch.messageSubject.onNext(UnexpectedError(error))
+      ch.handleEvent(UnexpectedError(error))
     }
   }
 
@@ -161,7 +159,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
                 serverChannel,
                 localAddress,
                 remoteAddress,
-                ConnectableSubject[ChannelEvent[M]](),
+                makeMessageQueue,
                 ServerChannel
               )
               try {
@@ -173,7 +171,9 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
                       s"Channel with id ${potentialNewChannel.channelId} NOT found in active channels table. Creating a new one"
                     )
                     potentialNewChannel.closePromise.addListener(closeChannelListener)
-                    serverSubject.onNext(ChannelCreated(potentialNewChannel, potentialNewChannel.close()))
+                    serverQueue
+                      .offer(ChannelCreated(potentialNewChannel, potentialNewChannel.close()))
+                      .runSyncUnsafe()
                     handleIncomingMessage(potentialNewChannel, datagram)
                 }
               } catch {
@@ -194,13 +194,19 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
       }
     })
 
+  private def makeMessageQueue(): CloseableQueue[ChannelEvent[M]] = {
+    CloseableQueue[ChannelEvent[M]](capacity = config.channelCapacity, channelType = ChannelType.SPMC).runSyncUnsafe()
+  }
+
   class ChannelImpl(
-      val nettyChannel: NioDatagramChannel,
+      nettyChannel: NioDatagramChannel,
       localAddress: InetSocketAddress,
       remoteAddress: InetSocketAddress,
-      val messageSubject: ConnectableSubject[ChannelEvent[M]],
+      messageQueue: CloseableQueue[ChannelEvent[M]],
       channelType: ChannelType
   ) extends Channel[InetMultiAddress, M] {
+
+    protected override val s = scheduler
 
     val closePromise: Promise[ChannelImpl] = nettyChannel.eventLoop().newPromise[ChannelImpl]()
 
@@ -230,7 +236,8 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
       }
     }
 
-    override def in: ConnectableObservable[ChannelEvent[M]] = messageSubject
+    override def nextMessage() =
+      messageQueue.next()
 
     private def closeNettyChannel(channelType: ChannelType): Task[Unit] = {
       channelType match {
@@ -248,6 +255,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
       for {
         _ <- Task(logger.debug(s"Closing channel from ${localAddress} to ${remoteAddress}"))
         _ <- closeNettyChannel(channelType)
+        _ <- messageQueue.close(discard = true)
         _ <- Task(logger.debug(s"Channel from ${localAddress} to ${remoteAddress} closed"))
       } yield ()
     }
@@ -267,7 +275,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
         nettyChannel: NioDatagramChannel
     ): Task[Unit] = {
       for {
-        _ <- Task(logger.debug(s"Sending message ${message} to peer ${recipient}"))
+        _ <- Task(logger.debug(s"Sending message ${message.toString.take(100)}... to peer ${recipient}"))
         encodedMessage <- Task.fromTry(codec.encode(message).toTry)
         asBuffer = encodedMessage.toByteBuffer
         _ <- toTask(nettyChannel.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(asBuffer), recipient, sender)))
@@ -276,6 +284,10 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
               Task.raiseError(new MessageMTUException[InetMultiAddress](to, asBuffer.capacity()))
           }
       } yield ()
+    }
+
+    def handleEvent(event: ChannelEvent[M]): Unit = {
+      messageQueue.tryOffer(event).void.runAsyncAndForget
     }
   }
 
@@ -301,7 +313,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
                 nettyChannel,
                 localAddress,
                 to.inetSocketAddress,
-                ConnectableSubject[ChannelEvent[M]](),
+                makeMessageQueue(),
                 ClientChannel
               )
               // By using netty channel id as part of our channel id, we make sure that each client channel is unique
@@ -318,11 +330,12 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
       })(_.close())
   }
 
-  override def server: ConnectableObservable[ServerEvent[InetMultiAddress, M]] = serverSubject
+  override def nextServerEvent() =
+    serverQueue.next()
 
   private def shutdown(): Task[Unit] = {
     for {
-      _ <- Task(serverSubject.onComplete())
+      _ <- serverQueue.close(discard = true)
       _ <- toTask(serverBind.channel().close())
       _ <- toTask(workerGroup.shutdownGracefully())
     } yield ()
@@ -335,11 +348,13 @@ object DynamicUDPPeerGroup {
 
   case class Config(
       bindAddress: InetSocketAddress,
-      processAddress: InetMultiAddress
+      processAddress: InetMultiAddress,
+      channelCapacity: Int
   )
 
   object Config {
-    def apply(bindAddress: InetSocketAddress): Config = Config(bindAddress, InetMultiAddress(bindAddress))
+    def apply(bindAddress: InetSocketAddress, channelCapacity: Int = 0): Config =
+      Config(bindAddress, InetMultiAddress(bindAddress), channelCapacity)
   }
 
   private[scalanet] object Internals {

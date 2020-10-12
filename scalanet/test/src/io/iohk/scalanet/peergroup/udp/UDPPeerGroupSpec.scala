@@ -8,7 +8,6 @@ import io.iohk.scalanet.peergroup.Channel.{DecodingError, MessageReceived}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelAlreadyClosedException, MessageMTUException}
 import io.iohk.scalanet.peergroup.{InetMultiAddress, PeerGroup, Channel}
-import io.iohk.scalanet.peergroup.StandardTestPack._
 import io.iohk.scalanet.peergroup.StandardTestPack
 import io.iohk.scalanet.peergroup.TestMessage
 import java.net.InetSocketAddress
@@ -91,7 +90,11 @@ abstract class UDPPeerGroupSpec[PG <: UDPPeerGroupSpec.TestGroup[_]](name: Strin
     }
 
   it should "send and receive a message" in withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
-    messagingTest(alice, bob)
+    StandardTestPack.messagingTest(alice, bob)
+  }
+
+  it should "send and receive a message with next* methods" in withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
+    StandardTestPack.messagingTestNext(alice, bob)
   }
 
   it should "report the same address for two inbound channels" in

@@ -96,7 +96,32 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
     }
   }
 
-  it should "send/receive large messages received in parralel from different channels" in taskTestCase {
+  it should "handle messages in the order they are sent" in taskTestCase {
+    (for {
+      server <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      client <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      channel <- client.client(server.processAddress)
+    } yield (server, channel)).use {
+      case (server, clientChannel) =>
+        for {
+          serverChannelCreated <- server.server.refCount.collectChannelCreated.headL
+          (serverChannel, release) = serverChannelCreated
+          messages = List.range(0, 100).map(_.toString)
+          _ <- messages.traverse(clientChannel.sendMessage)
+          received <- serverChannel.in.refCount
+            .collect {
+              case MessageReceived(msg) => msg
+            }
+            .take(100)
+            .toListL
+            .guarantee(release)
+        } yield {
+          assert(received == messages)
+        }
+    }
+  }
+
+  it should "send/receive large messages received in parallel from different channels" in taskTestCase {
     val randomString1 = Random.nextString(50000)
     val randomString2 = Random.nextString(50000)
     val randomString3 = Random.nextString(50000)
@@ -163,7 +188,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
     }
   }
 
-  it should "handle ssl handshake failure becouse of client" in taskTestCase {
+  it should "handle ssl handshake failure because of client" in taskTestCase {
     (for {
       client <- DynamicTLSPeerGroup[String](getIncorrectConfigWrongSig())
       server <- DynamicTLSPeerGroup[String](getCorrectConfig())

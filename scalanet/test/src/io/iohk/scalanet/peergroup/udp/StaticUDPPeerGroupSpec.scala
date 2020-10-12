@@ -23,11 +23,12 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
 
   override def initUdpPeerGroup[M](
       address: InetSocketAddress
-  )(implicit s: Scheduler, c: Codec[M]): Resource[Task, UDPPeerGroupSpec.TestGroup[M]] = {
+  )(implicit scheduler: Scheduler, codec: Codec[M]): Resource[Task, UDPPeerGroupSpec.TestGroup[M]] = {
     StaticUDPPeerGroup[M](StaticUDPPeerGroup.Config(address)).map { pg =>
       new PeerGroup[InetMultiAddress, M] {
+        override val s = scheduler
         override def processAddress = pg.processAddress
-        override def server = pg.server
+        override def nextServerEvent() = pg.nextServerEvent()
         override def client(to: InetMultiAddress) = pg.client(to)
         def channelCount: Int = pg.channelCount.runSyncUnsafe()
       }
@@ -78,15 +79,11 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
                   listener <- pg2.server.refCount.collectChannelCreated
                     .mapEval {
                       case (channel, release) =>
-                        channel.in.refCount
-                          .collect {
-                            case MessageReceived(_) =>
-                              messageCounter.countDown()
-                          }
-                          .take(2)
-                          .completedL
+                        // Have to do it in the background otherwise it would block the processing of incoming UDP packets.
+                        List
+                          .fill(2)(channel.nextMessage() >> Task(messageCounter.countDown()))
+                          .sequence
                           .guarantee(release)
-                          // Have to do it in the background otherwise it would block the processing of incoming UDP packets..
                           .startAndForget
                           .as(channel.to)
                     }
@@ -94,8 +91,8 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
                     .start
 
                   // Send 3 messages, which should result in two incoming channels emitted.
-                  // Allow some time between them so the third message doesn't end up in the first channel that gets released.
-                  _ <- List.range(0, 3).traverse(i => client12.sendMessage(i.toString).delayExecution(50.millis))
+                  // Space them out a bit so the third messages doesn't end up in the discarded queue.
+                  _ <- List.range(0, 3).traverse(i => client12.sendMessage(i.toString).delayResult(50.millis))
 
                   // Give the server time to process all messages
                   _ <- Task(messageCounter.await(timeout.toMillis, TimeUnit.MILLISECONDS))

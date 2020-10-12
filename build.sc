@@ -15,7 +15,7 @@ trait ScalanetModule extends ScalaModule {
       MavenRepository("https://oss.sonatype.org/content/repositories/snapshots")
     )
 
-  override def scalacOptions = Seq(
+  private val commonScalacOptions = Seq(
     "-unchecked",
     "-language:postfixOps",
     "-deprecation",
@@ -24,7 +24,6 @@ trait ScalanetModule extends ScalaModule {
     "-Xlint:unsound-match",
     "-Ywarn-inaccessible",
     "-Ywarn-unused-import",
-    "-Ywarn-value-discard",
     "-Ypartial-unification",
     "-J-Xmx1.5G",
     "-J-Xms1.5G",
@@ -33,10 +32,16 @@ trait ScalanetModule extends ScalaModule {
     "utf-8"
   )
 
+  override def scalacOptions =
+    commonScalacOptions ++ Seq("-Ywarn-value-discard")
+
   // `extends Tests` uses the context of the module in which it's defined,
   // which is why the trait is defined here not within `scalanet`, otherwise
   // it wouldn't work for `kademlia` for example.
   trait TestModule extends Tests with CoreDependency {
+    override def scalacOptions =
+      commonScalacOptions
+
     override def testFrameworks =
       Seq("org.scalatest.tools.Framework")
 
