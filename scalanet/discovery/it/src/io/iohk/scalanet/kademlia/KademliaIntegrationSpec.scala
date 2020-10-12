@@ -25,7 +25,6 @@ abstract class KademliaIntegrationSpec(peerGroupName: String)
     with IntegrationPatience {
   import io.iohk.scalanet.codec.DefaultCodecs._
   import io.iohk.scalanet.kademlia.codec.DefaultCodecs._
-  import scodec.codecs.implicits._
   import KademliaIntegrationSpec._
 
   val threadPool = Executors.newFixedThreadPool(16)
