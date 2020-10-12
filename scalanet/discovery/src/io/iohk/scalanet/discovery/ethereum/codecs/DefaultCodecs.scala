@@ -10,6 +10,7 @@ import scodec.codecs.{Discriminated, Discriminator, uint4}
 import scodec.codecs.implicits._
 import scodec.bits.{BitVector, ByteVector}
 import scala.collection.SortedMap
+import java.net.InetAddress
 
 object DefaultCodecs {
   implicit val publicKeyCodec: Codec[PublicKey] =
@@ -20,6 +21,10 @@ object DefaultCodecs {
 
   implicit val hashCodec: Codec[Hash] =
     implicitly[Codec[BitVector]].xmap(Hash(_), identity)
+
+  implicit val inetAddressCodec: Codec[InetAddress] =
+    implicitly[Codec[BitVector]]
+      .xmap(bits => InetAddress.getByAddress(bits.toByteArray), ip => BitVector(ip.getAddress))
 
   implicit val addressCodec: Codec[Node.Address] =
     Codec.deriveLabelledGeneric

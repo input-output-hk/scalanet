@@ -12,6 +12,7 @@ import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.Channel
 import io.iohk.scalanet.peergroup.Channel.{MessageReceived, DecodingError, UnexpectedError}
 import java.util.concurrent.TimeoutException
+import java.net.InetAddress
 import monix.eval.Task
 import monix.tail.Iterant
 import monix.catnap.CancelableF
@@ -156,6 +157,7 @@ object DiscoveryNetwork {
               handler.findNode(caller)(target)
             } { nodes =>
               nodes
+                .take(kademliaBucketSize)
                 .grouped(maxNeighborsPerPacket)
                 .toList
                 .traverse { group =>
@@ -343,7 +345,7 @@ object DiscoveryNetwork {
     val sampleNode = Node(
       id = PublicKey(BitVector(Array.fill[Byte](sigalg.PublicKeyBytesSize)(0xff.toByte))),
       address = Node.Address(
-        ip = BitVector(Array.fill[Byte](4)(0xff.toByte)),
+        ip = InetAddress.getByName("::1"), // IPv6, longer than IPv4,
         udpPort = 40000,
         tcpPort = 50000
       )
@@ -356,7 +358,8 @@ object DiscoveryNetwork {
         val payload = Neighbors(nodes, expiration)
         // Take a shortcut here so we don't need a valid private key and sign all incremental messages.
         val dataBitsSize = codec.encode(payload).require.size
-        Packet.MacBitsSize + Packet.SigBitsSize + dataBitsSize
+        val packetSize = Packet.MacBitsSize + Packet.SigBitsSize + dataBitsSize
+        packetSize
       }
       .takeWhile(_ <= Packet.MaxPacketBitsSize)
       .length
