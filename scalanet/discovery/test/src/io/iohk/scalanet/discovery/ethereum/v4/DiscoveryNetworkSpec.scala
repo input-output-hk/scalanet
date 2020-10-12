@@ -486,12 +486,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       override val test = for {
         _ <- network.startHandling {
           StubDiscoveryRPC(
-            ping = caller =>
-              _ =>
-                Task {
-                  caller shouldBe (remotePublicKey, remoteAddress)
-                  Some(Some(localENRSeq))
-                }
+            ping = _ => _ => Task(Some(Some(localENRSeq)))
           )
         }
         channel <- peerGroup.createServerChannel(from = remoteAddress)
@@ -517,12 +512,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       override val test = for {
         _ <- network.startHandling {
           StubDiscoveryRPC(
-            findNode = caller =>
-              _ =>
-                Task {
-                  caller shouldBe (remotePublicKey, remoteAddress)
-                  Some(randomNodes)
-                }
+            findNode = _ => _ => Task(Some(randomNodes))
           )
         }
         channel <- peerGroup.createServerChannel(from = remoteAddress)
@@ -561,12 +551,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       override val test = for {
         _ <- network.startHandling {
           StubDiscoveryRPC(
-            enrRequest = caller =>
-              _ =>
-                Task {
-                  caller shouldBe (remotePublicKey, remoteAddress)
-                  Some(localENR)
-                }
+            enrRequest = _ => _ => Task(Some(localENR))
           )
         }
         channel <- peerGroup.createServerChannel(from = remoteAddress)
@@ -626,6 +611,29 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         } yield {
           msg shouldBe empty
           called shouldBe false
+        }
+      }
+    }
+
+    it should s"forward the caller to the $rpc handler" in test {
+      new GenericRPCFixture {
+        def assertCaller(caller: (PublicKey, InetSocketAddress)) =
+          caller shouldBe (remotePublicKey, remoteAddress)
+
+        override val test = for {
+          _ <- network.startHandling {
+            StubDiscoveryRPC(
+              ping = caller => _ => Task { assertCaller(caller); Some(None) },
+              findNode = caller => _ => Task { assertCaller(caller); Some(List(randomNode)) },
+              enrRequest = caller => _ => Task { assertCaller(caller); Some(localENR) }
+            )
+          }
+          channel <- peerGroup.createServerChannel(from = remoteAddress)
+          request = requestMap(rpc)
+          _ <- channel.sendPayloadToSUT(request, remotePrivateKey)
+          msg <- channel.nextMessageFromSUT(250.millis)
+        } yield {
+          msg should not be empty
         }
       }
     }
