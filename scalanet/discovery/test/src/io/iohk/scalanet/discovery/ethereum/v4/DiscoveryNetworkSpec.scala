@@ -571,13 +571,12 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
     it should s"not respond to $rpc if the request is expired" in test {
       new GenericRPCFixture {
         @volatile var called = false
+
         override val test = for {
           _ <- network.startHandling(
-            StubDiscoveryRPC(
-              ping = _ => _ => Task { called = true; None },
-              findNode = _ => _ => Task { called = true; None },
-              enrRequest = _ => _ => Task { called = true; None }
-            )
+            handleWithNone.withEffect {
+              Task { called = true }
+            }
           )
           channel <- peerGroup.createServerChannel(from = remoteAddress)
           (request: Payload) = requestMap(rpc) match {
@@ -595,16 +594,13 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
     it should s"forward the caller to the $rpc handler" in test {
       new GenericRPCFixture {
-        def assertCaller(caller: (PublicKey, InetSocketAddress)) =
+        def assertCaller(caller: (PublicKey, InetSocketAddress)) = Task {
           caller shouldBe (remotePublicKey, remoteAddress)
+        }
 
         override val test = for {
           _ <- network.startHandling {
-            StubDiscoveryRPC(
-              ping = caller => _ => Task { assertCaller(caller); Some(None) },
-              findNode = caller => _ => Task { assertCaller(caller); Some(List(randomNode)) },
-              enrRequest = caller => _ => Task { assertCaller(caller); Some(localENR) }
-            )
+            handleWithSome.withCallerEffect(assertCaller(_).void)
           }
           channel <- peerGroup.createServerChannel(from = remoteAddress)
           request = requestMap(rpc)
@@ -623,7 +619,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         // Only raising on the 1st call, to check that the 2nd succeeds.
         @volatile var raised = false
 
-        def raiseOnFirst() = {
+        def raiseOnFirst() = Task {
           if (!raised) {
             raised = true
             throw TestException
@@ -632,11 +628,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
         override val test = for {
           _ <- network.startHandling {
-            StubDiscoveryRPC(
-              ping = caller => _ => Task { raiseOnFirst; Some(None) },
-              findNode = caller => _ => Task { raiseOnFirst; Some(List(randomNode)) },
-              enrRequest = caller => _ => Task { raiseOnFirst; Some(localENR) }
-            )
+            handleWithSome.withEffect(raiseOnFirst())
           }
           channel <- peerGroup.createServerChannel(from = remoteAddress)
           request = requestMap(rpc)
@@ -832,10 +824,29 @@ object DiscoveryNetworkSpec extends Matchers {
     )
 
     val handleWithSome = StubDiscoveryRPC(
-      ping = caller => _ => Task.pure(Some(None)),
-      findNode = caller => _ => Task.pure(Some(List(randomNode))),
-      enrRequest = caller => _ => Task.pure(Some(localENR))
+      ping = _ => _ => Task.pure(Some(None)),
+      findNode = _ => _ => Task.pure(Some(List(randomNode))),
+      enrRequest = _ => _ => Task.pure(Some(localENR))
     )
+
+    implicit class StubDiscoveryRPCOps(stub: StubDiscoveryRPC) {
+      def withEffect(task: Task[Unit]): StubDiscoveryRPC = {
+        stub.copy(
+          ping = caller => req => task >> stub.ping(caller)(req),
+          findNode = caller => req => task >> stub.findNode(caller)(req),
+          enrRequest = caller => req => task >> stub.enrRequest(caller)(req)
+        )
+      }
+
+      def withCallerEffect(f: RemoteCaller => Task[Unit]): StubDiscoveryRPC = {
+        stub.copy(
+          ping = caller => req => f(caller) >> stub.ping(caller)(req),
+          findNode = caller => req => f(caller) >> stub.findNode(caller)(req),
+          enrRequest = caller => req => f(caller) >> stub.enrRequest(caller)(req)
+        )
+      }
+    }
+
   }
   object GenericRPCFixture {
     val rpcs = List("ping", "findNode", "enrRequest")
