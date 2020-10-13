@@ -416,12 +416,12 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         ping = Ping(4, toNodeAddress(remoteAddress), toNodeAddress(localAddress), validExpiration, None)
 
         _ <- channel.sendPayloadToSUT(ping, remotePrivateKey)
-        msg1 <- channel.nextMessageFromSUT(250.millis)
+        msg1 <- channel.nextMessageFromSUT()
 
         _ <- token.cancel
 
         _ <- channel.sendPayloadToSUT(ping, remotePrivateKey)
-        msg2 <- channel.nextMessageFromSUT(250.millis)
+        msg2 <- channel.nextMessageFromSUT()
       } yield {
         msg1 should not be empty
         msg2 shouldBe empty
@@ -453,9 +453,9 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         )
         channel <- peerGroup.createServerChannel(from = remoteAddress)
         _ <- channel.sendPayloadToSUT(Neighbors(Nil, validExpiration), remotePrivateKey)
-        msg1 <- channel.nextMessageFromSUT(timeout = 200.millis)
+        msg1 <- channel.nextMessageFromSUT()
         _ <- channel.sendPayloadToSUT(FindNode(remotePublicKey, validExpiration), remotePrivateKey)
-        msg2 <- channel.nextMessageFromSUT(timeout = 200.millis)
+        msg2 <- channel.nextMessageFromSUT()
       } yield {
         msg1 shouldBe empty
         msg2 should not be empty
@@ -503,7 +503,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         findNode = FindNode(remotePublicKey, validExpiration)
         packet <- channel.sendPayloadToSUT(findNode, remotePrivateKey)
         msgs <- Iterant
-          .repeatEvalF(channel.nextMessageFromSUT(100.millis))
+          .repeatEvalF(channel.nextMessageFromSUT())
           .takeWhile(_.isDefined)
           .toListL
       } yield {
@@ -541,7 +541,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         channel <- peerGroup.createServerChannel(from = remoteAddress)
         enrRequest = ENRRequest(validExpiration)
         packet <- channel.sendPayloadToSUT(enrRequest, remotePrivateKey)
-        msg <- channel.nextMessageFromSUT(250.millis)
+        msg <- channel.nextMessageFromSUT()
       } yield {
         msg should not be empty
         assertMessageFrom(publicKey, msg) {
@@ -557,17 +557,11 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
     it should s"not respond to $rpc if the handler returns None" in test {
       new GenericRPCFixture {
         override val test = for {
-          _ <- network.startHandling {
-            StubDiscoveryRPC(
-              ping = _ => _ => Task.pure(None),
-              findNode = _ => _ => Task.pure(None),
-              enrRequest = _ => _ => Task.pure(None)
-            )
-          }
+          _ <- network.startHandling(handleWithNone)
           channel <- peerGroup.createServerChannel(from = remoteAddress)
           request = requestMap(rpc)
           _ <- channel.sendPayloadToSUT(request, remotePrivateKey)
-          msg <- channel.nextMessageFromSUT(250.millis)
+          msg <- channel.nextMessageFromSUT()
         } yield {
           msg shouldBe empty
         }
@@ -615,7 +609,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
           channel <- peerGroup.createServerChannel(from = remoteAddress)
           request = requestMap(rpc)
           _ <- channel.sendPayloadToSUT(request, remotePrivateKey)
-          msg <- channel.nextMessageFromSUT(250.millis)
+          msg <- channel.nextMessageFromSUT()
         } yield {
           msg should not be empty
         }
@@ -647,12 +641,35 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
           channel <- peerGroup.createServerChannel(from = remoteAddress)
           request = requestMap(rpc)
           _ <- channel.sendPayloadToSUT(request, remotePrivateKey)
-          msg1 <- channel.nextMessageFromSUT(250.millis)
+          msg1 <- channel.nextMessageFromSUT()
           _ <- channel.sendPayloadToSUT(request, remotePrivateKey)
           msg2 <- channel.nextMessageFromSUT()
         } yield {
           msg1 shouldBe empty
           msg2 should not be empty
+        }
+      }
+    }
+
+    it should s"stop processing $rpc requests after an invalid packet" in test {
+      new GenericRPCFixture {
+        override val test = for {
+          _ <- network.startHandling(handleWithSome)
+          channel <- peerGroup.createServerChannel(from = remoteAddress)
+          garbage = Packet(
+            Hash(BitVector(randomBytes(1))),
+            Signature(BitVector(randomBytes(2))),
+            BitVector(randomBytes(3))
+          )
+          _ <- channel.sendMessageToSUT(garbage)
+          msg1 <- channel.nextMessageFromSUT()
+          request = requestMap(rpc)
+          _ <- channel.sendPayloadToSUT(request, remotePrivateKey)
+          msg2 <- channel.nextMessageFromSUT()
+        } yield {
+          msg1 shouldBe empty
+          msg2 shouldBe empty
+          channel.isClosed shouldBe true
         }
       }
     }
@@ -806,6 +823,18 @@ object DiscoveryNetworkSpec extends Matchers {
       "ping" -> Ping(4, toNodeAddress(remoteAddress), toNodeAddress(localAddress), validExpiration, None),
       "findNode" -> FindNode(remotePublicKey, validExpiration),
       "enrRequest" -> ENRRequest(validExpiration)
+    )
+
+    val handleWithNone = StubDiscoveryRPC(
+      ping = _ => _ => Task.pure(None),
+      findNode = _ => _ => Task.pure(None),
+      enrRequest = _ => _ => Task.pure(None)
+    )
+
+    val handleWithSome = StubDiscoveryRPC(
+      ping = caller => _ => Task.pure(Some(None)),
+      findNode = caller => _ => Task.pure(Some(List(randomNode))),
+      enrRequest = caller => _ => Task.pure(Some(localENR))
     )
   }
   object GenericRPCFixture {

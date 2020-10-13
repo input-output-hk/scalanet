@@ -76,6 +76,6 @@ class MockChannel[A, M](
   def sendMessageToSUT(message: M): Task[Unit] =
     messagesToSUT.offer(MessageReceived(message))
 
-  def nextMessageFromSUT(timeout: FiniteDuration = 1.second): Task[Option[ChannelEvent[M]]] =
+  def nextMessageFromSUT(timeout: FiniteDuration = 250.millis): Task[Option[ChannelEvent[M]]] =
     messagesFromSUT.poll.map(Some(_)).timeoutTo(timeout, Task.pure(None))
 }

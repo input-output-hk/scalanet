@@ -18,7 +18,7 @@ import monix.tail.Iterant
 import monix.catnap.CancelableF
 import scala.concurrent.duration._
 import scodec.{Codec, Attempt}
-import scala.util.control.NonFatal
+import scala.util.control.{NonFatal, NoStackTrace}
 import scodec.bits.BitVector
 import io.iohk.scalanet.discovery.ethereum.v4.Payload.Neighbors
 
@@ -34,6 +34,9 @@ trait DiscoveryNetwork[A] extends DiscoveryRPC[A] {
 }
 
 object DiscoveryNetwork {
+
+  // Errors that stop the processing of incoming messages on a channel.
+  class PacketException(message: String) extends Exception(message) with NoStackTrace
 
   def apply[A](
       peerGroup: PeerGroup[A, Packet],
@@ -79,7 +82,7 @@ object DiscoveryNetwork {
                   .onErrorRecover {
                     case ex: TimeoutException =>
                     case NonFatal(ex) =>
-                      logger.error(s"Error on channel from ${channel.to}: $ex")
+                      logger.error(s"Error handling channel from ${channel.to}: $ex")
                   }
                   .startAndForget
 
@@ -120,16 +123,16 @@ object DiscoveryNetwork {
 
                   case Attempt.Failure(err) =>
                     Task.raiseError(
-                      new IllegalArgumentException(s"Failed to unpack message: $err")
+                      new PacketException(s"Failed to unpack message: $err")
                     )
                 }
               }
 
             case DecodingError =>
-              Task.raiseError(new IllegalArgumentException("Failed to decode a message."))
+              Task.raiseError(new PacketException("Failed to decode a message."))
 
             case UnexpectedError(ex) =>
-              Task.raiseError(ex)
+              Task.raiseError(new PacketException(ex.getMessage))
           }
           .completedL
       }
