@@ -79,7 +79,7 @@ object DiscoveryNetwork {
                   .onErrorRecover {
                     case ex: TimeoutException =>
                     case NonFatal(ex) =>
-                      logger.debug(s"Error on channel from ${channel.to}: $ex")
+                      logger.error(s"Error on channel from ${channel.to}: $ex")
                   }
                   .startAndForget
 
@@ -177,9 +177,14 @@ object DiscoveryNetwork {
       private def maybeRespond[Res](maybeResponse: Task[Option[Res]])(
           f: Res => Task[Unit]
       ): Task[Unit] =
-        maybeResponse.flatMap {
-          case Some(response) => f(response)
-          case None => Task.unit
+        maybeResponse.attempt.flatMap {
+          case Right(Some(response)) =>
+            f(response)
+          case Right(None) =>
+            Task.unit
+          case Left(NonFatal(ex)) =>
+            // Not responding to this one, but it shouldn't stop handling further requests.
+            Task(logger.error(s"Error handling incoming request: $ex"))
         }
 
       private def pack(payload: Payload): Task[Packet] =
@@ -329,6 +334,7 @@ object DiscoveryNetwork {
     }
   }
 
+  // Functions to be applied on the `.nextMessage()` or `.nextServerEvent()` results.
   private implicit class NextOps[A](next: Task[Option[A]]) {
     def toIterant: Iterant[Task, A] =
       Iterant.repeatEvalF(next).takeWhile(_.isDefined).map(_.get)
@@ -340,6 +346,7 @@ object DiscoveryNetwork {
       }
   }
 
+  /** Estimate how many neihbors we can fit in the maximum protol message size. */
   def getMaxNeighborsPerPacket(implicit codec: Codec[Payload], sigalg: SigAlg): Int = {
     val sampleNode = Node(
       id = PublicKey(BitVector(Array.fill[Byte](sigalg.PublicKeyBytesSize)(0xff.toByte))),

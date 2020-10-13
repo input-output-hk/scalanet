@@ -17,6 +17,7 @@ import monix.eval.Task
 import org.scalatest._
 import scala.concurrent.duration._
 import scala.util.Random
+import scala.util.control.NoStackTrace
 import scala.collection.SortedMap
 import scodec.bits.{BitVector, ByteVector}
 import monix.tail.Iterant
@@ -552,7 +553,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
-  List("ping", "findNode", "enrRequest").foreach { rpc =>
+  GenericRPCFixture.rpcs.foreach { rpc =>
     it should s"not respond to $rpc if the handler returns None" in test {
       new GenericRPCFixture {
         override val test = for {
@@ -617,6 +618,41 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
           msg <- channel.nextMessageFromSUT(250.millis)
         } yield {
           msg should not be empty
+        }
+      }
+    }
+
+    it should s"not stop processing $rpc requests if the handler throws" in test {
+      new GenericRPCFixture {
+        object TestException extends NoStackTrace
+
+        // Only raising on the 1st call, to check that the 2nd succeeds.
+        @volatile var raised = false
+
+        def raiseOnFirst() = {
+          if (!raised) {
+            raised = true
+            throw TestException
+          }
+        }
+
+        override val test = for {
+          _ <- network.startHandling {
+            StubDiscoveryRPC(
+              ping = caller => _ => Task { raiseOnFirst; Some(None) },
+              findNode = caller => _ => Task { raiseOnFirst; Some(List(randomNode)) },
+              enrRequest = caller => _ => Task { raiseOnFirst; Some(localENR) }
+            )
+          }
+          channel <- peerGroup.createServerChannel(from = remoteAddress)
+          request = requestMap(rpc)
+          _ <- channel.sendPayloadToSUT(request, remotePrivateKey)
+          msg1 <- channel.nextMessageFromSUT(250.millis)
+          _ <- channel.sendPayloadToSUT(request, remotePrivateKey)
+          msg2 <- channel.nextMessageFromSUT()
+        } yield {
+          msg1 shouldBe empty
+          msg2 should not be empty
         }
       }
     }
@@ -771,6 +807,9 @@ object DiscoveryNetworkSpec extends Matchers {
       "findNode" -> FindNode(remotePublicKey, validExpiration),
       "enrRequest" -> ENRRequest(validExpiration)
     )
+  }
+  object GenericRPCFixture {
+    val rpcs = List("ping", "findNode", "enrRequest")
   }
 
   def assertPacketReceived(maybeEvent: Option[ChannelEvent[Packet]]): Packet = {
