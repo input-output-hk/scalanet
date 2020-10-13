@@ -682,7 +682,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       node.copy(address = node.address.copy(ip = InetAddress.getByName("2001:0db8:85a3:0000:0000:8a2e:0370:7334")))
     }
 
-    def packetSizeOfNNeihbours(n: Int) = {
+    def packetSizeOfNNeighbors(n: Int) = {
       val neighbours = Neighbors(List.fill(n)(randomIPv6Node), System.currentTimeMillis)
       val (_, privateKey) = randomKeyPair
       val packet = Packet.pack(neighbours, privateKey).require
@@ -690,8 +690,8 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       packetSize
     }
 
-    assert(packetSizeOfNNeihbours(maxNeighborsPerPacket) <= Packet.MaxPacketBitsSize)
-    assert(packetSizeOfNNeihbours(maxNeighborsPerPacket + 1) > Packet.MaxPacketBitsSize)
+    assert(packetSizeOfNNeighbors(maxNeighborsPerPacket) <= Packet.MaxPacketBitsSize)
+    assert(packetSizeOfNNeighbors(maxNeighborsPerPacket + 1) > Packet.MaxPacketBitsSize)
   }
 }
 
