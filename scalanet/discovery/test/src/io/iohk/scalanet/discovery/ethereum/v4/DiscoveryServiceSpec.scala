@@ -17,7 +17,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   import DiscoveryService.{State, BondingResults}
 
   def test(fixture: Fixture) =
-    fixture.test.runToFuture
+    fixture.test.timeout(15.seconds).runToFuture
 
   behavior of "isBonded"
 
@@ -150,12 +150,80 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   }
 
   behavior of "awaitPing"
-  it should "wait up to the request timeout if there's no ping" in (pending)
-  it should "complete as soon as there's a ping" in (pending)
+
+  it should "wait up to the request timeout if there's no ping" in test {
+    new Fixture {
+      override val test = for {
+        _ <- DiscoveryService.initBond(remotePeer)
+        timeoutMillis = 200
+        time0 <- DiscoveryService.currentTimeMillis
+        _ <- DiscoveryService.awaitPing(remotePeer, requestTimeout = timeoutMillis.millis)
+        time1 <- DiscoveryService.currentTimeMillis
+      } yield {
+        assert(time1 - time0 >= timeoutMillis)
+      }
+    }
+  }
+
+  it should "complete as soon as there's a ping" in test {
+    new Fixture {
+      override val test = for {
+        _ <- DiscoveryService.initBond(remotePeer)
+        timeoutMillis = 1000
+        time0 <- DiscoveryService.currentTimeMillis
+        waiting <- DiscoveryService.awaitPing(remotePeer, requestTimeout = timeoutMillis.millis).start
+        pingReceived <- stateRef.get.map { state =>
+          state.bondingResultsMap(remotePeer).pingReceived
+        }
+        _ <- pingReceived.complete(())
+        _ <- waiting.join
+        time1 <- DiscoveryService.currentTimeMillis
+      } yield {
+        assert(time1 - time0 < timeoutMillis)
+      }
+    }
+  }
 
   behavior of "completePing"
-  it should "complete the expected ping" in (pending)
-  it should "ignore subsequent pings" in (pending)
+
+  it should "complete the expected ping" in test {
+    new Fixture {
+      override val test = for {
+        _ <- DiscoveryService.initBond(remotePeer)
+        pingReceived <- stateRef.get.map { state =>
+          state.bondingResultsMap(remotePeer).pingReceived
+        }
+        _ <- DiscoveryService.completePing(remotePeer)
+        _ <- pingReceived.get.timeout(1.second)
+      } yield {
+        // It would time out if it wasn't completed.
+        succeed
+      }
+    }
+  }
+
+  it should "ignore subsequent pings" in test {
+    new Fixture {
+      override val test = for {
+        _ <- DiscoveryService.initBond(remotePeer)
+        _ <- DiscoveryService.completePing(remotePeer)
+        _ <- DiscoveryService.completePing(remotePeer)
+      } yield {
+        // It's enough that it didn't fail due to multiple completions.
+        succeed
+      }
+    }
+  }
+
+  it should "ignore peers which weren't expected" in test {
+    new Fixture {
+      override val test = for {
+        _ <- DiscoveryService.completePing(remotePeer)
+      } yield {
+        succeed
+      }
+    }
+  }
 
   behavior of "bond"
   it should "not try to bond if already bonded" in (pending)

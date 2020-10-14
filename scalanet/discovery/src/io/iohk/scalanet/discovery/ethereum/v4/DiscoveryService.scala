@@ -225,7 +225,7 @@ object DiscoveryService {
       bondExpiration: FiniteDuration,
       // How long to wait for the remote peer to send a ping to us.
       requestTimeout: FiniteDuration
-  )(implicit sr: StateRef[A], clock: Clock[Task]): Task[Boolean] = {
+  )(implicit sr: StateRef[A], clock: Clock[Task]): Task[Boolean] =
     isBonded(bondExpiration, peer).flatMap {
       case true =>
         Task.pure(true)
@@ -250,7 +250,6 @@ object DiscoveryService {
               }
         }
     }
-  }
 
   /** Check and modify the bonding state of the peer: if we're already bonding
     * return the Deferred result we can wait on, otherwise add a new Deferred
