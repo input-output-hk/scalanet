@@ -54,8 +54,6 @@ object DiscoveryService {
     def address: A = peer._2
   }
 
-  type PingingResult = Deferred[Task, Boolean]
-
   /** Implement the Discovery v4 protocol:
     *
     * https://github.com/ethereum/devp2p/blob/master/discv4.md
@@ -90,6 +88,23 @@ object DiscoveryService {
       }
       .map(_._1)
 
+  case class BondingResults(
+      // Completed if the remote poor responds with a Pong during the bonding process.
+      pongReceived: Deferred[Task, Boolean],
+      // Completed if the remote peer pings us during the bonding process.
+      pingReceived: Deferred[Task, Unit]
+  )
+  object BondingResults {
+    def apply(): Task[BondingResults] =
+      for {
+        pong <- Deferred[Task, Boolean]
+        ping <- Deferred[Task, Unit]
+      } yield BondingResults(pong, ping)
+
+    def unsafe(): BondingResults =
+      BondingResults(Deferred.unsafe[Task, Boolean], Deferred.unsafe[Task, Unit])
+  }
+
   case class State[A](
       node: Node,
       enr: EthereumNodeRecord,
@@ -100,16 +115,16 @@ object DiscoveryService {
       // Last time a peer responded with a Pong to our Ping.
       lastPongTimestampMap: Map[Peer[A], Timestamp],
       // Deferred results so we can ensure there's only one concurrent Ping to a given peer.
-      pingingResultMap: Map[Peer[A], PingingResult]
+      bondingResultsMap: Map[Peer[A], BondingResults]
   ) {
     def withLastPongTimestamp(peer: Peer[A], timestamp: Timestamp): State[A] =
       copy(lastPongTimestampMap = lastPongTimestampMap.updated(peer, timestamp))
 
-    def withPingingResult(peer: Peer[A], result: PingingResult): State[A] =
-      copy(pingingResultMap = pingingResultMap.updated(peer, result))
+    def withBondingResults(peer: Peer[A], results: BondingResults): State[A] =
+      copy(bondingResultsMap = bondingResultsMap.updated(peer, results))
 
-    def clearPingingResult(peer: Peer[A]): State[A] =
-      copy(pingingResultMap = pingingResultMap - peer)
+    def clearBondingResults(peer: Peer[A]): State[A] =
+      copy(bondingResultsMap = bondingResultsMap - peer)
   }
   object State {
     def apply[A](
@@ -123,7 +138,7 @@ object DiscoveryService {
       nodeMap = Map(node.id -> node),
       enrMap = Map(node.id -> enr),
       lastPongTimestampMap = Map.empty[Peer[A], Timestamp],
-      pingingResultMap = Map.empty[Peer[A], PingingResult]
+      bondingResultsMap = Map.empty[Peer[A], BondingResults]
     )
   }
 
@@ -144,7 +159,16 @@ object DiscoveryService {
     override def removeNode(nodeId: NodeId): Task[Unit] = ???
     override def updateExternalAddress(address: InetAddress): Task[Unit] = ???
     override def localNode: Task[Node] = ???
-    override def ping: Call[Peer[A], Proc.Ping] = ???
+
+    override def ping =
+      caller =>
+        maybeRemoteEnrSeq =>
+          for {
+            _ <- completePing(caller)
+            enr <- stateRef.get.map(_.enr.content.seq)
+            // TODO: Check if the ENR is fresher than what we have and maybe fetch again.
+          } yield Some(Some(enr))
+
     override def findNode: Call[Peer[A], Proc.FindNode] = ???
     override def enrRequest: Call[Peer[A], Proc.ENRRequest] = ???
 
@@ -157,7 +181,7 @@ object DiscoveryService {
     def startPeriodicDiscovery(): Task[Fiber[Task, Unit]] = ???
 
     def bond(peer: Peer[A]): Task[Boolean] =
-      DiscoveryService.bond(network, bondExpiration, requestTimeout, peer)
+      DiscoveryService.bond(peer, network, bondExpiration, requestTimeout)
 
     def lookup(nodeId: NodeId): Task[Option[Node]] = ???
 
@@ -196,11 +220,11 @@ object DiscoveryService {
     * and will not ignore our messages.
     */
   protected[v4] def bond[A](
+      peer: Peer[A],
       rpc: DiscoveryRPC[A],
       bondExpiration: FiniteDuration,
       // How long to wait for the remote peer to send a ping to us.
-      requestTimeout: FiniteDuration,
-      peer: Peer[A]
+      requestTimeout: FiniteDuration
   )(implicit sr: StateRef[A], clock: Clock[Task]): Task[Boolean] = {
     isBonded(bondExpiration, peer).flatMap {
       case true =>
@@ -209,7 +233,7 @@ object DiscoveryService {
       case false =>
         initBond(peer).flatMap {
           case Left(result) =>
-            result.get
+            result.pongReceived.get
 
           case Right(enrSeq) =>
             rpc
@@ -219,11 +243,10 @@ object DiscoveryService {
               }
               .flatMap {
                 case Some(maybeRemoteEnrSeq) =>
-                  // TODO: Wait for a ping.
-                  // TODO: Schedule fetching the ENR.
-                  completeBond(peer, responded = true).as(true)
+                  awaitPing(peer, requestTimeout) >> completeBond(peer, responded = true)
+                // TODO: Schedule fetching the ENR.
                 case None =>
-                  completeBond(peer, responded = false).as(false)
+                  completeBond(peer, responded = false)
               }
         }
     }
@@ -233,18 +256,19 @@ object DiscoveryService {
     * return the Deferred result we can wait on, otherwise add a new Deferred
     * and return the current local ENR sequence we can ping with.
     */
-  protected[v4] def initBond[A](peer: Peer[A])(implicit sr: StateRef[A]): Task[Either[PingingResult, ENRSeq]] =
-    Deferred[Task, Boolean].flatMap { d =>
-      sr.modify { state =>
-        state.pingingResultMap.get(peer) match {
-          case Some(result) =>
-            state -> Left(result)
+  protected[v4] def initBond[A](peer: Peer[A])(implicit sr: StateRef[A]): Task[Either[BondingResults, ENRSeq]] =
+    for {
+      results <- BondingResults()
+      decision <- sr.modify { state =>
+        state.bondingResultsMap.get(peer) match {
+          case Some(results) =>
+            state -> Left(results)
 
-          case _ =>
-            state.withPingingResult(peer, d) -> Right(state.enr.content.seq)
+          case None =>
+            state.withBondingResults(peer, results) -> Right(state.enr.content.seq)
         }
       }
-    }
+    } yield decision
 
   /** Update the bonding state of the peer with the result,
     * notifying all potentially waiting bonding processes about the outcome as well.
@@ -252,22 +276,45 @@ object DiscoveryService {
   protected[v4] def completeBond[A](peer: Peer[A], responded: Boolean)(
       implicit sr: StateRef[A],
       clock: Clock[Task]
-  ): Task[Unit] = {
-    currentTimeMillis.flatMap { now =>
-      sr.modify { state =>
-          val maybeResult = state.pingingResultMap.get(peer) match {
-            case Some(result) => Some(result)
-            case _ => None
-          }
-
+  ): Task[Boolean] = {
+    for {
+      now <- currentTimeMillis
+      _ <- sr
+        .modify { state =>
+          val maybePong = state.bondingResultsMap.get(peer).map(_.pongReceived)
           val newState = if (responded) state.withLastPongTimestamp(peer, now) else state
-
-          newState.clearPingingResult(peer) -> maybeResult
+          newState.clearBondingResults(peer) -> maybePong
         }
-        .flatMap {
-          case Some(result) => result.complete(responded)
-          case None => Task.unit
+        .flatMap { maybePongReceived =>
+          maybePongReceived.fold(Task.unit)(_.complete(responded))
         }
-    }
+    } yield responded
   }
+
+  /** Allow the remote peer to ping us during bonding, so that we can have a more
+    * fungible expectation that if we send a message they will consider us bonded and
+    * not ignore it.
+    *
+    * The deferred should be completed by the ping handler.
+    */
+  protected[v4] def awaitPing[A](peer: Peer[A], requestTimeout: FiniteDuration)(
+      implicit sr: StateRef[A]
+  ): Task[Unit] =
+    sr.get
+      .map { state =>
+        state.bondingResultsMap.get(peer).map(_.pingReceived)
+      }
+      .flatMap { maybePingReceived =>
+        maybePingReceived.fold(Task.unit)(_.get.timeoutTo(requestTimeout, Task.unit))
+      }
+
+  /** Complete any deferred we set up during a bonding process expecting a ping to arrive. */
+  protected[v4] def completePing[A](peer: Peer[A])(implicit sr: StateRef[A]): Task[Unit] =
+    sr.get
+      .map { state =>
+        state.bondingResultsMap.get(peer).map(_.pingReceived)
+      }
+      .flatMap { maybePingReceived =>
+        maybePingReceived.fold(Task.unit)(_.complete(()).attempt.void)
+      }
 }

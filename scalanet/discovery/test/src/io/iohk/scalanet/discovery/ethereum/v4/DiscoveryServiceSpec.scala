@@ -1,6 +1,6 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
-import cats.effect.concurrent.{Ref, Deferred}
+import cats.effect.concurrent.Ref
 import io.iohk.scalanet.discovery.ethereum.{EthereumNodeRecord, Node}
 import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs
 import io.iohk.scalanet.discovery.ethereum.v4.mocks.MockSigAlg
@@ -14,7 +14,7 @@ import io.iohk.scalanet.discovery.crypto.PublicKey
 
 class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   import DiscoveryServiceSpec._
-  import DiscoveryService.State
+  import DiscoveryService.{State, BondingResults}
 
   def test(fixture: Fixture) =
     fixture.test.runToFuture
@@ -66,7 +66,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       override def peer = remotePeer
       override def expected = true
       override def setupState =
-        _.withPingingResult(remotePeer, Deferred.unsafe[Task, Boolean])
+        _.withBondingResults(remotePeer, BondingResults.unsafe())
           .withLastPongTimestamp(remotePeer, System.currentTimeMillis - bondExpiration.toMillis + 1000)
     }
   }
@@ -75,7 +75,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       override def peer = remotePeer
       override def expected = false
       override def setupState =
-        _.withPingingResult(remotePeer, Deferred.unsafe[Task, Boolean])
+        _.withBondingResults(remotePeer, BondingResults.unsafe())
           .withLastPongTimestamp(remotePeer, System.currentTimeMillis - bondExpiration.toMillis - 1000)
     }
   }
@@ -98,6 +98,14 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   behavior of "completeBond"
   it should "complete all bonds initiated to the peer" in (pending)
+
+  behavior of "awaitPing"
+  it should "wait up to the request timeout if there's no ping" in (pending)
+  it should "complete as soon as there's a ping" in (pending)
+
+  behavior of "completePing"
+  it should "complete the expected ping" in (pending)
+  it should "ignore subsequent pings" in (pending)
 
   behavior of "bond"
   it should "not try to bond if already bonded" in (pending)
