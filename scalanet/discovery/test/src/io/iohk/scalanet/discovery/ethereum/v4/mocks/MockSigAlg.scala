@@ -16,6 +16,9 @@ class MockSigAlg extends SigAlg {
   override def sign(privateKey: PrivateKey, data: BitVector): Signature =
     Signature(xor(privateKey, data))
 
+  override def verify(publicKey: PublicKey, signature: Signature, data: BitVector): Boolean =
+    publicKey == recoverPublicKey(signature, data).require
+
   override def recoverPublicKey(signature: Signature, data: BitVector): Attempt[PublicKey] = {
     Attempt.successful(PublicKey(xor(signature, data)))
   }
