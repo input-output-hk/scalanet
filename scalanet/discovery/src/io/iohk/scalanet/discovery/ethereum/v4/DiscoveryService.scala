@@ -49,7 +49,7 @@ object DiscoveryService {
   type StateRef[A] = Ref[Task, State[A]]
 
   type Peer[A] = (NodeId, A)
-  implicit class PeerOps[A](peer: Peer[A]) {
+  private implicit class PeerOps[A](peer: Peer[A]) {
     def id: NodeId = peer._1
     def address: A = peer._2
   }
@@ -88,13 +88,13 @@ object DiscoveryService {
       }
       .map(_._1)
 
-  case class BondingResults(
+  protected[v4] case class BondingResults(
       // Completed if the remote poor responds with a Pong during the bonding process.
       pongReceived: Deferred[Task, Boolean],
       // Completed if the remote peer pings us during the bonding process.
       pingReceived: Deferred[Task, Unit]
   )
-  object BondingResults {
+  protected[v4] object BondingResults {
     def apply(): Task[BondingResults] =
       for {
         pong <- Deferred[Task, Boolean]
@@ -105,7 +105,7 @@ object DiscoveryService {
       BondingResults(Deferred.unsafe[Task, Boolean], Deferred.unsafe[Task, Unit])
   }
 
-  case class State[A](
+  protected[v4] case class State[A](
       node: Node,
       enr: EthereumNodeRecord,
       // Kademlia buckets with node IDs in them.
@@ -126,7 +126,7 @@ object DiscoveryService {
     def clearBondingResults(peer: Peer[A]): State[A] =
       copy(bondingResultsMap = bondingResultsMap - peer)
   }
-  object State {
+  protected[v4] object State {
     def apply[A](
         node: Node,
         enr: EthereumNodeRecord,
@@ -142,7 +142,7 @@ object DiscoveryService {
     )
   }
 
-  class DiscoveryServiceImpl[A](
+  private class DiscoveryServiceImpl[A](
       network: DiscoveryNetwork[A],
       stateRef: StateRef[A],
       bondExpiration: FiniteDuration,
@@ -187,7 +187,7 @@ object DiscoveryService {
 
   }
 
-  private def currentTimeMillis(implicit clock: Clock[Task]): Task[Long] =
+  protected[v4] def currentTimeMillis(implicit clock: Clock[Task]): Task[Long] =
     clock.realTime(MILLISECONDS)
 
   /** Check if the given peer has a valid bond at the moment. */

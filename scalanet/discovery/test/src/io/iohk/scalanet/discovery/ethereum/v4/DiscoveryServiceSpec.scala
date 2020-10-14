@@ -92,12 +92,62 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   }
 
   behavior of "initBond"
-  it should "try to bond if past the expiration period" in (pending)
-  it should "not try to bond again within the expiration period" in (pending)
-  it should "only do one bond with a given peer at a time" in (pending)
+
+  it should "return a the current ENR sequence if there's no current bonding running" in test {
+    new Fixture {
+      override val test = for {
+        decision <- DiscoveryService.initBond(remotePeer)
+      } yield {
+        decision shouldBe Right(localENR.content.seq)
+      }
+    }
+  }
+  it should "return the existing deferred result if bonding is already running" in test {
+    new Fixture {
+      override val test = for {
+        _ <- DiscoveryService.initBond(remotePeer)
+        decision <- DiscoveryService.initBond(remotePeer)
+      } yield {
+        decision.isLeft shouldBe true
+      }
+    }
+  }
 
   behavior of "completeBond"
-  it should "complete all bonds initiated to the peer" in (pending)
+
+  trait InitBondFixture extends Fixture {
+    def responded: Boolean
+    override val test = for {
+      _ <- DiscoveryService.initBond(remotePeer)
+      pongReceived <- stateRef.get.map { state =>
+        state.bondingResultsMap(remotePeer).pongReceived
+      }
+      now <- DiscoveryService.currentTimeMillis
+      _ <- DiscoveryService.completeBond(remotePeer, responded = responded)
+      state <- stateRef.get
+      bonded <- pongReceived.get
+    } yield {
+      bonded shouldBe responded
+      state.bondingResultsMap.get(remotePeer) shouldBe empty
+      if (responded) {
+        assert(state.lastPongTimestampMap(remotePeer) >= now)
+      } else {
+        // In this setup there wasn't any previous pong, so it stays empty.
+        state.lastPongTimestampMap should not contain key(remotePeer)
+      }
+    }
+  }
+
+  it should "complete the deferred ping and update the timestamp if the peer responds" in test {
+    new InitBondFixture {
+      override def responded = true
+    }
+  }
+  it should "complete the deferred ping but not update the timestamp if the peer did not responds" in test {
+    new InitBondFixture {
+      override def responded = false
+    }
+  }
 
   behavior of "awaitPing"
   it should "wait up to the request timeout if there's no ping" in (pending)
