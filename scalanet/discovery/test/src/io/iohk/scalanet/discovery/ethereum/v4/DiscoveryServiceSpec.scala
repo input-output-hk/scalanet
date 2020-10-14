@@ -14,88 +14,96 @@ import io.iohk.scalanet.discovery.crypto.PublicKey
 
 class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   import DiscoveryServiceSpec._
-  import DiscoveryService.BondingState
+  import DiscoveryService.State
 
   def test(fixture: Fixture) =
     fixture.test.runToFuture
 
   behavior of "isBonded"
 
+  trait IsBondedFixture extends Fixture {
+    override val test = for {
+      _ <- stateRef.update(setupState)
+      isBonded <- DiscoveryService.isBonded(bondExpiration, peer)
+    } yield {
+      isBonded shouldBe expected
+    }
+
+    def setupState: State[InetSocketAddress] => State[InetSocketAddress] = identity
+    def peer: DiscoveryService.Peer[InetSocketAddress]
+    def expected: Boolean
+  }
+
   it should "return true for self" in test {
-    new Fixture {
-      override val test = for {
-        isBonded <- DiscoveryService.isBonded(bondExpiration)(localNode.id -> localAddress)
-      } yield {
-        isBonded shouldBe true
-      }
+    new IsBondedFixture {
+      override def peer = localPeer
+      override def expected = true
     }
   }
   it should "return false for unknown nodes" in test {
-    new Fixture {
-      override val test = for {
-        isBonded <- DiscoveryService.isBonded(bondExpiration)(remotePeer)
-      } yield {
-        isBonded shouldBe false
-      }
+    new IsBondedFixture {
+      override def peer = remotePeer
+      override def expected = false
     }
   }
   it should "return true for nodes that responded to pongs within the expiration period" in test {
-    new Fixture {
-      override val test = for {
-        _ <- stateRef.update(_.withBondingState(remotePeer, BondingState.Responded(System.currentTimeMillis)))
-        isBonded <- DiscoveryService.isBonded(bondExpiration)(remotePeer)
-      } yield {
-        isBonded shouldBe true
-      }
+    new IsBondedFixture {
+      override def peer = remotePeer
+      override def expected = true
+      override def setupState = _.withLastPongTimestamp(remotePeer, System.currentTimeMillis)
     }
   }
   it should "return false for nodes that responded to pongs earlier than the expiration period" in test {
-    new Fixture {
-      override val test = for {
-        _ <- stateRef.update(
-          _.withBondingState(
-            remotePeer,
-            BondingState.Responded(System.currentTimeMillis - bondExpiration.toMillis * 2)
-          )
-        )
-        isBonded <- DiscoveryService.isBonded(bondExpiration)(remotePeer)
-      } yield {
-        isBonded shouldBe false
-      }
+    new IsBondedFixture {
+      override def peer = remotePeer
+      override def expected = false
+      override def setupState =
+        _.withLastPongTimestamp(remotePeer, System.currentTimeMillis - bondExpiration.toMillis - 1000)
     }
   }
-  it should "return false for nodes that are being pinged right now" in test {
-    new Fixture {
-      override val test = for {
-        d <- Deferred[Task, Boolean]
-        _ <- stateRef.update(
-          _.withBondingState(
-            remotePeer,
-            BondingState.Pinging(d)
-          )
-        )
-        isBonded <- DiscoveryService.isBonded(bondExpiration)(remotePeer)
-      } yield {
-        isBonded shouldBe false
-      }
+  it should "return true for nodes that are being pinged right now but responded within expiration" in test {
+    new IsBondedFixture {
+      override def peer = remotePeer
+      override def expected = true
+      override def setupState =
+        _.withPingingResult(remotePeer, Deferred.unsafe[Task, Boolean])
+          .withLastPongTimestamp(remotePeer, System.currentTimeMillis - bondExpiration.toMillis + 1000)
+    }
+  }
+  it should "return false for nodes that are being pinged right now but are otherwise expired" in test {
+    new IsBondedFixture {
+      override def peer = remotePeer
+      override def expected = false
+      override def setupState =
+        _.withPingingResult(remotePeer, Deferred.unsafe[Task, Boolean])
+          .withLastPongTimestamp(remotePeer, System.currentTimeMillis - bondExpiration.toMillis - 1000)
     }
   }
   it should "return false for nodes that changed their address" in test {
-    new Fixture {
-      override val test = for {
-        _ <- stateRef.update(
-          _.withBondingState(
-            remotePublicKey -> remoteAddress,
-            BondingState.Responded(System.currentTimeMillis)
-          )
+    new IsBondedFixture {
+      override def peer = remotePublicKey -> aRandomAddress
+      override def expected = false
+      override def setupState =
+        _.withLastPongTimestamp(
+          remotePublicKey -> remoteAddress,
+          System.currentTimeMillis
         )
-        newRemoteAddress = aRandomAddress()
-        isBonded <- DiscoveryService.isBonded(bondExpiration)(remotePublicKey -> newRemoteAddress)
-      } yield {
-        isBonded shouldBe false
-      }
     }
   }
+
+  behavior of "initBond"
+  it should "try to bond if past the expiration period" in (pending)
+  it should "not try to bond again within the expiration period" in (pending)
+  it should "only do one bond with a given peer at a time" in (pending)
+
+  behavior of "completeBond"
+  it should "complete all bonds initiated to the peer" in (pending)
+
+  behavior of "bond"
+  it should "not try to bond if already bonded" in (pending)
+  it should "fetch the ENR once bonded" in (pending)
+  it should "remove nodes if the bonding fails" in (pending)
+  it should "wait for a ping to arrive from the other party" in (pending)
 
   behavior of "getNode"
   it should "return the local node" in (pending)
@@ -140,20 +148,6 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "bond with peers that ping it" in (pending)
   it should "update the node record to the latest it connected from" in (pending)
 
-  behavior of "initBond"
-  it should "try to bond if past the expiration period" in (pending)
-  it should "not try to bond again within the expiration period" in (pending)
-  it should "only do one bond with a given peer at a time" in (pending)
-
-  behavior of "completeBond"
-  it should "complete all bonds initiated to the peer" in (pending)
-
-  behavior of "bond"
-  it should "not try to bond if already bonded" in (pending)
-  it should "fetch the ENR once bonded" in (pending)
-  it should "remove nodes if the bonding fails" in (pending)
-  it should "wait for a ping to arrive from the other party" in (pending)
-
   behavior of "lookup"
   it should "bond with nodes while doing recursive lookups before contacting them" in (pending)
   it should "return the node seeked or nothing" in (pending)
@@ -179,6 +173,7 @@ object DiscoveryServiceSpec {
     lazy val (localPublicKey, localPrivateKey) = randomKeyPair
     lazy val localAddress = aRandomAddress()
     lazy val localNode = makeNode(localPublicKey, localAddress)
+    lazy val localPeer = localPublicKey -> localAddress
     lazy val localENR = EthereumNodeRecord.fromNode(localNode, localPrivateKey, seq = 1).require
 
     lazy val remoteAddress = aRandomAddress()
