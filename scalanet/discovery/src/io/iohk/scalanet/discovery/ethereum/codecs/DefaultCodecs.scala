@@ -44,6 +44,9 @@ object DefaultCodecs {
   implicit val attrCodec: Codec[SortedMap[ByteVector, ByteVector]] =
     sortedMapCodec[ByteVector, ByteVector]
 
+  implicit val enrContentCodec: Codec[EthereumNodeRecord.Content] =
+    Codec.deriveLabelledGeneric
+
   implicit val enrCodec: Codec[EthereumNodeRecord] =
     Codec.deriveLabelledGeneric
 

@@ -8,6 +8,8 @@ import io.iohk.scalanet.kademlia.KBuckets
 import monix.eval.Task
 import monix.catnap.CancelableF
 import java.net.InetAddress
+import scala.concurrent.duration._
+import cats.effect.Clock
 
 /** Represent the minimal set of operations the rest of the system
   * can expect from the service to be able to talk to other peers.
@@ -38,8 +40,16 @@ trait DiscoveryService {
 }
 
 object DiscoveryService {
-  type NodeId = PublicKey
   import DiscoveryRPC.{Call, Proc}
+
+  type NodeId = PublicKey
+  type StateRef[A] = Ref[Task, State[A]]
+
+  type Peer[A] = (NodeId, A)
+  implicit class PeerOps[A](peer: Peer[A]) {
+    def id: NodeId = peer._1
+    def address: A = peer._2
+  }
 
   /** Implement the Discovery v4 protocol:
     *
@@ -60,7 +70,7 @@ object DiscoveryService {
     Resource
       .make {
         for {
-          stateRef <- Ref[Task].of(State(node, enr))
+          stateRef <- Ref[Task].of(State[A](node, enr))
           service <- Task(new DiscoveryServiceImpl[A](network, stateRef))
           cancelToken <- service.startRequestHandling()
           _ <- service.enroll()
@@ -73,23 +83,30 @@ object DiscoveryService {
       }
       .map(_._1)
 
-  case class State(
+  case class State[A](
+      node: Node,
+      enr: EthereumNodeRecord,
       // Kademlia buckets with node IDs in them.
       kBuckets: KBuckets,
       nodeMap: Map[NodeId, Node],
       enrMap: Map[NodeId, EthereumNodeRecord],
-      bondStateMap: Map[NodeId, BondingState]
-  )
+      bondingStateMap: Map[Peer[A], BondingState]
+  ) {
+    def withBondingState(caller: Peer[A], bondingState: BondingState) =
+      copy(bondingStateMap = bondingStateMap.updated(caller, bondingState))
+  }
   object State {
-    def apply(
+    def apply[A](
         node: Node,
         enr: EthereumNodeRecord,
         clock: java.time.Clock = java.time.Clock.systemUTC()
-    ): State = State(
+    ): State[A] = State[A](
+      node = node,
+      enr = enr,
       kBuckets = new KBuckets(node.id, clock),
       nodeMap = Map(node.id -> node),
       enrMap = Map(node.id -> enr),
-      bondStateMap = Map.empty
+      bondingStateMap = Map.empty[Peer[A], BondingState]
     )
   }
 
@@ -100,18 +117,15 @@ object DiscoveryService {
       * the eventual result which is `true` if the peer responded or `false` if it didn't. */
     case class Pinging(result: Deferred[Task, Boolean]) extends BondingState
 
-    /** Responded to a Ping with a Pong at the given timestamp. */
-    case class Succeeded(timestamp: Long) extends BondingState
-
-    /** Did not respond to Ping the last time it was attempted. */
-    case class Failed(timestamp: Long) extends BondingState
+    /** Responded to a Ping with a Pong at the given UNIX timestamp. */
+    case class Responded(timestamp: Long) extends BondingState
   }
 
   class DiscoveryServiceImpl[A](
       network: DiscoveryNetwork[A],
-      stateRef: Ref[Task, State]
+      stateRef: StateRef[A]
   ) extends DiscoveryService
-      with DiscoveryRPC[(PublicKey, A)] {
+      with DiscoveryRPC[Peer[A]] {
 
     override def getNode(nodeId: NodeId): Task[Option[Node]] = ???
     override def getNodes: Task[Set[Node]] = ???
@@ -119,16 +133,40 @@ object DiscoveryService {
     override def removeNode(nodeId: NodeId): Task[Unit] = ???
     override def updateExternalAddress(address: InetAddress): Task[Unit] = ???
     override def localNode: Task[Node] = ???
-    override def ping: Call[(PublicKey, A), Proc.Ping] = ???
-    override def findNode: Call[(PublicKey, A), Proc.FindNode] = ???
-    override def enrRequest: Call[(PublicKey, A), Proc.ENRRequest] = ???
+    override def ping: Call[Peer[A], Proc.Ping] = ???
+    override def findNode: Call[Peer[A], Proc.FindNode] = ???
+    override def enrRequest: Call[Peer[A], Proc.ENRRequest] = ???
 
     def enroll(): Task[Unit] = ???
-    def startRequestHandling(): Task[CancelableF[Task]] = ???
+
+    def startRequestHandling(): Task[CancelableF[Task]] =
+      network.startHandling(this)
+
     def startPeriodicRefresh(): Task[Fiber[Task, Unit]] = ???
     def startPeriodicDiscovery(): Task[Fiber[Task, Unit]] = ???
 
     def bond(): Task[Boolean] = ???
     def lookup(nodeId: NodeId): Task[Option[Node]] = ???
+  }
+
+  /** Check if the given peer has a valid bond at the moment. */
+  def isBonded[A](
+      expiration: FiniteDuration
+  )(peer: Peer[A])(implicit sr: StateRef[A], clock: Clock[Task]): Task[Boolean] = {
+    clock.realTime(MILLISECONDS).flatMap { now =>
+      sr.get.map { state =>
+        if (peer.id == state.node.id)
+          true
+        else
+          state.bondingStateMap.get(peer) match {
+            case None =>
+              false
+            case Some(BondingState.Pinging(_)) =>
+              false
+            case Some(BondingState.Responded(timestamp)) =>
+              timestamp > now - expiration.toMillis
+          }
+      }
+    }
   }
 }

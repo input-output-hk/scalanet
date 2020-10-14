@@ -1,8 +1,101 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
+import cats.effect.concurrent.{Ref, Deferred}
+import io.iohk.scalanet.discovery.ethereum.{EthereumNodeRecord, Node}
+import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs
+import io.iohk.scalanet.discovery.ethereum.v4.mocks.MockSigAlg
+import io.iohk.scalanet.NetUtils.aRandomAddress
+import java.net.InetSocketAddress
+import monix.eval.Task
+import monix.execution.Scheduler
 import org.scalatest._
+import scala.concurrent.duration._
+import io.iohk.scalanet.discovery.crypto.PublicKey
 
-trait DiscoveryServiceSpec extends FlatSpec {
+class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
+  import DiscoveryServiceSpec._
+  import DiscoveryService.BondingState
+
+  def test(fixture: Fixture) =
+    fixture.test.runToFuture
+
+  behavior of "isBonded"
+
+  it should "return true for self" in test {
+    new Fixture {
+      override val test = for {
+        isBonded <- DiscoveryService.isBonded(bondExpiration)(localNode.id -> localAddress)
+      } yield {
+        isBonded shouldBe true
+      }
+    }
+  }
+  it should "return false for unknown nodes" in test {
+    new Fixture {
+      override val test = for {
+        isBonded <- DiscoveryService.isBonded(bondExpiration)(remotePeer)
+      } yield {
+        isBonded shouldBe false
+      }
+    }
+  }
+  it should "return true for nodes that responded to pongs within the expiration period" in test {
+    new Fixture {
+      override val test = for {
+        _ <- stateRef.update(_.withBondingState(remotePeer, BondingState.Responded(System.currentTimeMillis)))
+        isBonded <- DiscoveryService.isBonded(bondExpiration)(remotePeer)
+      } yield {
+        isBonded shouldBe true
+      }
+    }
+  }
+  it should "return false for nodes that responded to pongs earlier than the expiration period" in test {
+    new Fixture {
+      override val test = for {
+        _ <- stateRef.update(
+          _.withBondingState(
+            remotePeer,
+            BondingState.Responded(System.currentTimeMillis - bondExpiration.toMillis * 2)
+          )
+        )
+        isBonded <- DiscoveryService.isBonded(bondExpiration)(remotePeer)
+      } yield {
+        isBonded shouldBe false
+      }
+    }
+  }
+  it should "return false for nodes that are being pinged right now" in test {
+    new Fixture {
+      override val test = for {
+        d <- Deferred[Task, Boolean]
+        _ <- stateRef.update(
+          _.withBondingState(
+            remotePeer,
+            BondingState.Pinging(d)
+          )
+        )
+        isBonded <- DiscoveryService.isBonded(bondExpiration)(remotePeer)
+      } yield {
+        isBonded shouldBe false
+      }
+    }
+  }
+  it should "return false for nodes that changed their address" in test {
+    new Fixture {
+      override val test = for {
+        _ <- stateRef.update(
+          _.withBondingState(
+            remotePublicKey -> remoteAddress,
+            BondingState.Responded(System.currentTimeMillis)
+          )
+        )
+        newRemoteAddress = aRandomAddress()
+        isBonded <- DiscoveryService.isBonded(bondExpiration)(remotePublicKey -> newRemoteAddress)
+      } yield {
+        isBonded shouldBe false
+      }
+    }
+  }
 
   behavior of "getNode"
   it should "return the local node" in (pending)
@@ -68,4 +161,35 @@ trait DiscoveryServiceSpec extends FlatSpec {
 
   behavior of "fetchEnr"
   it should "validate that the packet sender signed the ENR" in (pending)
+}
+
+object DiscoveryServiceSpec {
+  import DiscoveryNetworkSpec.randomKeyPair
+  import DefaultCodecs._
+
+  implicit val scheduler: Scheduler = Scheduler.Implicits.global
+  implicit val sigalg = new MockSigAlg()
+
+  trait Fixture {
+    def test: Task[Assertion]
+
+    def makeNode(publicKey: PublicKey, address: InetSocketAddress) =
+      Node(publicKey, Node.Address(address.getAddress, address.getPort, address.getPort))
+
+    lazy val (localPublicKey, localPrivateKey) = randomKeyPair
+    lazy val localAddress = aRandomAddress()
+    lazy val localNode = makeNode(localPublicKey, localAddress)
+    lazy val localENR = EthereumNodeRecord.fromNode(localNode, localPrivateKey, seq = 1).require
+
+    lazy val remoteAddress = aRandomAddress()
+    lazy val (remotePublicKey, remotePrivateKey) = randomKeyPair
+    lazy val remoteNode = makeNode(remotePublicKey, remoteAddress)
+    lazy val remotePeer = remotePublicKey -> remoteAddress
+
+    implicit lazy val stateRef = Ref.unsafe[Task, DiscoveryService.State[InetSocketAddress]](
+      DiscoveryService.State[InetSocketAddress](localNode, localENR)
+    )
+    val bondExpiration = 12.hours
+  }
+
 }
