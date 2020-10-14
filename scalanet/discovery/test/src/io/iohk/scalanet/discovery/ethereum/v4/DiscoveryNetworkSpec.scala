@@ -808,12 +808,14 @@ object DiscoveryNetworkSpec extends Matchers {
     lazy val (publicKey, privateKey) = randomKeyPair
 
     lazy val localENR = EthereumNodeRecord(
-      seq = 456L,
       signature = Signature(BitVector(randomBytes(65))),
-      attrs = SortedMap(
-        EthereumNodeRecord.Keys.id -> ByteVector("v4".getBytes),
-        EthereumNodeRecord.Keys.ip -> ByteVector(localAddress.getAddress.getAddress),
-        EthereumNodeRecord.Keys.udp -> ByteVector(localAddress.getPort)
+      content = EthereumNodeRecord.Content(
+        seq = 456L,
+        attrs = SortedMap(
+          EthereumNodeRecord.Keys.id -> ByteVector("v4".getBytes),
+          EthereumNodeRecord.Keys.ip -> ByteVector(localAddress.getAddress.getAddress),
+          EthereumNodeRecord.Keys.udp -> ByteVector(localAddress.getPort)
+        )
       )
     )
 
@@ -823,12 +825,14 @@ object DiscoveryNetworkSpec extends Matchers {
     lazy val remotePeer = Peer(remotePublicKey, remoteAddress)
 
     lazy val remoteENR = EthereumNodeRecord(
-      seq = 123L,
       signature = Signature(BitVector(randomBytes(65))),
-      attrs = SortedMap(
-        EthereumNodeRecord.Keys.id -> ByteVector("v4".getBytes),
-        EthereumNodeRecord.Keys.ip -> ByteVector(remoteAddress.getAddress.getAddress),
-        EthereumNodeRecord.Keys.udp -> ByteVector(remoteAddress.getPort)
+      content = EthereumNodeRecord.Content(
+        seq = 123L,
+        attrs = SortedMap(
+          EthereumNodeRecord.Keys.id -> ByteVector("v4".getBytes),
+          EthereumNodeRecord.Keys.ip -> ByteVector(remoteAddress.getAddress.getAddress),
+          EthereumNodeRecord.Keys.udp -> ByteVector(remoteAddress.getPort)
+        )
       )
     )
 
