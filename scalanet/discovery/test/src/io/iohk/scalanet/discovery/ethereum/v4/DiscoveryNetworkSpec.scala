@@ -137,7 +137,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
           Pong(
             toNodeAddress(remoteAddress),
             pingHash = packet.hash,
-            expiration = System.currentTimeMillis - messageExpiration.toMillis * 2,
+            expiration = invalidExpiration,
             enrSeq = None
           ),
           remotePrivateKey
@@ -269,7 +269,10 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         _ <- channel.nextMessageFromSUT()
 
-        neighbors = Neighbors(List(Node(remotePublicKey, toNodeAddress(remoteAddress))), expiration = 0)
+        neighbors = Neighbors(
+          nodes = List(Node(remotePublicKey, toNodeAddress(remoteAddress))),
+          expiration = invalidExpiration
+        )
         _ <- channel.sendPayloadToSUT(neighbors, remotePrivateKey)
 
         nodes <- finding.join
@@ -785,8 +788,9 @@ object DiscoveryNetworkSpec extends Matchers {
     def validExpiration =
       System.currentTimeMillis + messageExpiration.toMillis
 
+    // Anything in the past is invalid.
     def invalidExpiration =
-      System.currentTimeMillis - messageExpiration.toMillis * 2
+      System.currentTimeMillis - 1
 
     implicit class ChannelOps(channel: MockChannel[InetSocketAddress, Packet]) {
       def sendPayloadToSUT(

@@ -114,7 +114,7 @@ object DiscoveryNetwork {
                         // Not relevant on the server channel.
                         Task.unit
 
-                      case p: Payload.HasExpiration[_] if p.expiration < timestamp - expirationMillis =>
+                      case p: Payload.HasExpiration[_] if p.isExpired(timestamp) =>
                         Task(logger.debug(s"Ignoring expired message from ${channel.to}"))
 
                       case p: Payload.Request =>
@@ -282,7 +282,7 @@ object DiscoveryNetwork {
                         // Not relevant on the client channel.
                         Task.pure(None)
 
-                      case p: Payload.HasExpiration[_] if p.expiration < timestamp - expirationMillis =>
+                      case p: Payload.HasExpiration[_] if p.isExpired(timestamp) =>
                         Task.pure(None)
 
                       case p: Payload.Response =>
