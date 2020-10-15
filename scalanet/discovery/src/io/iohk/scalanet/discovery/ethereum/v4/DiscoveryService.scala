@@ -384,7 +384,10 @@ object DiscoveryService {
             .enrRequest(peer)(())
             .flatMap {
               case None =>
-                Task.unit
+                // Without an ENR we can't contact the node, and we shouldn't consider it bonded either
+                // because we'll respond to it but we can't use it in discovery. Can try bonding again later.
+                Task(logger.warn(s"Could not fetch ENR from ${peer.address}")) >>
+                  isEnrFetched(peer).ifM(Task.unit, removePeer(peer))
 
               case Some(enr) =>
                 EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
@@ -405,6 +408,9 @@ object DiscoveryService {
             }
       }
     }
+
+    protected[v4] def isEnrFetched(peer: Peer[A]): Task[Boolean] =
+      stateRef.get.map(_.enrMap.contains(peer.id))
 
     /** Try to extract the node address from the ENR record and update the node database,
       * otherwise if there's no address we can use remove the peer.

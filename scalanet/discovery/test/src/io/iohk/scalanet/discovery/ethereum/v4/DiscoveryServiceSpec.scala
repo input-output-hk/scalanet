@@ -379,10 +379,41 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
+  it should "remove the bonded status if the ENR fetch fails and there's no previous ENR" in test {
+    new Fixture {
+      override lazy val rpc = unimplementedRPC.copy(
+        enrRequest = _ => _ => Task(None)
+      )
+      override val test = for {
+        _ <- stateRef.update(_.withLastPongTimestamp(remotePeer, System.currentTimeMillis))
+        _ <- service.fetchEnr(remotePeer)
+        state <- stateRef.get
+      } yield {
+        state.lastPongTimestampMap should not contain key(remotePeer)
+      }
+    }
+  }
+
   behavior of "ping"
-  it should "complete bonding processes waiting for that ping" in (pending)
-  it should "kick off a bonding process in return" in (pending)
-  it should "fetch a new ENR if necessary" in (pending)
+
+  it should "bond with the caller" in test {
+    new Fixture {
+      override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task(Some(None)),
+        enrRequest = _ => _ => Task(Some(remoteENR))
+      )
+      override val test = for {
+        _ <- service.ping(remotePeer)(None)
+        _ <- stateRef.get.flatMap(_.bondingResultsMap.get(remotePeer).fold(Task.unit)(_.pongReceived.get.void))
+        _ <- stateRef.get.flatMap(_.fetchEnrMap.get(remotePeer).fold(Task.unit)(_.get))
+        state <- stateRef.get
+      } yield {
+        state.nodeMap should contain key (remotePeer.id)
+        state.enrMap should contain key (remotePeer.id)
+        state.lastPongTimestampMap should contain key (remotePeer)
+      }
+    }
+  }
 
   behavior of "getNode"
   it should "return the local node" in (pending)
@@ -475,7 +506,9 @@ object DiscoveryServiceSpec {
       DiscoveryService.State[InetSocketAddress](localNode, localENR)
     )
 
-    lazy val config: DiscoveryConfig = defaultConfig
+    lazy val config: DiscoveryConfig = defaultConfig.copy(
+      requestTimeout = 100.millis
+    )
 
     lazy val rpc = unimplementedRPC
 
