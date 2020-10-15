@@ -50,11 +50,12 @@ object DiscoveryNetwork {
       import Payload._
 
       private val expirationMillis = config.messageExpiration.toMillis
-
+      private val maxClockDriftMillis = config.maxClockDrift.toMillis
       private val currentTimeMillis = clock.realTime(MILLISECONDS)
 
       private val maxNeighborsPerPacket = getMaxNeighborsPerPacket
 
+      // This is only sent in Ping packets and is basically ignored by nodes.
       private val localNodeAddress = toNodeAddress(peerGroup.processAddress)
 
       /** Start a fiber that accepts incoming channels and starts a dedicated fiber
@@ -108,7 +109,7 @@ object DiscoveryNetwork {
                         // Not relevant on the server channel.
                         Task.unit
 
-                      case p: Payload.HasExpiration[_] if p.isExpired(timestamp) =>
+                      case p: Payload.HasExpiration[_] if isExpired(p, timestamp) =>
                         Task(logger.debug(s"Ignoring expired request from ${channel.to}"))
 
                       case p: Payload.Request =>
@@ -184,6 +185,7 @@ object DiscoveryNetwork {
             Task(logger.error(s"Error handling incoming request: $ex"))
         }
 
+      /** Serialize the payload to binary and sign the packet. */
       private def pack(payload: Payload): Task[Packet] =
         Packet
           .pack(payload, privateKey)
@@ -192,6 +194,7 @@ object DiscoveryNetwork {
             packet => Task.pure(packet)
           )
 
+      /** Set a future expiration time on the payload. */
       private def setExpiration(payload: Payload): Task[Payload] = {
         payload match {
           case p: Payload.HasExpiration[_] =>
@@ -200,6 +203,18 @@ object DiscoveryNetwork {
             Task.pure(p)
         }
       }
+
+      /** Check whether an incoming packet is expired. According to the spec anyting with
+        * an absolute expiration timestamp in the past is expired, however it's a known
+        * issue that clock drift among nodes leads to dropped messages. Therefore we have
+        * the option to set an acceptable leeway period as well.
+        *
+        * For example if another node sets the expiration of its message 1 minute in the future,
+        * but our clock is 90 seconds ahead of time, we already see it as expired. Setting
+        * our expiration time to 1 hour wouldn't help in this case.
+        */
+      private def isExpired(payload: HasExpiration[_], now: Long): Boolean =
+        payload.expiration < now - maxClockDriftMillis
 
       override val ping = (to: A) =>
         (localEnrSeq: Option[ENRSeq]) =>
@@ -276,7 +291,7 @@ object DiscoveryNetwork {
                         // Not relevant on the client channel.
                         Task.pure(None)
 
-                      case p: Payload.HasExpiration[_] if p.isExpired(timestamp) =>
+                      case p: Payload.HasExpiration[_] if isExpired(p, timestamp) =>
                         Task(logger.debug(s"Ignoring expired response from ${channel.to}")).as(None)
 
                       case p: Payload.Response =>

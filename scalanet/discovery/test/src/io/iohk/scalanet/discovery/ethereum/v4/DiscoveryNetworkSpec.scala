@@ -587,7 +587,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
         override val test = for {
           _ <- network.startHandling(
-            handleWithNone.withEffect {
+            handleWithSome.withEffect {
               Task { called = true }
             }
           )
@@ -601,6 +601,28 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         } yield {
           msg shouldBe empty
           called shouldBe false
+        }
+      }
+    }
+
+    it should s"not respond to $rpc if the request is expired but within the clock drift" in test {
+      new GenericRPCFixture {
+
+        override lazy val config = defaultConfig.copy(
+          maxClockDrift = 15.seconds
+        )
+
+        override val test = for {
+          _ <- network.startHandling(handleWithSome)
+          channel <- peerGroup.createServerChannel(from = remoteAddress)
+          (request: Payload) = requestMap(rpc) match {
+            case p: Payload.HasExpiration[_] => p.withExpiration(System.currentTimeMillis - 5000)
+            case p => p
+          }
+          _ <- channel.sendPayloadToSUT(request, remotePrivateKey)
+          msg <- channel.nextMessageFromSUT()
+        } yield {
+          msg should not be empty
         }
       }
     }
@@ -743,7 +765,8 @@ object DiscoveryNetworkSpec extends Matchers {
     requestTimeout = 100.millis,
     messageExpiration = 60.seconds,
     kademliaTimeout = 250.millis,
-    kademliaBucketSize = 16
+    kademliaBucketSize = 16,
+    maxClockDrift = Duration.Zero
   )
 
   trait Fixture {

@@ -20,9 +20,7 @@ object Payload {
   trait HasExpiration[T <: Payload] {
     // Absolute UNIX timestamp.
     def expiration: Long
-    def withExpiration(e: Long): T
-    def isExpired(now: Long): Boolean =
-      expiration < now
+    def withExpiration(at: Long): T
   }
 
   case class Ping(
