@@ -302,10 +302,11 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     new BondingFixture {
       override val test = for {
         _ <- service.bond(remotePeer)
+        _ <- stateRef.get.flatMap(_.fetchEnrMap.get(remotePeer).fold(Task.sleep(100.millis))(_.get))
         state <- stateRef.get
       } yield {
         state.enrMap(remotePublicKey) shouldBe remoteENR
-        state.nodeMap should contain key (remotePublicKey)
+        state.nodeMap(remotePublicKey) shouldBe remoteNode
       }
     }
   }
@@ -406,7 +407,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
-  it should "remove the bonded status if the ENR fetch fails and there's no previous ENR" in test {
+  it should "not remove the bonded status if the ENR fetch fails" in test {
     new Fixture {
       override lazy val rpc = unimplementedRPC.copy(
         enrRequest = _ => _ => Task(None)
@@ -416,7 +417,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         _ <- service.fetchEnr(remotePeer)
         state <- stateRef.get
       } yield {
-        state.lastPongTimestampMap should not contain key(remotePeer)
+        state.lastPongTimestampMap should contain key (remotePeer)
       }
     }
   }
@@ -436,8 +437,8 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         state <- stateRef.get
       } yield {
         maybeEnrSeq shouldBe Some(Some(localENR.content.seq))
-        state.nodeMap should contain key (remotePeer.id)
-        state.enrMap should contain key (remotePeer.id)
+        state.nodeMap(remotePeer.id) shouldBe remoteNode
+        state.enrMap(remotePeer.id) shouldBe remoteENR
         state.lastPongTimestampMap should contain key (remotePeer)
       }
     }
@@ -543,7 +544,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 }
 
 object DiscoveryServiceSpec {
-  import DiscoveryNetworkSpec.{randomKeyPair}
+  import DiscoveryNetworkSpec.randomKeyPair
   import DefaultCodecs._
 
   implicit val scheduler: Scheduler = Scheduler.Implicits.global
@@ -569,12 +570,12 @@ object DiscoveryServiceSpec {
       Node(publicKey, Node.Address(address.getAddress, address.getPort, address.getPort))
 
     lazy val (localPublicKey, localPrivateKey) = randomKeyPair
-    lazy val localAddress = aRandomAddress()
+    lazy val localAddress = aRandomAddress
     lazy val localNode = makeNode(localPublicKey, localAddress)
     lazy val localPeer = Peer(localPublicKey, localAddress)
     lazy val localENR = EthereumNodeRecord.fromNode(localNode, localPrivateKey, seq = 1).require
 
-    lazy val remoteAddress = aRandomAddress()
+    lazy val remoteAddress = aRandomAddress
     lazy val (remotePublicKey, remotePrivateKey) = randomKeyPair
     lazy val remoteNode = makeNode(remotePublicKey, remoteAddress)
     lazy val remotePeer = Peer(remotePublicKey, remoteAddress)

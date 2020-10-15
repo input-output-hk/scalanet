@@ -62,8 +62,8 @@ object EthereumNodeRecord {
       SortedMap(
         Keys.id -> ByteVector("v4".getBytes(StandardCharsets.UTF_8)),
         Keys.ip -> ByteVector(node.address.ip.getAddress),
-        Keys.tcp -> ByteVector(node.address.tcpPort),
-        Keys.udp -> ByteVector(node.address.udpPort)
+        Keys.tcp -> ByteVector.fromInt(node.address.tcpPort),
+        Keys.udp -> ByteVector.fromInt(node.address.udpPort)
       )
     )
     codec.encode(content).map { data =>

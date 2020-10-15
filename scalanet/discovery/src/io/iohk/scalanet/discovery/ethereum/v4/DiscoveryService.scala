@@ -186,12 +186,13 @@ object DiscoveryService {
       caller =>
         maybeRemoteEnrSeq =>
           for {
-            // Complete pings, if we initiated the bonding.
+            // Complete any deferred waiting for a ping from this peer, if we initiated the bonding.
             _ <- completePing(caller)
-            // Try to bond back if this is a new node.
+            // Try to bond back, if this is a new node.
             _ <- bond(caller).startAndForget
             // We may already be bonded but the remote node could have changed its address.
             _ <- maybeFetchEnr(caller, maybeRemoteEnrSeq).startAndForget
+            // Return the latet local ENR sequence.
             enrSeq <- stateRef.get.map(_.enr.content.seq)
           } yield Some(Some(enrSeq))
 
@@ -282,8 +283,8 @@ object DiscoveryService {
                       // Complete all bonds waiting on this pong, after any pings were received
                       // so that we can now try and send requests with as much confidence as we can get.
                       _ <- completePong(peer, responded = true)
-                      // TODO: Update the k-bucket timestamp.
-                      _ <- maybeFetchEnr(peer, maybeRemoteEnrSeq)
+                      // We need the ENR record for the full address to be verified.
+                      _ <- maybeFetchEnr(peer, maybeRemoteEnrSeq).startAndForget
                     } yield true
 
                   case None =>
@@ -406,10 +407,9 @@ object DiscoveryService {
             .enrRequest(peer)(())
             .flatMap {
               case None =>
-                // Without an ENR we can't contact the node, and we shouldn't consider it bonded either
-                // because we'll respond to it but we can't use it in discovery. Can try bonding again later.
-                Task(logger.warn(s"Could not fetch ENR from ${peer.address}")) >>
-                  isEnrFetched(peer).ifM(Task.unit, removePeer(peer))
+                // At this point we are still bonded with the peer, so they think they can send us requests.
+                // We just have to keep trying to get an ENR for them, until then we can't use them for routing.
+                Task(logger.warn(s"Could not fetch ENR from ${peer.address}"))
 
               case Some(enr) =>
                 EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
@@ -431,16 +431,14 @@ object DiscoveryService {
       }
     }
 
-    protected[v4] def isEnrFetched(peer: Peer[A]): Task[Boolean] =
-      stateRef.get.map(_.enrMap.contains(peer.id))
-
     /** Try to extract the node address from the ENR record and update the node database,
       * otherwise if there's no address we can use remove the peer.
       */
     protected[v4] def tryUpdateEnr(peer: Peer[A], enr: EthereumNodeRecord): Task[Unit] =
       Node.Address.fromEnr(enr) match {
         case None =>
-          Task(logger.debug(s"Could not extract node address from $enr")) >> removePeer(peer)
+          Task(logger.debug(s"Could not extract node address from $enr")) >>
+            removePeer(peer)
         case Some(address) =>
           stateRef.update(_.withEnrAndAddress(peer, enr, address))
       }
