@@ -151,6 +151,8 @@ object DiscoveryService {
       extends DiscoveryService
       with DiscoveryRPC[Peer[A]] {
 
+    // Passing the state to the pure functions that live on the
+    // companion object, to make them easily testable.
     implicit val sr = stateRef
 
     override def getNode(nodeId: NodeId): Task[Option[Node]] = ???
@@ -164,7 +166,7 @@ object DiscoveryService {
       caller =>
         maybeRemoteEnrSeq =>
           for {
-            _ <- completePing(caller)
+            _ <- DiscoveryService.completePing(caller)
             enr <- stateRef.get.map(_.enr.content.seq)
             // TODO: Check if the ENR is fresher than what we have and maybe fetch again.
           } yield Some(Some(enr))

@@ -13,8 +13,8 @@ import scala.concurrent.duration._
 import io.iohk.scalanet.discovery.crypto.PublicKey
 
 class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
-  import DiscoveryServiceSpec._
   import DiscoveryService.{State, BondingResults}
+  import DiscoveryServiceSpec._
 
   def test(fixture: Fixture) =
     fixture.test.timeout(15.seconds).runToFuture
@@ -226,7 +226,20 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   }
 
   behavior of "bond"
-  it should "not try to bond if already bonded" in (pending)
+
+  it should "not try to bond if already bonded" in test {
+    new Fixture {
+      override val test = for {
+        _ <- stateRef.update { state =>
+          state.withLastPongTimestamp(remotePeer, System.currentTimeMillis)
+        }
+        bonded <- DiscoveryService.bond(remotePeer, unimplementedRPC, bondExpiration, requestTimeout)
+      } yield {
+        bonded shouldBe true
+      }
+    }
+  }
+
   it should "fetch the ENR once bonded" in (pending)
   it should "remove nodes if the bonding fails" in (pending)
   it should "wait for a ping to arrive from the other party" in (pending)
@@ -284,7 +297,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 }
 
 object DiscoveryServiceSpec {
-  import DiscoveryNetworkSpec.randomKeyPair
+  import DiscoveryNetworkSpec.{randomKeyPair}
   import DefaultCodecs._
 
   implicit val scheduler: Scheduler = Scheduler.Implicits.global
@@ -311,6 +324,16 @@ object DiscoveryServiceSpec {
       DiscoveryService.State[InetSocketAddress](localNode, localENR)
     )
     val bondExpiration = 12.hours
+    val requestTimeout = 3.seconds
+
+    lazy val unimplementedRPC = StubDiscoveryRPC()
   }
+
+  /** Placeholder implementation that throws if any RPC method is called. */
+  case class StubDiscoveryRPC(
+      ping: DiscoveryRPC.Call[InetSocketAddress, DiscoveryRPC.Proc.Ping] = _ => ???,
+      findNode: DiscoveryRPC.Call[InetSocketAddress, DiscoveryRPC.Proc.FindNode] = _ => ???,
+      enrRequest: DiscoveryRPC.Call[InetSocketAddress, DiscoveryRPC.Proc.ENRRequest] = _ => ???
+  ) extends DiscoveryRPC[InetSocketAddress]
 
 }
