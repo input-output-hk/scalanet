@@ -25,7 +25,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   trait IsBondedFixture extends Fixture {
     override val test = for {
       _ <- stateRef.update(setupState)
-      isBonded <- DiscoveryService.isBonded(peer)
+      isBonded <- service.isBonded(peer)
     } yield {
       isBonded shouldBe expected
     }
@@ -97,7 +97,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "return a the current ENR sequence if there's no current bonding running" in test {
     new Fixture {
       override val test = for {
-        decision <- DiscoveryService.initBond(remotePeer)
+        decision <- service.initBond(remotePeer)
       } yield {
         decision shouldBe Right(localENR.content.seq)
       }
@@ -106,45 +106,38 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "return the existing deferred result if bonding is already running" in test {
     new Fixture {
       override val test = for {
-        _ <- DiscoveryService.initBond(remotePeer)
-        decision <- DiscoveryService.initBond(remotePeer)
+        _ <- service.initBond(remotePeer)
+        decision <- service.initBond(remotePeer)
       } yield {
         decision.isLeft shouldBe true
       }
     }
   }
 
-  behavior of "completeBond"
+  behavior of "completePong"
 
   trait InitBondFixture extends Fixture {
     def responded: Boolean
     override val test = for {
-      _ <- DiscoveryService.initBond(remotePeer)
+      _ <- service.initBond(remotePeer)
       pongReceived <- stateRef.get.map { state =>
         state.bondingResultsMap(remotePeer).pongReceived
       }
-      now <- DiscoveryService.currentTimeMillis
-      _ <- DiscoveryService.completeBond(remotePeer, responded = responded)
+      _ <- service.completePong(remotePeer, responded = responded)
       state <- stateRef.get
       bonded <- pongReceived.get
     } yield {
       bonded shouldBe responded
       state.bondingResultsMap.get(remotePeer) shouldBe empty
-      if (responded) {
-        assert(state.lastPongTimestampMap(remotePeer) >= now)
-      } else {
-        // In this setup there wasn't any previous pong, so it stays empty.
-        state.lastPongTimestampMap should not contain key(remotePeer)
-      }
     }
   }
 
-  it should "complete the deferred ping and update the timestamp if the peer responds" in test {
+  it should "complete the deferred with true if the peer respond" in test {
     new InitBondFixture {
       override def responded = true
     }
   }
-  it should "complete the deferred ping but not update the timestamp if the peer did not responds" in test {
+  it should "complete the deferred with false if did not respond" in test {
     new InitBondFixture {
       override def responded = false
     }
@@ -154,14 +147,14 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   it should "wait up to the request timeout if there's no ping" in test {
     new Fixture {
-      override implicit lazy val config = defaultConfig.copy(
+      override lazy val config = defaultConfig.copy(
         requestTimeout = 200.millis
       )
       override val test = for {
-        _ <- DiscoveryService.initBond(remotePeer)
-        time0 <- DiscoveryService.currentTimeMillis
-        _ <- DiscoveryService.awaitPing(remotePeer)
-        time1 <- DiscoveryService.currentTimeMillis
+        _ <- service.initBond(remotePeer)
+        time0 <- service.currentTimeMillis
+        _ <- service.awaitPing(remotePeer)
+        time1 <- service.currentTimeMillis
       } yield {
         assert(time1 - time0 >= config.requestTimeout.toMillis)
       }
@@ -170,19 +163,19 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   it should "complete as soon as there's a ping" in test {
     new Fixture {
-      override implicit lazy val config = defaultConfig.copy(
+      override lazy val config = defaultConfig.copy(
         requestTimeout = 1.second
       )
       override val test = for {
-        _ <- DiscoveryService.initBond(remotePeer)
-        time0 <- DiscoveryService.currentTimeMillis
-        waiting <- DiscoveryService.awaitPing(remotePeer).start
+        _ <- service.initBond(remotePeer)
+        time0 <- service.currentTimeMillis
+        waiting <- service.awaitPing(remotePeer).start
         pingReceived <- stateRef.get.map { state =>
           state.bondingResultsMap(remotePeer).pingReceived
         }
         _ <- pingReceived.complete(())
         _ <- waiting.join
-        time1 <- DiscoveryService.currentTimeMillis
+        time1 <- service.currentTimeMillis
       } yield {
         assert(time1 - time0 < config.requestTimeout.toMillis)
       }
@@ -194,11 +187,11 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "complete the expected ping" in test {
     new Fixture {
       override val test = for {
-        _ <- DiscoveryService.initBond(remotePeer)
+        _ <- service.initBond(remotePeer)
         pingReceived <- stateRef.get.map { state =>
           state.bondingResultsMap(remotePeer).pingReceived
         }
-        _ <- DiscoveryService.completePing(remotePeer)
+        _ <- service.completePing(remotePeer)
         _ <- pingReceived.get.timeout(1.second)
       } yield {
         // It would time out if it wasn't completed.
@@ -210,9 +203,9 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "ignore subsequent pings" in test {
     new Fixture {
       override val test = for {
-        _ <- DiscoveryService.initBond(remotePeer)
-        _ <- DiscoveryService.completePing(remotePeer)
-        _ <- DiscoveryService.completePing(remotePeer)
+        _ <- service.initBond(remotePeer)
+        _ <- service.completePing(remotePeer)
+        _ <- service.completePing(remotePeer)
       } yield {
         // It's enough that it didn't fail due to multiple completions.
         succeed
@@ -223,7 +216,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "ignore peers which weren't expected" in test {
     new Fixture {
       override val test = for {
-        _ <- DiscoveryService.completePing(remotePeer)
+        _ <- service.completePing(remotePeer)
       } yield {
         succeed
       }
@@ -238,7 +231,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         _ <- stateRef.update { state =>
           state.withLastPongTimestamp(remotePeer, System.currentTimeMillis)
         }
-        bonded <- DiscoveryService.bond(remotePeer, unimplementedRPC)
+        bonded <- service.bond(remotePeer)
       } yield {
         bonded shouldBe true
       }
@@ -246,19 +239,19 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   }
 
   trait BondingFixture extends Fixture {
-    override implicit lazy val config = defaultConfig.copy(
+    override lazy val config = defaultConfig.copy(
       requestTimeout = 100.millis
     )
-    // Something that responds to pings.
-    lazy val bondableRPC = unimplementedRPC.copy(
-      ping = _ => _ => Task.pure(Some(None))
+    override lazy val rpc = unimplementedRPC.copy(
+      ping = _ => _ => Task.pure(Some(None)),
+      enrRequest = _ => _ => Task.pure(None)
     )
   }
 
   it should "consider a peer bonded if it responds to a ping" in test {
     new BondingFixture {
       override val test = for {
-        bonded <- DiscoveryService.bond(remotePeer, bondableRPC)
+        bonded <- service.bond(remotePeer)
         state <- stateRef.get
       } yield {
         bonded shouldBe true
@@ -270,11 +263,11 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   it should "not consider a peer bonded if it doesn't respond to a ping" in test {
     new BondingFixture {
-      val unbondableRPC = unimplementedRPC.copy(
+      override lazy val rpc = unimplementedRPC.copy(
         ping = _ => _ => Task.pure(None)
       )
       override val test = for {
-        bonded <- DiscoveryService.bond(remotePeer, unbondableRPC)
+        bonded <- service.bond(remotePeer)
         state <- stateRef.get
       } yield {
         bonded shouldBe false
@@ -286,15 +279,15 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   it should "wait for a ping to arrive from the other party" in test {
     new BondingFixture {
-      override implicit lazy val config = defaultConfig.copy(
+      override lazy val config = defaultConfig.copy(
         requestTimeout = 5.seconds
       )
       override val test = for {
-        time0 <- DiscoveryService.currentTimeMillis
-        bonding <- DiscoveryService.bond(remotePeer, bondableRPC).start
-        _ <- DiscoveryService.completePing(remotePeer)
+        time0 <- service.currentTimeMillis
+        bonding <- service.bond(remotePeer).start
+        _ <- service.completePing(remotePeer)
         bonded <- bonding.join
-        time1 <- DiscoveryService.currentTimeMillis
+        time1 <- service.currentTimeMillis
       } yield {
         bonded shouldBe true
         assert(time1 - time0 < config.requestTimeout.toMillis)
@@ -305,6 +298,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "fetch the ENR once bonded" in (pending)
 
   behavior of "fetchEnr"
+  it should "only initiate one fetch at a time" in (pending)
   it should "validate that the packet sender signed the ENR" in (pending)
   it should "remove the node if the validation fails" in (pending)
 
@@ -369,6 +363,17 @@ object DiscoveryServiceSpec {
   implicit val scheduler: Scheduler = Scheduler.Implicits.global
   implicit val sigalg = new MockSigAlg()
 
+  /** Placeholder implementation that throws if any RPC method is called. */
+  case class StubDiscoveryRPC(
+      ping: DiscoveryRPC.Call[Peer[InetSocketAddress], DiscoveryRPC.Proc.Ping] = _ =>
+        sys.error("Didn't expect to call ping"),
+      findNode: DiscoveryRPC.Call[Peer[InetSocketAddress], DiscoveryRPC.Proc.FindNode] = _ =>
+        sys.error("Didn't expect to call findNode"),
+      enrRequest: DiscoveryRPC.Call[Peer[InetSocketAddress], DiscoveryRPC.Proc.ENRRequest] = _ =>
+        sys.error("Didn't expect to call enrRequest")
+  ) extends DiscoveryRPC[Peer[InetSocketAddress]]
+
+  val unimplementedRPC = StubDiscoveryRPC()
   val defaultConfig = DiscoveryConfig.default
 
   trait Fixture {
@@ -388,20 +393,14 @@ object DiscoveryServiceSpec {
     lazy val remoteNode = makeNode(remotePublicKey, remoteAddress)
     lazy val remotePeer = Peer(remotePublicKey, remoteAddress)
 
-    implicit lazy val stateRef = Ref.unsafe[Task, DiscoveryService.State[InetSocketAddress]](
+    lazy val stateRef = Ref.unsafe[Task, DiscoveryService.State[InetSocketAddress]](
       DiscoveryService.State[InetSocketAddress](localNode, localENR)
     )
 
-    implicit lazy val config: DiscoveryConfig = defaultConfig
+    lazy val config: DiscoveryConfig = defaultConfig
 
-    lazy val unimplementedRPC = StubDiscoveryRPC()
+    lazy val rpc = unimplementedRPC
+
+    lazy val service = new DiscoveryService.ServiceImpl[InetSocketAddress](rpc, stateRef, config)
   }
-
-  /** Placeholder implementation that throws if any RPC method is called. */
-  case class StubDiscoveryRPC(
-      ping: DiscoveryRPC.Call[Peer[InetSocketAddress], DiscoveryRPC.Proc.Ping] = _ => ???,
-      findNode: DiscoveryRPC.Call[Peer[InetSocketAddress], DiscoveryRPC.Proc.FindNode] = _ => ???,
-      enrRequest: DiscoveryRPC.Call[Peer[InetSocketAddress], DiscoveryRPC.Proc.ENRRequest] = _ => ???
-  ) extends DiscoveryRPC[Peer[InetSocketAddress]]
-
 }
