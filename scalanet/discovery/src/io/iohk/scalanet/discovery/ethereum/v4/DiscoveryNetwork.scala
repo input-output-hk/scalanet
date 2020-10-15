@@ -26,14 +26,20 @@ import io.iohk.scalanet.discovery.ethereum.v4.Payload.Neighbors
   * that correspond to the discovery protocol messages on top
   * of the peer group representing the other nodes.
   */
-trait DiscoveryNetwork[A] extends DiscoveryRPC[A] {
+trait DiscoveryNetwork[A] extends DiscoveryRPC[DiscoveryNetwork.Peer[A]] {
 
   /** Start handling incoming requests using the local RPC interface.
     * The remote side is identified by its ID and address.*/
-  def startHandling(handler: DiscoveryRPC[(PublicKey, A)]): Task[CancelableF[Task]]
+  def startHandling(handler: DiscoveryRPC[DiscoveryNetwork.Peer[A]]): Task[CancelableF[Task]]
 }
 
 object DiscoveryNetwork {
+
+  /** The pair of node ID and the UDP socket where it can be contacted or where it contacted us from.
+    * We have to use the pair for addressing a peer as well to set an expectation of the identity we
+    * expect to talk to, i.e. who should sign the packets.
+    */
+  case class Peer[A](id: PublicKey, address: A)
 
   // Errors that stop the processing of incoming messages on a channel.
   class PacketException(message: String) extends Exception(message) with NoStackTrace
@@ -63,7 +69,7 @@ object DiscoveryNetwork {
         * This is fair: every remote connection can be throttled independently
         * of each other, as well as based on operation type by the `handler` itself.
         */
-      override def startHandling(handler: DiscoveryRPC[(PublicKey, A)]): Task[CancelableF[Task]] =
+      override def startHandling(handler: DiscoveryRPC[Peer[A]]): Task[CancelableF[Task]] =
         for {
           cancelToken <- Deferred[Task, Unit]
           _ <- peerGroup
@@ -90,7 +96,7 @@ object DiscoveryNetwork {
         } yield cancelable
 
       private def handleChannel(
-          handler: DiscoveryRPC[(PublicKey, A)],
+          handler: DiscoveryRPC[Peer[A]],
           channel: Channel[A, Packet],
           cancelToken: Deferred[Task, Unit]
       ): Task[Unit] = {
@@ -133,13 +139,13 @@ object DiscoveryNetwork {
       }
 
       private def handleRequest(
-          handler: DiscoveryRPC[(PublicKey, A)],
+          handler: DiscoveryRPC[Peer[A]],
           channel: Channel[A, Packet],
           remotePublicKey: PublicKey,
           hash: Hash,
           payload: Payload.Request
       ): Task[Unit] = {
-        val caller = (remotePublicKey, channel.to)
+        val caller = Peer(remotePublicKey, channel.to)
 
         payload match {
           case Ping(_, _, to, _, maybeRemoteEnrSeq) =>
@@ -216,26 +222,26 @@ object DiscoveryNetwork {
       private def isExpired(payload: HasExpiration[_], now: Long): Boolean =
         payload.expiration < now - maxClockDriftMillis
 
-      override val ping = (to: A) =>
+      override val ping = (peer: Peer[A]) =>
         (localEnrSeq: Option[ENRSeq]) =>
-          peerGroup.client(to).use { channel =>
+          peerGroup.client(peer.address).use { channel =>
             channel
               .send(
-                Ping(version = 4, from = localNodeAddress, to = toNodeAddress(to), 0, localEnrSeq)
+                Ping(version = 4, from = localNodeAddress, to = toNodeAddress(peer.address), 0, localEnrSeq)
               )
               .flatMap { packet =>
-                channel.collectFirstResponse {
+                channel.collectFirstResponse(peer.id) {
                   case Pong(_, pingHash, _, maybeRemoteEnrSeq) if pingHash == packet.hash =>
                     maybeRemoteEnrSeq
                 }
               }
           }
 
-      override val findNode = (to: A) =>
+      override val findNode = (peer: Peer[A]) =>
         (target: PublicKey) =>
-          peerGroup.client(to).use { channel =>
+          peerGroup.client(peer.address).use { channel =>
             channel.send(FindNode(target, 0)).flatMap { _ =>
-              channel.collectAndFoldResponses(config.kademliaTimeout, Vector.empty[Node]) {
+              channel.collectAndFoldResponses(peer.id, config.kademliaTimeout, Vector.empty[Node]) {
                 case Neighbors(nodes, _) => nodes
               } { (acc, nodes) =>
                 val found = (acc ++ nodes).take(config.kademliaBucketSize)
@@ -244,13 +250,13 @@ object DiscoveryNetwork {
             }
           }
 
-      override val enrRequest = (to: A) =>
+      override val enrRequest = (peer: Peer[A]) =>
         (_: Unit) =>
-          peerGroup.client(to).use { channel =>
+          peerGroup.client(peer.address).use { channel =>
             channel
               .send(ENRRequest(0))
               .flatMap { packet =>
-                channel.collectFirstResponse {
+                channel.collectFirstResponse(peer.id) {
                   case ENRResponse(requestHash, enr) if requestHash == packet.hash =>
                     enr
                 }
@@ -272,6 +278,8 @@ object DiscoveryNetwork {
 
         /** Collect responses that match a partial function or raise a timeout exception. */
         def collectResponses[T](
+            // The ID of the peer we expect the responses to be signed by.
+            publicKey: PublicKey,
             // The absolute end we are willing to wait for the correct message to arrive.
             deadline: Deadline
         )(pf: PartialFunction[Payload.Response, T]): Iterant[Task, T] =
@@ -287,6 +295,9 @@ object DiscoveryNetwork {
                 Packet.unpack(packet) match {
                   case Attempt.Successful((payload, remotePublicKey)) =>
                     payload match {
+                      case _ if remotePublicKey != publicKey =>
+                        Task.raiseError(new PacketException("Remote public key did not match the expected peer ID."))
+
                       case _: Payload.Request =>
                         // Not relevant on the client channel.
                         Task.pure(None)
@@ -311,20 +322,22 @@ object DiscoveryNetwork {
             .collect(pf)
 
         /** Collect the first response that matches the partial function or return None if one cannot be found */
-        def collectFirstResponse[T](pf: PartialFunction[Payload.Response, T]): Task[Option[T]] =
+        def collectFirstResponse[T](publicKey: PublicKey)(pf: PartialFunction[Payload.Response, T]): Task[Option[T]] =
           channel
-            .collectResponses(config.requestTimeout.fromNow)(pf)
+            .collectResponses(publicKey: PublicKey, config.requestTimeout.fromNow)(pf)
             .headOptionL
             .onErrorRecover {
               case NonFatal(ex) => None
             }
 
         /** Collect responses that match the partial function and fold them while the folder function returns Left.  */
-        def collectAndFoldResponses[T, Z](timeout: FiniteDuration, seed: Z)(pf: PartialFunction[Payload.Response, T])(
+        def collectAndFoldResponses[T, Z](publicKey: PublicKey, timeout: FiniteDuration, seed: Z)(
+            pf: PartialFunction[Payload.Response, T]
+        )(
             f: (Z, T) => Either[Z, Z]
         ): Task[Option[Z]] =
           channel
-            .collectResponses(timeout.fromNow)(pf)
+            .collectResponses(publicKey, timeout.fromNow)(pf)
             .attempt
             .foldWhileLeftL((seed -> 0).some) {
               case (Some((acc, count)), Left(ex: TimeoutException)) if count > 0 =>

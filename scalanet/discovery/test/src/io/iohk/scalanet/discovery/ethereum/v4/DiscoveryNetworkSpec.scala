@@ -5,9 +5,10 @@ import io.iohk.scalanet.discovery.hash.Hash
 import io.iohk.scalanet.discovery.crypto.{PrivateKey, PublicKey, SigAlg, Signature}
 import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord}
 import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs._
-import io.iohk.scalanet.discovery.ethereum.v4.mocks.{MockSigAlg, MockPeerGroup, MockChannel}
+import io.iohk.scalanet.discovery.ethereum.v4.DiscoveryNetwork.Peer
 import io.iohk.scalanet.discovery.ethereum.v4.Payload.Ping
 import io.iohk.scalanet.discovery.ethereum.v4.Payload._
+import io.iohk.scalanet.discovery.ethereum.v4.mocks.{MockSigAlg, MockPeerGroup, MockChannel}
 import io.iohk.scalanet.peergroup.Channel.ChannelEvent
 import io.iohk.scalanet.peergroup.Channel.MessageReceived
 import io.iohk.scalanet.NetUtils.aRandomAddress
@@ -37,8 +38,8 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       val remoteENRSeq = 123L
 
       override val test = for {
-        _ <- network.ping(remoteAddress)(None)
-        _ <- network.ping(remoteAddress)(Some(remoteENRSeq))
+        _ <- network.ping(remotePeer)(None)
+        _ <- network.ping(remotePeer)(Some(remoteENRSeq))
 
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         msg1 <- channel.nextMessageFromSUT()
@@ -66,7 +67,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   it should "return None if the peer times out" in test {
     new Fixture {
       override val test = for {
-        result <- network.ping(remoteAddress)(None)
+        result <- network.ping(remotePeer)(None)
       } yield {
         result shouldBe None
       }
@@ -79,7 +80,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
       override val test = for {
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
-        pinging <- network.ping(remoteAddress)(None).start
+        pinging <- network.ping(remotePeer)(None).start
 
         msg <- channel.nextMessageFromSUT()
         packet = assertPacketReceived(msg)
@@ -104,7 +105,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
     new Fixture {
       override val test = for {
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
-        pinging <- network.ping(remoteAddress)(None).start
+        pinging <- network.ping(remotePeer)(None).start
 
         msg <- channel.nextMessageFromSUT()
         packet = assertPacketReceived(msg)
@@ -129,7 +130,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
     new Fixture {
       override val test = for {
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
-        pinging <- network.ping(remoteAddress)(None).start
+        pinging <- network.ping(remotePeer)(None).start
 
         msg <- channel.nextMessageFromSUT()
         packet = assertPacketReceived(msg)
@@ -150,6 +151,33 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
+  it should "return None if the Pong is signed by an unexpected key" in test {
+    new Fixture {
+      val (_, unexpectedPrivateKey) = randomKeyPair
+
+      override val test = for {
+        channel <- peerGroup.getOrCreateChannel(remoteAddress)
+        pinging <- network.ping(remotePeer)(None).start
+
+        msg <- channel.nextMessageFromSUT()
+        packet = assertPacketReceived(msg)
+        _ <- channel.sendPayloadToSUT(
+          Pong(
+            to = toNodeAddress(remoteAddress),
+            pingHash = packet.hash,
+            expiration = validExpiration,
+            enrSeq = None
+          ),
+          unexpectedPrivateKey
+        )
+
+        maybeRemoteENRSeq <- pinging.join
+      } yield {
+        maybeRemoteENRSeq shouldBe empty
+      }
+    }
+  }
+
   behavior of "findNode"
 
   it should "send an unexpired FindNode Packet with the given target" in test {
@@ -157,7 +185,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       val (targetPublicKey, _) = randomKeyPair
 
       override val test = for {
-        _ <- network.findNode(remoteAddress)(targetPublicKey)
+        _ <- network.findNode(remotePeer)(targetPublicKey)
 
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         msg <- channel.nextMessageFromSUT()
@@ -176,7 +204,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   it should "return None if the peer times out" in test {
     new Fixture {
       override val test = for {
-        result <- network.findNode(remoteAddress)(remotePublicKey)
+        result <- network.findNode(remotePeer)(remotePublicKey)
       } yield {
         result shouldBe None
       }
@@ -190,7 +218,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       )
 
       override val test = for {
-        finding <- network.findNode(remoteAddress)(remotePublicKey).start
+        finding <- network.findNode(remotePeer)(remotePublicKey).start
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         _ <- channel.nextMessageFromSUT()
         response = Neighbors(
@@ -215,7 +243,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       val randomNodes = List.fill(config.kademliaBucketSize)(randomNode)
 
       override val test = for {
-        finding <- network.findNode(remoteAddress)(remotePublicKey).start
+        finding <- network.findNode(remotePeer)(remotePublicKey).start
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         _ <- channel.nextMessageFromSUT()
 
@@ -245,7 +273,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       val randomGroups = List.fill(config.kademliaBucketSize + 6)(randomNode).grouped(6).toList
 
       override val test = for {
-        finding <- network.findNode(remoteAddress)(remotePublicKey).start
+        finding <- network.findNode(remotePeer)(remotePublicKey).start
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         _ <- channel.nextMessageFromSUT()
 
@@ -273,7 +301,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       )
 
       override val test = for {
-        finding <- network.findNode(remoteAddress)(remotePublicKey).start
+        finding <- network.findNode(remotePeer)(remotePublicKey).start
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         _ <- channel.nextMessageFromSUT()
 
@@ -296,7 +324,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
     new Fixture {
 
       override val test = for {
-        _ <- network.enrRequest(remoteAddress)(())
+        _ <- network.enrRequest(remotePeer)(())
 
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         msg <- channel.nextMessageFromSUT()
@@ -314,7 +342,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   it should "return None if the peer times out" in test {
     new Fixture {
       override val test = for {
-        result <- network.enrRequest(remoteAddress)(())
+        result <- network.enrRequest(remotePeer)(())
       } yield {
         result shouldBe None
       }
@@ -324,7 +352,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   it should "return Some ENR if the peer responds" in test {
     new Fixture {
       override val test = for {
-        requesting <- network.enrRequest(remoteAddress)(()).start
+        requesting <- network.enrRequest(remotePeer)(()).start
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         msg <- channel.nextMessageFromSUT()
         packet = assertPacketReceived(msg)
@@ -346,7 +374,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   it should "ignore ENRResponse if the request hash doesn't match" in test {
     new Fixture {
       override val test = for {
-        requesting <- network.enrRequest(remoteAddress)(()).start
+        requesting <- network.enrRequest(remotePeer)(()).start
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
         msg <- channel.nextMessageFromSUT()
         packet = assertPacketReceived(msg)
@@ -605,7 +633,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
       }
     }
 
-    it should s"not respond to $rpc if the request is expired but within the clock drift" in test {
+    it should s"respond to $rpc if the request is expired but within the clock drift" in test {
       new GenericRPCFixture {
 
         override lazy val config = defaultConfig.copy(
@@ -629,8 +657,8 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
     it should s"forward the caller to the $rpc handler" in test {
       new GenericRPCFixture {
-        def assertCaller(caller: (PublicKey, InetSocketAddress)) = Task {
-          caller shouldBe (remotePublicKey, remoteAddress)
+        def assertCaller(caller: Caller) = Task {
+          caller shouldBe Peer(remotePublicKey, remoteAddress)
         }
 
         override val test = for {
@@ -792,6 +820,7 @@ object DiscoveryNetworkSpec extends Matchers {
     // A random peer to talk to.
     lazy val remoteAddress = aRandomAddress
     lazy val (remotePublicKey, remotePrivateKey) = randomKeyPair
+    lazy val remotePeer = Peer(remotePublicKey, remoteAddress)
 
     lazy val remoteENR = EthereumNodeRecord(
       seq = 123L,
@@ -838,13 +867,13 @@ object DiscoveryNetworkSpec extends Matchers {
       }
     }
 
-    type RemoteCaller = (PublicKey, InetSocketAddress)
+    type Caller = Peer[InetSocketAddress]
 
     case class StubDiscoveryRPC(
-        ping: DiscoveryRPC.Call[RemoteCaller, DiscoveryRPC.Proc.Ping] = _ => ???,
-        findNode: DiscoveryRPC.Call[RemoteCaller, DiscoveryRPC.Proc.FindNode] = _ => ???,
-        enrRequest: DiscoveryRPC.Call[RemoteCaller, DiscoveryRPC.Proc.ENRRequest] = _ => ???
-    ) extends DiscoveryRPC[RemoteCaller]
+        ping: DiscoveryRPC.Call[Caller, DiscoveryRPC.Proc.Ping] = _ => ???,
+        findNode: DiscoveryRPC.Call[Caller, DiscoveryRPC.Proc.FindNode] = _ => ???,
+        enrRequest: DiscoveryRPC.Call[Caller, DiscoveryRPC.Proc.ENRRequest] = _ => ???
+    ) extends DiscoveryRPC[Caller]
   }
 
   // Facilitate tests that are common among all RPC calls.
@@ -876,7 +905,7 @@ object DiscoveryNetworkSpec extends Matchers {
         )
       }
 
-      def withCallerEffect(f: RemoteCaller => Task[Unit]): StubDiscoveryRPC = {
+      def withCallerEffect(f: Caller => Task[Unit]): StubDiscoveryRPC = {
         stub.copy(
           ping = caller => req => f(caller) >> stub.ping(caller)(req),
           findNode = caller => req => f(caller) >> stub.findNode(caller)(req),
