@@ -311,6 +311,25 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
+  it should "remove the peer if the bond fails" in test {
+    new BondingFixture {
+      override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(None)
+      )
+      override val test = for {
+        _ <- stateRef.update {
+          _.withEnrAndAddress(remotePeer, remoteENR, remoteNode.address)
+            .withLastPongTimestamp(remotePeer, System.currentTimeMillis - config.bondExpiration.toMillis * 2)
+        }
+        _ <- service.bond(remotePeer)
+        state <- stateRef.get
+      } yield {
+        state.enrMap should not contain key(remotePublicKey)
+        state.lastPongTimestampMap should not contain key(remotePeer)
+      }
+    }
+  }
+
   behavior of "maybeFetchEnr"
 
   it should "not fetch if the record we have is at least as new" in test {
@@ -422,6 +441,8 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
+  it should "handle the case when the bucket is full and the oldest node may need eviction" in (pending)
+
   behavior of "ping"
 
   it should "respond with the ENR sequence and bond with the caller" in test {
@@ -531,11 +552,8 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   behavior of "enroll"
   it should "perform a self-lookup with the bootstrap nodes" in (pending)
 
-  behavior of "startPeriodicRefresh"
-  it should "periodically ping nodes" in (pending)
-
-  behavior of "startPeriodicDiscovery"
-  it should "periodically lookup a random node" in (pending)
+  behavior of "lookupRandom"
+  it should "lookup a random node" in (pending)
 
   behavior of "lookup"
   it should "bond with nodes while doing recursive lookups before contacting them" in (pending)

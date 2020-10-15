@@ -1,6 +1,6 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
-import cats.effect.{Clock, Resource, Fiber}
+import cats.effect.{Clock, Resource}
 import cats.effect.concurrent.{Deferred, Ref}
 import cats.implicits._
 import io.iohk.scalanet.discovery.crypto.{PublicKey, SigAlg}
@@ -76,13 +76,12 @@ object DiscoveryService {
           // Start handling requests, we need them to enroll.
           cancelToken <- network.startHandling(service)
           // Contact the bootstrap nodes.
-          _ <- service.enroll()
-          refreshFiber <- service.startPeriodicRefresh()
-          discoveryFiber <- service.startPeriodicDiscovery()
-        } yield (service, cancelToken, refreshFiber, discoveryFiber)
+          _ <- service.enroll().loopForever
+          discoveryFiber <- service.lookupRandom().delayExecution(config.discoveryPeriod).loopForever.start
+        } yield (service, cancelToken, discoveryFiber)
       } {
-        case (_, cancelToken, refreshFiber, discoveryFiber) =>
-          cancelToken.cancel >> refreshFiber.cancel >> discoveryFiber.cancel
+        case (_, cancelToken, discoveryFiber) =>
+          cancelToken.cancel >> discoveryFiber.cancel
       }
       .map(_._1)
 
@@ -182,6 +181,7 @@ object DiscoveryService {
     override def updateExternalAddress(address: InetAddress): Task[Unit] = ???
     override def localNode: Task[Node] = ???
 
+    /** Handle incoming Ping request. */
     override def ping: Call[Peer[A], Proc.Ping] =
       caller =>
         maybeRemoteEnrSeq =>
@@ -196,6 +196,7 @@ object DiscoveryService {
             enrSeq <- stateRef.get.map(_.enr.content.seq)
           } yield Some(Some(enrSeq))
 
+    /** Handle incoming FindNode request. */
     override def findNode: Call[Peer[A], Proc.FindNode] =
       caller =>
         target =>
@@ -207,13 +208,13 @@ object DiscoveryService {
             } yield closestNodes
           }
 
+    /** Handle incoming ENRRequest. */
     override def enrRequest: Call[Peer[A], Proc.ENRRequest] =
       caller => _ => ifBonded(caller)(stateRef.get.map(_.enr))
 
     def enroll(): Task[Unit] = ???
 
-    def startPeriodicRefresh(): Task[Fiber[Task, Unit]] = ???
-    def startPeriodicDiscovery(): Task[Fiber[Task, Unit]] = ???
+    def lookupRandom(): Task[Unit] = ???
 
     def lookup(nodeId: NodeId): Task[Option[Node]] = ???
 
@@ -288,7 +289,8 @@ object DiscoveryService {
                     } yield true
 
                   case None =>
-                    completePong(peer, responded = false).as(false)
+                    removePeer(peer) >>
+                      completePong(peer, responded = false).as(false)
                 }
           }
       }
