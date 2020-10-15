@@ -65,13 +65,14 @@ object DiscoveryService {
       node: Node,
       enr: EthereumNodeRecord,
       network: DiscoveryNetwork[A],
-      config: DiscoveryConfig
+      config: DiscoveryConfig,
+      toAddress: Node.Address => A
   )(implicit sigalg: SigAlg, enrCodec: Codec[EthereumNodeRecord.Content]): Resource[Task, DiscoveryService] =
     Resource
       .make {
         for {
           stateRef <- Ref[Task].of(State[A](node, enr))
-          service <- Task(new ServiceImpl[A](network, stateRef, config))
+          service <- Task(new ServiceImpl[A](network, stateRef, config, toAddress))
           // Start handling requests, we need them to enroll.
           cancelToken <- network.startHandling(service)
           // Contact the bootstrap nodes.
@@ -167,7 +168,8 @@ object DiscoveryService {
   protected[v4] class ServiceImpl[A](
       rpc: DiscoveryRPC[Peer[A]],
       stateRef: StateRef[A],
-      config: DiscoveryConfig
+      config: DiscoveryConfig,
+      toAddress: Node.Address => A
   )(implicit clock: Clock[Task], sigalg: SigAlg, enrCodec: Codec[EthereumNodeRecord.Content])
       extends DiscoveryService
       with DiscoveryRPC[Peer[A]]
@@ -364,13 +366,18 @@ object DiscoveryService {
         maybeRemoteEnrSeq: Option[ENRSeq]
     ): Task[Unit] =
       for {
-        needsFetching <- stateRef.get.map { state =>
-          state.enrMap.get(peer.id) match {
-            case None =>
-              true
-            case Some(enr) =>
-              maybeRemoteEnrSeq.getOrElse(enr.content.seq) > enr.content.seq
-          }
+        maybeEnrAndNode <- stateRef.get.map { state =>
+          (state.enrMap.get(peer.id), state.nodeMap.get(peer.id))
+        }
+        needsFetching = maybeEnrAndNode match {
+          case (None, _) =>
+            true
+          case (Some(enr), _) if maybeRemoteEnrSeq.getOrElse(enr.content.seq) > enr.content.seq =>
+            true
+          case (_, Some(node)) if toAddress(node.address) != peer.address =>
+            true
+          case _ =>
+            false
         }
         _ <- fetchEnr(peer).whenA(needsFetching)
       } yield ()

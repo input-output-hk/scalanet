@@ -18,6 +18,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   import DiscoveryService.{State, BondingResults}
   import DiscoveryNetworkSpec.{randomKeyPair}
   import DiscoveryServiceSpec._
+  import DefaultCodecs._
 
   def test(fixture: Fixture) =
     fixture.test.timeout(15.seconds).runToFuture
@@ -322,6 +323,30 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
+  it should "fetch if the address changed" in test {
+    new Fixture {
+      override lazy val rpc = unimplementedRPC.copy(
+        enrRequest = _ => _ => Task(Some(remoteENR))
+      )
+      val previousAddress = aRandomAddress
+      val previousNode = makeNode(remotePublicKey, previousAddress)
+      // Say it had the same ENR SEQ, but a different address.
+      val previousEnr = EthereumNodeRecord.fromNode(previousNode, remotePrivateKey, seq = remoteENR.content.seq).require
+      val previousPeer = Peer(remotePublicKey, previousAddress)
+
+      override val test = for {
+        // Pretend we know of a different address for this node.
+        _ <- stateRef.update {
+          _.withEnrAndAddress(previousPeer, previousEnr, previousNode.address)
+        }
+        _ <- service.maybeFetchEnr(remotePeer, Some(previousEnr.content.seq))
+        state <- stateRef.get
+      } yield {
+        state.enrMap(remotePublicKey) shouldBe remoteENR
+      }
+    }
+  }
+
   behavior of "fetchEnr"
 
   it should "only initiate one fetch at a time" in test {
@@ -398,18 +423,19 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   behavior of "ping"
 
-  it should "bond with the caller" in test {
+  it should "respond with the ENR sequence and bond with the caller" in test {
     new Fixture {
       override lazy val rpc = unimplementedRPC.copy(
         ping = _ => _ => Task(Some(None)),
         enrRequest = _ => _ => Task(Some(remoteENR))
       )
       override val test = for {
-        _ <- service.ping(remotePeer)(None)
+        maybeEnrSeq <- service.ping(remotePeer)(None)
         _ <- stateRef.get.flatMap(_.bondingResultsMap.get(remotePeer).fold(Task.unit)(_.pongReceived.get.void))
         _ <- stateRef.get.flatMap(_.fetchEnrMap.get(remotePeer).fold(Task.unit)(_.get))
         state <- stateRef.get
       } yield {
+        maybeEnrSeq shouldBe Some(Some(localENR.content.seq))
         state.nodeMap should contain key (remotePeer.id)
         state.enrMap should contain key (remotePeer.id)
         state.lastPongTimestampMap should contain key (remotePeer)
@@ -510,15 +536,6 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   behavior of "startPeriodicDiscovery"
   it should "periodically lookup a random node" in (pending)
 
-  behavior of "startRequestHandling"
-  it should "respond to pings with its local ENR sequence" in (pending)
-  it should "not respond to findNode from unbonded peers" in (pending)
-  it should "respond to findNode from bonded peer with the closest bonded peers" in (pending)
-  it should "not respond to enrRequest from unbonded peers" in (pending)
-  it should "respond to enrRequest from bonded peers with its signed local ENR" in (pending)
-  it should "bond with peers that ping it" in (pending)
-  it should "update the node record to the latest it connected from" in (pending)
-
   behavior of "lookup"
   it should "bond with nodes while doing recursive lookups before contacting them" in (pending)
   it should "return the node seeked or nothing" in (pending)
@@ -573,6 +590,14 @@ object DiscoveryServiceSpec {
 
     lazy val rpc = unimplementedRPC
 
-    lazy val service = new DiscoveryService.ServiceImpl[InetSocketAddress](rpc, stateRef, config)
+    lazy val service = new DiscoveryService.ServiceImpl[InetSocketAddress](
+      rpc,
+      stateRef,
+      config,
+      toAddress = nodeAddressToInetSocketAddress
+    )
   }
+
+  def nodeAddressToInetSocketAddress(address: Node.Address): InetSocketAddress =
+    new InetSocketAddress(address.ip, address.udpPort)
 }
