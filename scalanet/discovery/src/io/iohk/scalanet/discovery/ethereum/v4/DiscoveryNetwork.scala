@@ -115,7 +115,7 @@ object DiscoveryNetwork {
                         Task.unit
 
                       case p: Payload.HasExpiration[_] if p.isExpired(timestamp) =>
-                        Task(logger.debug(s"Ignoring expired message from ${channel.to}"))
+                        Task(logger.debug(s"Ignoring expired request from ${channel.to}"))
 
                       case p: Payload.Request =>
                         handleRequest(handler, channel, remotePublicKey, packet.hash, p)
@@ -283,7 +283,7 @@ object DiscoveryNetwork {
                         Task.pure(None)
 
                       case p: Payload.HasExpiration[_] if p.isExpired(timestamp) =>
-                        Task.pure(None)
+                        Task(logger.debug(s"Ignoring expired response from ${channel.to}")).as(None)
 
                       case p: Payload.Response =>
                         Task.pure(Some(p))
