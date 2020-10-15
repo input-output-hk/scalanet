@@ -69,14 +69,13 @@ object DiscoveryService {
       node: Node,
       enr: EthereumNodeRecord,
       network: DiscoveryNetwork[A],
-      bondExpiration: FiniteDuration = 12.hours,
-      requestTimeout: FiniteDuration = 3.seconds
+      config: DiscoveryConfig
   ): Resource[Task, DiscoveryService] =
     Resource
       .make {
         for {
           stateRef <- Ref[Task].of(State[A](node, enr))
-          service <- Task(new DiscoveryServiceImpl[A](network, stateRef, bondExpiration, requestTimeout))
+          service <- Task(new DiscoveryServiceImpl[A](network, stateRef, config))
           cancelToken <- service.startRequestHandling()
           _ <- service.enroll()
           refreshFiber <- service.startPeriodicRefresh()
@@ -145,8 +144,7 @@ object DiscoveryService {
   private class DiscoveryServiceImpl[A](
       network: DiscoveryNetwork[A],
       stateRef: StateRef[A],
-      bondExpiration: FiniteDuration,
-      requestTimeout: FiniteDuration
+      config: DiscoveryConfig
   )(implicit clock: Clock[Task])
       extends DiscoveryService
       with DiscoveryRPC[Peer[A]] {
@@ -183,7 +181,7 @@ object DiscoveryService {
     def startPeriodicDiscovery(): Task[Fiber[Task, Unit]] = ???
 
     def bond(peer: Peer[A]): Task[Boolean] =
-      DiscoveryService.bond(peer, network, bondExpiration, requestTimeout)
+      DiscoveryService.bond(peer, network, config.bondExpiration, config.requestTimeout)
 
     def lookup(nodeId: NodeId): Task[Option[Node]] = ???
 

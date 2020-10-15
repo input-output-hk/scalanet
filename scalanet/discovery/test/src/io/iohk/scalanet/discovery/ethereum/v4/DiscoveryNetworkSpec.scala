@@ -789,7 +789,7 @@ object DiscoveryNetworkSpec extends Matchers {
       tcpPort = address.getPort
     )
 
-  val defaultConfig = DiscoveryConfig(
+  val defaultConfig = DiscoveryConfig.default.copy(
     requestTimeout = 100.millis,
     messageExpiration = 60.seconds,
     kademliaTimeout = 250.millis,

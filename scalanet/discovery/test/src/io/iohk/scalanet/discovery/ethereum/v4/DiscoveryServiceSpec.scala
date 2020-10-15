@@ -24,7 +24,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   trait IsBondedFixture extends Fixture {
     override val test = for {
       _ <- stateRef.update(setupState)
-      isBonded <- DiscoveryService.isBonded(bondExpiration, peer)
+      isBonded <- DiscoveryService.isBonded(config.bondExpiration, peer)
     } yield {
       isBonded shouldBe expected
     }
@@ -58,7 +58,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       override def peer = remotePeer
       override def expected = false
       override def setupState =
-        _.withLastPongTimestamp(remotePeer, System.currentTimeMillis - bondExpiration.toMillis - 1000)
+        _.withLastPongTimestamp(remotePeer, System.currentTimeMillis - config.bondExpiration.toMillis - 1000)
     }
   }
   it should "return true for nodes that are being pinged right now but responded within expiration" in test {
@@ -67,7 +67,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       override def expected = true
       override def setupState =
         _.withBondingResults(remotePeer, BondingResults.unsafe())
-          .withLastPongTimestamp(remotePeer, System.currentTimeMillis - bondExpiration.toMillis + 1000)
+          .withLastPongTimestamp(remotePeer, System.currentTimeMillis - config.bondExpiration.toMillis + 1000)
     }
   }
   it should "return false for nodes that are being pinged right now but are otherwise expired" in test {
@@ -76,7 +76,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       override def expected = false
       override def setupState =
         _.withBondingResults(remotePeer, BondingResults.unsafe())
-          .withLastPongTimestamp(remotePeer, System.currentTimeMillis - bondExpiration.toMillis - 1000)
+          .withLastPongTimestamp(remotePeer, System.currentTimeMillis - config.bondExpiration.toMillis - 1000)
     }
   }
   it should "return false for nodes that changed their address" in test {
@@ -233,16 +233,78 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         _ <- stateRef.update { state =>
           state.withLastPongTimestamp(remotePeer, System.currentTimeMillis)
         }
-        bonded <- DiscoveryService.bond(remotePeer, unimplementedRPC, bondExpiration, requestTimeout)
+        bonded <- DiscoveryService.bond(remotePeer, unimplementedRPC, config.bondExpiration, config.requestTimeout)
       } yield {
         bonded shouldBe true
       }
     }
   }
 
+  trait BondingFixture extends Fixture {
+    override lazy val config = defaultConfig.copy(
+      requestTimeout = 100.millis
+    )
+    // Something that responds to pings.
+    lazy val bondableRPC = unimplementedRPC.copy(
+      ping = _ => _ => Task.pure(Some(None))
+    )
+  }
+
+  it should "consider a peer bonded if it responds to a ping" in test {
+    new BondingFixture {
+      override val test = for {
+        bonded <- DiscoveryService.bond(remotePeer, bondableRPC, config.bondExpiration, config.requestTimeout)
+        state <- stateRef.get
+      } yield {
+        bonded shouldBe true
+        state.bondingResultsMap should not contain key(remotePeer)
+        state.lastPongTimestampMap should contain key (remotePeer)
+      }
+    }
+  }
+
+  it should "not consider a peer bonded if it doesn't respond to a ping" in test {
+    new BondingFixture {
+      val unbondableRPC = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(None)
+      )
+      override val test = for {
+        bonded <- DiscoveryService.bond(remotePeer, unbondableRPC, config.bondExpiration, config.requestTimeout)
+        state <- stateRef.get
+      } yield {
+        bonded shouldBe false
+        state.bondingResultsMap should not contain key(remotePeer)
+        state.lastPongTimestampMap should not contain key(remotePeer)
+      }
+    }
+  }
+
+  it should "wait for a ping to arrive from the other party" in test {
+    new BondingFixture {
+      override lazy val config = defaultConfig.copy(
+        requestTimeout = 5.seconds
+      )
+      override val test = for {
+        time0 <- DiscoveryService.currentTimeMillis
+        bonding <- DiscoveryService.bond(remotePeer, bondableRPC, config.bondExpiration, config.requestTimeout).start
+        _ <- DiscoveryService.completePing(remotePeer)
+        bonded <- bonding.join
+        time1 <- DiscoveryService.currentTimeMillis
+      } yield {
+        bonded shouldBe true
+        assert(time1 - time0 < config.requestTimeout.toMillis)
+      }
+    }
+  }
+
   it should "fetch the ENR once bonded" in (pending)
-  it should "remove nodes if the bonding fails" in (pending)
-  it should "wait for a ping to arrive from the other party" in (pending)
+
+  behavior of "fetchEnr"
+  it should "validate that the packet sender signed the ENR" in (pending)
+  it should "remove the node if the validation fails" in (pending)
+
+  behavior of "ping"
+  it should "complete any outstanding"
 
   behavior of "getNode"
   it should "return the local node" in (pending)
@@ -291,9 +353,6 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "bond with nodes while doing recursive lookups before contacting them" in (pending)
   it should "return the node seeked or nothing" in (pending)
   it should "fetch the ENR record of the node" in (pending)
-
-  behavior of "fetchEnr"
-  it should "validate that the packet sender signed the ENR" in (pending)
 }
 
 object DiscoveryServiceSpec {
@@ -302,6 +361,8 @@ object DiscoveryServiceSpec {
 
   implicit val scheduler: Scheduler = Scheduler.Implicits.global
   implicit val sigalg = new MockSigAlg()
+
+  val defaultConfig = DiscoveryConfig.default
 
   trait Fixture {
     def test: Task[Assertion]
@@ -323,8 +384,8 @@ object DiscoveryServiceSpec {
     implicit lazy val stateRef = Ref.unsafe[Task, DiscoveryService.State[InetSocketAddress]](
       DiscoveryService.State[InetSocketAddress](localNode, localENR)
     )
-    val bondExpiration = 12.hours
-    val requestTimeout = 3.seconds
+
+    lazy val config = defaultConfig
 
     lazy val unimplementedRPC = StubDiscoveryRPC()
   }
