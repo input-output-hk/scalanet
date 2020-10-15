@@ -204,10 +204,8 @@ object DiscoveryService {
             } yield closestNodes
           }
 
-    override def enrRequest: Call[Peer[A], Proc.ENRRequest] = ???
-
-    private def ifBonded[T](caller: Peer[A])(thunk: Task[T]): Task[Option[T]] =
-      isBonded(caller).ifM(thunk.map(Some(_)), Task.pure(None))
+    override def enrRequest: Call[Peer[A], Proc.ENRRequest] =
+      caller => _ => ifBonded(caller)(stateRef.get.map(_.enr))
 
     def enroll(): Task[Unit] = ???
 
@@ -241,6 +239,9 @@ object DiscoveryService {
         }
       }
     }
+
+    protected[v4] def ifBonded[T](caller: Peer[A])(thunk: Task[T]): Task[Option[T]] =
+      isBonded(caller).ifM(thunk.map(Some(_)), Task.pure(None))
 
     /** Runs the bonding process with the peer, unless already bonded.
       *

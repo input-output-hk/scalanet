@@ -451,6 +451,31 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
+  behavior of "enrRequest"
+
+  it should "not respond to unbonded peers" in test {
+    new Fixture {
+      override val test = for {
+        maybeResponse <- service.enrRequest(remotePeer)(())
+      } yield {
+        maybeResponse shouldBe empty
+      }
+    }
+  }
+
+  it should "respond with the local ENR record" in test {
+    new Fixture {
+      override val test = for {
+        _ <- stateRef.update {
+          _.withLastPongTimestamp(remotePeer, System.currentTimeMillis)
+        }
+        maybeResponse <- service.enrRequest(remotePeer)(())
+      } yield {
+        maybeResponse shouldBe Some(localENR)
+      }
+    }
+  }
+
   behavior of "getNode"
   it should "return the local node" in (pending)
   it should "not return a nodes which is not bonded" in (pending)
