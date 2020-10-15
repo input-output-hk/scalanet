@@ -25,7 +25,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   trait IsBondedFixture extends Fixture {
     override val test = for {
       _ <- stateRef.update(setupState)
-      isBonded <- DiscoveryService.isBonded(config.bondExpiration, peer)
+      isBonded <- DiscoveryService.isBonded(peer)
     } yield {
       isBonded shouldBe expected
     }
@@ -154,25 +154,29 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   it should "wait up to the request timeout if there's no ping" in test {
     new Fixture {
+      override implicit lazy val config = defaultConfig.copy(
+        requestTimeout = 200.millis
+      )
       override val test = for {
         _ <- DiscoveryService.initBond(remotePeer)
-        timeoutMillis = 200
         time0 <- DiscoveryService.currentTimeMillis
-        _ <- DiscoveryService.awaitPing(remotePeer, requestTimeout = timeoutMillis.millis)
+        _ <- DiscoveryService.awaitPing(remotePeer)
         time1 <- DiscoveryService.currentTimeMillis
       } yield {
-        assert(time1 - time0 >= timeoutMillis)
+        assert(time1 - time0 >= config.requestTimeout.toMillis)
       }
     }
   }
 
   it should "complete as soon as there's a ping" in test {
     new Fixture {
+      override implicit lazy val config = defaultConfig.copy(
+        requestTimeout = 1.second
+      )
       override val test = for {
         _ <- DiscoveryService.initBond(remotePeer)
-        timeoutMillis = 1000
         time0 <- DiscoveryService.currentTimeMillis
-        waiting <- DiscoveryService.awaitPing(remotePeer, requestTimeout = timeoutMillis.millis).start
+        waiting <- DiscoveryService.awaitPing(remotePeer).start
         pingReceived <- stateRef.get.map { state =>
           state.bondingResultsMap(remotePeer).pingReceived
         }
@@ -180,7 +184,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         _ <- waiting.join
         time1 <- DiscoveryService.currentTimeMillis
       } yield {
-        assert(time1 - time0 < timeoutMillis)
+        assert(time1 - time0 < config.requestTimeout.toMillis)
       }
     }
   }
@@ -234,7 +238,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         _ <- stateRef.update { state =>
           state.withLastPongTimestamp(remotePeer, System.currentTimeMillis)
         }
-        bonded <- DiscoveryService.bond(remotePeer, unimplementedRPC, config.bondExpiration, config.requestTimeout)
+        bonded <- DiscoveryService.bond(remotePeer, unimplementedRPC)
       } yield {
         bonded shouldBe true
       }
@@ -242,7 +246,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   }
 
   trait BondingFixture extends Fixture {
-    override lazy val config = defaultConfig.copy(
+    override implicit lazy val config = defaultConfig.copy(
       requestTimeout = 100.millis
     )
     // Something that responds to pings.
@@ -254,7 +258,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "consider a peer bonded if it responds to a ping" in test {
     new BondingFixture {
       override val test = for {
-        bonded <- DiscoveryService.bond(remotePeer, bondableRPC, config.bondExpiration, config.requestTimeout)
+        bonded <- DiscoveryService.bond(remotePeer, bondableRPC)
         state <- stateRef.get
       } yield {
         bonded shouldBe true
@@ -270,7 +274,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         ping = _ => _ => Task.pure(None)
       )
       override val test = for {
-        bonded <- DiscoveryService.bond(remotePeer, unbondableRPC, config.bondExpiration, config.requestTimeout)
+        bonded <- DiscoveryService.bond(remotePeer, unbondableRPC)
         state <- stateRef.get
       } yield {
         bonded shouldBe false
@@ -282,12 +286,12 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   it should "wait for a ping to arrive from the other party" in test {
     new BondingFixture {
-      override lazy val config = defaultConfig.copy(
+      override implicit lazy val config = defaultConfig.copy(
         requestTimeout = 5.seconds
       )
       override val test = for {
         time0 <- DiscoveryService.currentTimeMillis
-        bonding <- DiscoveryService.bond(remotePeer, bondableRPC, config.bondExpiration, config.requestTimeout).start
+        bonding <- DiscoveryService.bond(remotePeer, bondableRPC).start
         _ <- DiscoveryService.completePing(remotePeer)
         bonded <- bonding.join
         time1 <- DiscoveryService.currentTimeMillis
@@ -305,7 +309,9 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "remove the node if the validation fails" in (pending)
 
   behavior of "ping"
-  it should "complete any outstanding"
+  it should "complete bonding processes waiting for that ping" in (pending)
+  it should "kick off a bonding process in return" in (pending)
+  it should "fetch a new ENR if necessary" in (pending)
 
   behavior of "getNode"
   it should "return the local node" in (pending)
@@ -386,7 +392,7 @@ object DiscoveryServiceSpec {
       DiscoveryService.State[InetSocketAddress](localNode, localENR)
     )
 
-    lazy val config = defaultConfig
+    implicit lazy val config: DiscoveryConfig = defaultConfig
 
     lazy val unimplementedRPC = StubDiscoveryRPC()
   }

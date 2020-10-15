@@ -147,6 +147,7 @@ object DiscoveryService {
     // Passing the state to the pure functions that live on the
     // companion object, to make them easily testable.
     implicit val sr = stateRef
+    implicit val c = config
 
     override def getNode(nodeId: NodeId): Task[Option[Node]] = ???
     override def getNodes: Task[Set[Node]] = ???
@@ -160,9 +161,10 @@ object DiscoveryService {
         maybeRemoteEnrSeq =>
           for {
             _ <- DiscoveryService.completePing(caller)
-            enr <- stateRef.get.map(_.enr.content.seq)
-            // TODO: Check if the ENR is fresher than what we have and maybe fetch again.
-          } yield Some(Some(enr))
+            _ <- DiscoveryService.bond(caller, network).startAndForget
+            //_ <- DiscoveryService.maybeFetchEnr(caller, network, maybeRemoteEnrSeq).startAndForget
+            enrSeq <- stateRef.get.map(_.enr.content.seq)
+          } yield Some(Some(enrSeq))
 
     override def findNode: Call[Peer[A], Proc.FindNode] = ???
     override def enrRequest: Call[Peer[A], Proc.ENRRequest] = ???
@@ -175,9 +177,6 @@ object DiscoveryService {
     def startPeriodicRefresh(): Task[Fiber[Task, Unit]] = ???
     def startPeriodicDiscovery(): Task[Fiber[Task, Unit]] = ???
 
-    def bond(peer: Peer[A]): Task[Boolean] =
-      DiscoveryService.bond(peer, network, config.bondExpiration, config.requestTimeout)
-
     def lookup(nodeId: NodeId): Task[Option[Node]] = ???
 
   }
@@ -187,11 +186,10 @@ object DiscoveryService {
 
   /** Check if the given peer has a valid bond at the moment. */
   protected[v4] def isBonded[A](
-      bondExpiration: FiniteDuration,
       peer: Peer[A]
-  )(implicit sr: StateRef[A], clock: Clock[Task]): Task[Boolean] = {
+  )(implicit stateRef: StateRef[A], clock: Clock[Task], config: DiscoveryConfig): Task[Boolean] = {
     currentTimeMillis.flatMap { now =>
-      sr.get.map { state =>
+      stateRef.get.map { state =>
         if (peer.id == state.node.id)
           true
         else
@@ -199,7 +197,7 @@ object DiscoveryService {
             case None =>
               false
             case Some(timestamp) =>
-              timestamp > now - bondExpiration.toMillis
+              timestamp > now - config.bondExpiration.toMillis
           }
       }
     }
@@ -216,12 +214,9 @@ object DiscoveryService {
     */
   protected[v4] def bond[A](
       peer: Peer[A],
-      rpc: DiscoveryRPC[Peer[A]],
-      bondExpiration: FiniteDuration,
-      // How long to wait for the remote peer to send a ping to us.
-      requestTimeout: FiniteDuration
-  )(implicit sr: StateRef[A], clock: Clock[Task]): Task[Boolean] =
-    isBonded(bondExpiration, peer).flatMap {
+      rpc: DiscoveryRPC[Peer[A]]
+  )(implicit stateRef: StateRef[A], clock: Clock[Task], config: DiscoveryConfig): Task[Boolean] =
+    isBonded(peer).flatMap {
       case true =>
         Task.pure(true)
 
@@ -238,7 +233,7 @@ object DiscoveryService {
               }
               .flatMap {
                 case Some(maybeRemoteEnrSeq) =>
-                  awaitPing(peer, requestTimeout) >> completeBond(peer, responded = true)
+                  awaitPing(peer) >> completeBond(peer, responded = true)
                 // TODO: Schedule fetching the ENR.
                 case None =>
                   completeBond(peer, responded = false)
@@ -250,10 +245,10 @@ object DiscoveryService {
     * return the Deferred result we can wait on, otherwise add a new Deferred
     * and return the current local ENR sequence we can ping with.
     */
-  protected[v4] def initBond[A](peer: Peer[A])(implicit sr: StateRef[A]): Task[Either[BondingResults, ENRSeq]] =
+  protected[v4] def initBond[A](peer: Peer[A])(implicit stateRef: StateRef[A]): Task[Either[BondingResults, ENRSeq]] =
     for {
       results <- BondingResults()
-      decision <- sr.modify { state =>
+      decision <- stateRef.modify { state =>
         state.bondingResultsMap.get(peer) match {
           case Some(results) =>
             state -> Left(results)
@@ -268,12 +263,12 @@ object DiscoveryService {
     * notifying all potentially waiting bonding processes about the outcome as well.
     */
   protected[v4] def completeBond[A](peer: Peer[A], responded: Boolean)(
-      implicit sr: StateRef[A],
+      implicit stateRef: StateRef[A],
       clock: Clock[Task]
   ): Task[Boolean] = {
     for {
       now <- currentTimeMillis
-      _ <- sr
+      _ <- stateRef
         .modify { state =>
           val maybePong = state.bondingResultsMap.get(peer).map(_.pongReceived)
           val newState = if (responded) state.withLastPongTimestamp(peer, now) else state
@@ -291,20 +286,21 @@ object DiscoveryService {
     *
     * The deferred should be completed by the ping handler.
     */
-  protected[v4] def awaitPing[A](peer: Peer[A], requestTimeout: FiniteDuration)(
-      implicit sr: StateRef[A]
+  protected[v4] def awaitPing[A](peer: Peer[A])(
+      implicit stateRef: StateRef[A],
+      config: DiscoveryConfig
   ): Task[Unit] =
-    sr.get
+    stateRef.get
       .map { state =>
         state.bondingResultsMap.get(peer).map(_.pingReceived)
       }
       .flatMap { maybePingReceived =>
-        maybePingReceived.fold(Task.unit)(_.get.timeoutTo(requestTimeout, Task.unit))
+        maybePingReceived.fold(Task.unit)(_.get.timeoutTo(config.requestTimeout, Task.unit))
       }
 
   /** Complete any deferred we set up during a bonding process expecting a ping to arrive. */
-  protected[v4] def completePing[A](peer: Peer[A])(implicit sr: StateRef[A]): Task[Unit] =
-    sr.get
+  protected[v4] def completePing[A](peer: Peer[A])(implicit stateRef: StateRef[A]): Task[Unit] =
+    stateRef.get
       .map { state =>
         state.bondingResultsMap.get(peer).map(_.pingReceived)
       }
