@@ -4,6 +4,7 @@ import cats.effect.concurrent.Ref
 import io.iohk.scalanet.discovery.ethereum.{EthereumNodeRecord, Node}
 import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs
 import io.iohk.scalanet.discovery.ethereum.v4.mocks.MockSigAlg
+import io.iohk.scalanet.discovery.ethereum.v4.DiscoveryNetwork.Peer
 import io.iohk.scalanet.NetUtils.aRandomAddress
 import java.net.InetSocketAddress
 import monix.eval.Task
@@ -30,7 +31,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
 
     def setupState: State[InetSocketAddress] => State[InetSocketAddress] = identity
-    def peer: DiscoveryService.Peer[InetSocketAddress]
+    def peer: Peer[InetSocketAddress]
     def expected: Boolean
   }
 
@@ -81,11 +82,11 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   }
   it should "return false for nodes that changed their address" in test {
     new IsBondedFixture {
-      override def peer = remotePublicKey -> aRandomAddress
+      override def peer = Peer(remotePublicKey, aRandomAddress)
       override def expected = false
       override def setupState =
         _.withLastPongTimestamp(
-          remotePublicKey -> remoteAddress,
+          Peer(remotePublicKey, remoteAddress),
           System.currentTimeMillis
         )
     }
@@ -373,13 +374,13 @@ object DiscoveryServiceSpec {
     lazy val (localPublicKey, localPrivateKey) = randomKeyPair
     lazy val localAddress = aRandomAddress()
     lazy val localNode = makeNode(localPublicKey, localAddress)
-    lazy val localPeer = localPublicKey -> localAddress
+    lazy val localPeer = Peer(localPublicKey, localAddress)
     lazy val localENR = EthereumNodeRecord.fromNode(localNode, localPrivateKey, seq = 1).require
 
     lazy val remoteAddress = aRandomAddress()
     lazy val (remotePublicKey, remotePrivateKey) = randomKeyPair
     lazy val remoteNode = makeNode(remotePublicKey, remoteAddress)
-    lazy val remotePeer = remotePublicKey -> remoteAddress
+    lazy val remotePeer = Peer(remotePublicKey, remoteAddress)
 
     implicit lazy val stateRef = Ref.unsafe[Task, DiscoveryService.State[InetSocketAddress]](
       DiscoveryService.State[InetSocketAddress](localNode, localENR)
@@ -392,9 +393,9 @@ object DiscoveryServiceSpec {
 
   /** Placeholder implementation that throws if any RPC method is called. */
   case class StubDiscoveryRPC(
-      ping: DiscoveryRPC.Call[InetSocketAddress, DiscoveryRPC.Proc.Ping] = _ => ???,
-      findNode: DiscoveryRPC.Call[InetSocketAddress, DiscoveryRPC.Proc.FindNode] = _ => ???,
-      enrRequest: DiscoveryRPC.Call[InetSocketAddress, DiscoveryRPC.Proc.ENRRequest] = _ => ???
-  ) extends DiscoveryRPC[InetSocketAddress]
+      ping: DiscoveryRPC.Call[Peer[InetSocketAddress], DiscoveryRPC.Proc.Ping] = _ => ???,
+      findNode: DiscoveryRPC.Call[Peer[InetSocketAddress], DiscoveryRPC.Proc.FindNode] = _ => ???,
+      enrRequest: DiscoveryRPC.Call[Peer[InetSocketAddress], DiscoveryRPC.Proc.ENRRequest] = _ => ???
+  ) extends DiscoveryRPC[Peer[InetSocketAddress]]
 
 }

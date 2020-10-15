@@ -42,17 +42,12 @@ trait DiscoveryService {
 
 object DiscoveryService {
   import DiscoveryRPC.{Call, Proc}
+  import DiscoveryNetwork.Peer
 
   type ENRSeq = Long
   type Timestamp = Long
   type NodeId = PublicKey
   type StateRef[A] = Ref[Task, State[A]]
-
-  type Peer[A] = (NodeId, A)
-  private implicit class PeerOps[A](peer: Peer[A]) {
-    def id: NodeId = peer._1
-    def address: A = peer._2
-  }
 
   /** Implement the Discovery v4 protocol:
     *
@@ -221,7 +216,7 @@ object DiscoveryService {
     */
   protected[v4] def bond[A](
       peer: Peer[A],
-      rpc: DiscoveryRPC[A],
+      rpc: DiscoveryRPC[Peer[A]],
       bondExpiration: FiniteDuration,
       // How long to wait for the remote peer to send a ping to us.
       requestTimeout: FiniteDuration
@@ -237,7 +232,7 @@ object DiscoveryService {
 
           case Right(enrSeq) =>
             rpc
-              .ping(peer.address)(Some(enrSeq))
+              .ping(peer)(Some(enrSeq))
               .recover {
                 case NonFatal(_) => None
               }
