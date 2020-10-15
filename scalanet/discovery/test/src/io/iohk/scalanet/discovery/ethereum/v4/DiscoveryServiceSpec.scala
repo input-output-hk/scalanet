@@ -16,6 +16,7 @@ import scala.concurrent.duration._
 
 class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   import DiscoveryService.{State, BondingResults}
+  import DiscoveryNetworkSpec.{randomKeyPair}
   import DiscoveryServiceSpec._
 
   def test(fixture: Fixture) =
@@ -346,7 +347,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
-  it should "update the ENR and node maps" in test {
+  it should "update the ENR, node maps and the k-buckets" in test {
     new Fixture {
       override lazy val rpc = unimplementedRPC.copy(
         enrRequest = _ => _ => Task(Some(remoteENR))
@@ -358,6 +359,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         state.fetchEnrMap should not contain key(remotePeer)
         state.nodeMap should contain key (remotePeer.id)
         state.enrMap(remotePeer.id) shouldBe remoteENR
+        state.kBuckets.contains(remotePeer.id) shouldBe true
       }
     }
   }
@@ -411,6 +413,40 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         state.nodeMap should contain key (remotePeer.id)
         state.enrMap should contain key (remotePeer.id)
         state.lastPongTimestampMap should contain key (remotePeer)
+      }
+    }
+  }
+
+  behavior of "findNode"
+
+  it should "not respond to unbonded peers" in test {
+    new Fixture {
+      override val test = for {
+        maybeResponse <- service.findNode(remotePeer)(remotePublicKey)
+      } yield {
+        maybeResponse shouldBe empty
+      }
+    }
+  }
+
+  it should "return peers for who we have an ENR record" in test {
+    new Fixture {
+      val caller = {
+        val (callerPublicKey, _) = randomKeyPair
+        val callerAddress = aRandomAddress
+        Peer(callerPublicKey, callerAddress)
+      }
+
+      override val test = for {
+        // Pretend we are bonded with the caller and know about the remote node.
+        _ <- stateRef.update {
+          _.withLastPongTimestamp(caller, System.currentTimeMillis)
+            .withEnrAndAddress(remotePeer, remoteENR, remoteNode.address)
+        }
+        maybeNodes <- service.findNode(caller)(remotePublicKey)
+      } yield {
+        maybeNodes should not be empty
+        maybeNodes.get should have size 2
       }
     }
   }

@@ -125,7 +125,8 @@ object DiscoveryService {
     def withEnrAndAddress(peer: Peer[A], enr: EthereumNodeRecord, address: Node.Address): State[A] =
       copy(
         enrMap = enrMap.updated(peer.id, enr),
-        nodeMap = nodeMap.updated(peer.id, Node(peer.id, address))
+        nodeMap = nodeMap.updated(peer.id, Node(peer.id, address)),
+        kBuckets = kBuckets.add(peer.id)
       )
 
     def clearBondingResults(peer: Peer[A]): State[A] =
@@ -179,7 +180,7 @@ object DiscoveryService {
     override def updateExternalAddress(address: InetAddress): Task[Unit] = ???
     override def localNode: Task[Node] = ???
 
-    override def ping =
+    override def ping: Call[Peer[A], Proc.Ping] =
       caller =>
         maybeRemoteEnrSeq =>
           for {
@@ -192,8 +193,21 @@ object DiscoveryService {
             enrSeq <- stateRef.get.map(_.enr.content.seq)
           } yield Some(Some(enrSeq))
 
-    override def findNode: Call[Peer[A], Proc.FindNode] = ???
+    override def findNode: Call[Peer[A], Proc.FindNode] =
+      caller =>
+        target =>
+          ifBonded(caller) {
+            for {
+              state <- stateRef.get
+              closestNodeIds = state.kBuckets.closestNodes(target, config.kademliaBucketSize)
+              closestNodes = closestNodeIds.map(id => state.nodeMap.get(PublicKey(id))).flatten
+            } yield closestNodes
+          }
+
     override def enrRequest: Call[Peer[A], Proc.ENRRequest] = ???
+
+    private def ifBonded[T](caller: Peer[A])(thunk: Task[T]): Task[Option[T]] =
+      isBonded(caller).ifM(thunk.map(Some(_)), Task.pure(None))
 
     def enroll(): Task[Unit] = ???
 
