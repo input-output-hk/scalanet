@@ -1,6 +1,7 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
 import cats.effect.concurrent.Ref
+import io.iohk.scalanet.discovery.crypto.{PublicKey, Signature}
 import io.iohk.scalanet.discovery.ethereum.{EthereumNodeRecord, Node}
 import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs
 import io.iohk.scalanet.discovery.ethereum.v4.mocks.MockSigAlg
@@ -9,9 +10,9 @@ import io.iohk.scalanet.NetUtils.aRandomAddress
 import java.net.InetSocketAddress
 import monix.eval.Task
 import monix.execution.Scheduler
+import monix.execution.atomic.AtomicInt
 import org.scalatest._
 import scala.concurrent.duration._
-import io.iohk.scalanet.discovery.crypto.PublicKey
 
 class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   import DiscoveryService.{State, BondingResults}
@@ -240,7 +241,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   trait BondingFixture extends Fixture {
     override lazy val config = defaultConfig.copy(
-      requestTimeout = 100.millis
+      requestTimeout = 100.millis // To not wait for pings during bonding.
     )
     override lazy val rpc = unimplementedRPC.copy(
       ping = _ => _ => Task.pure(Some(None)),
@@ -307,10 +308,76 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
+  behavior of "maybeFetchEnr"
+
+  it should "not fetch if the record we have is at least as new" in test {
+    new Fixture {
+      override val test = for {
+        _ <- stateRef.update(_.withEnrAndAddress(remotePeer, remoteENR, remoteNode.address))
+        _ <- service.maybeFetchEnr(remotePeer, Some(remoteENR.content.seq))
+      } yield {
+        succeed // Would have failed if it called the RPC.
+      }
+    }
+  }
+
   behavior of "fetchEnr"
-  it should "only initiate one fetch at a time" in (pending)
-  it should "validate that the packet sender signed the ENR" in (pending)
-  it should "remove the node if the validation fails" in (pending)
+
+  it should "only initiate one fetch at a time" in test {
+    new Fixture {
+      val callCount = AtomicInt(0)
+
+      override lazy val rpc = unimplementedRPC.copy(
+        enrRequest = _ =>
+          _ =>
+            Task {
+              callCount.increment()
+              Some(remoteENR)
+            }.delayExecution(100.millis) // Delay so the first is still running when the second is started.
+      )
+
+      override val test = for {
+        _ <- Task.parSequenceUnordered(
+          List.fill(5)(service.fetchEnr(remotePeer))
+        )
+      } yield {
+        callCount.get shouldBe 1
+      }
+    }
+  }
+
+  it should "update the ENR and node maps" in test {
+    new Fixture {
+      override lazy val rpc = unimplementedRPC.copy(
+        enrRequest = _ => _ => Task(Some(remoteENR))
+      )
+      override val test = for {
+        _ <- service.fetchEnr(remotePeer)
+        state <- stateRef.get
+      } yield {
+        state.fetchEnrMap should not contain key(remotePeer)
+        state.nodeMap should contain key (remotePeer.id)
+        state.enrMap(remotePeer.id) shouldBe remoteENR
+      }
+    }
+  }
+
+  it should "remove the node if the ENR signature validation fails" in test {
+    new Fixture {
+      override lazy val rpc = unimplementedRPC.copy(
+        enrRequest = _ => _ => Task(Some(remoteENR.copy(signature = Signature(remoteENR.signature.reverse))))
+      )
+      override val test = for {
+        _ <- stateRef.update(_.withEnrAndAddress(remotePeer, remoteENR, remoteNode.address))
+        _ <- service.fetchEnr(remotePeer)
+        state <- stateRef.get
+      } yield {
+        state.fetchEnrMap should not contain key(remotePeer)
+        state.nodeMap should not contain key(remotePeer.id)
+        state.enrMap should not contain key(remotePeer.id)
+      }
+    }
+  }
 
   behavior of "ping"
   it should "complete bonding processes waiting for that ping" in (pending)

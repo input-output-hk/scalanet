@@ -112,7 +112,9 @@ object DiscoveryService {
       // Last time a peer responded with a Pong to our Ping.
       lastPongTimestampMap: Map[Peer[A], Timestamp],
       // Deferred results so we can ensure there's only one concurrent Ping to a given peer.
-      bondingResultsMap: Map[Peer[A], BondingResults]
+      bondingResultsMap: Map[Peer[A], BondingResults],
+      // Deferred ENR fetches so we only do one at a time to a given peer.
+      fetchEnrMap: Map[Peer[A], Deferred[Task, Unit]]
   ) {
     def withLastPongTimestamp(peer: Peer[A], timestamp: Timestamp): State[A] =
       copy(lastPongTimestampMap = lastPongTimestampMap.updated(peer, timestamp))
@@ -120,8 +122,20 @@ object DiscoveryService {
     def withBondingResults(peer: Peer[A], results: BondingResults): State[A] =
       copy(bondingResultsMap = bondingResultsMap.updated(peer, results))
 
+    def withEnrAndAddress(peer: Peer[A], enr: EthereumNodeRecord, address: Node.Address): State[A] =
+      copy(
+        enrMap = enrMap.updated(peer.id, enr),
+        nodeMap = nodeMap.updated(peer.id, Node(peer.id, address))
+      )
+
     def clearBondingResults(peer: Peer[A]): State[A] =
       copy(bondingResultsMap = bondingResultsMap - peer)
+
+    def withEnrFetch(peer: Peer[A], result: Deferred[Task, Unit]): State[A] =
+      copy(fetchEnrMap = fetchEnrMap.updated(peer, result))
+
+    def clearEnrFetch(peer: Peer[A]): State[A] =
+      copy(fetchEnrMap = fetchEnrMap - peer)
 
     def removePeer(peer: Peer[A]): State[A] =
       copy(
@@ -144,7 +158,8 @@ object DiscoveryService {
       nodeMap = Map(node.id -> node),
       enrMap = Map(node.id -> enr),
       lastPongTimestampMap = Map.empty[Peer[A], Timestamp],
-      bondingResultsMap = Map.empty[Peer[A], BondingResults]
+      bondingResultsMap = Map.empty[Peer[A], BondingResults],
+      fetchEnrMap = Map.empty[Peer[A], Deferred[Task, Unit]]
     )
   }
 
@@ -346,24 +361,50 @@ object DiscoveryService {
       } yield ()
 
     /** Fetch a fresh ENR from the peer and store it. */
-    protected[v4] def fetchEnr(peer: Peer[A]): Task[Unit] =
-      rpc.enrRequest(peer)(()).flatMap {
-        case None =>
-          Task.unit
-
-        case Some(enr) =>
-          EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
-            case Attempt.Successful(true) =>
-              tryUpdateEnr(peer, enr)
-
-            case Attempt.Successful(false) =>
-              Task(logger.debug("Could not validate ENR signature!")) >>
-                removePeer(peer)
-
-            case Attempt.Failure(err) =>
-              Task(logger.error(s"Error validateing ENR: $err"))
+    protected[v4] def fetchEnr(peer: Peer[A]): Task[Unit] = {
+      val waitOrFetch =
+        for {
+          d <- Deferred[Task, Unit]
+          decision <- stateRef.modify { state =>
+            state.fetchEnrMap.get(peer) match {
+              case Some(d) =>
+                state -> Left(d)
+              case None =>
+                state.withEnrFetch(peer, d) -> Right(d)
+            }
           }
+        } yield decision
+
+      waitOrFetch.flatMap {
+        case Left(wait) =>
+          wait.get
+
+        case Right(fetch) =>
+          rpc
+            .enrRequest(peer)(())
+            .flatMap {
+              case None =>
+                Task.unit
+
+              case Some(enr) =>
+                EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
+                  case Attempt.Successful(true) =>
+                    tryUpdateEnr(peer, enr)
+
+                  case Attempt.Successful(false) =>
+                    Task(logger.debug("Could not validate ENR signature!")) >>
+                      removePeer(peer)
+
+                  case Attempt.Failure(err) =>
+                    Task(logger.error(s"Error validateing ENR: $err"))
+                }
+            }
+            .guarantee {
+              stateRef.update(_.clearEnrFetch(peer)) >>
+                fetch.complete(())
+            }
       }
+    }
 
     /** Try to extract the node address from the ENR record and update the node database,
       * otherwise if there's no address we can use remove the peer.
@@ -373,12 +414,7 @@ object DiscoveryService {
         case None =>
           Task(logger.debug(s"Could not extract node address from $enr")) >> removePeer(peer)
         case Some(address) =>
-          stateRef.update { state =>
-            state.copy(
-              enrMap = state.enrMap.updated(peer.id, enr),
-              nodeMap = state.nodeMap.updated(peer.id, Node(peer.id, address))
-            )
-          }
+          stateRef.update(_.withEnrAndAddress(peer, enr, address))
       }
 
     /** Forget everything about this peer. */
