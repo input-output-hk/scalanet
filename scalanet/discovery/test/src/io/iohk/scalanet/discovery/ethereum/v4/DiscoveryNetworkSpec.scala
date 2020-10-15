@@ -185,7 +185,9 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "return Some Nodes if the peer responds" in test {
     new Fixture {
-      override val kademliaTimeout: FiniteDuration = 250.millis
+      override lazy val config = defaultConfig.copy(
+        kademliaTimeout = 250.millis
+      )
 
       override val test = for {
         finding <- network.findNode(remoteAddress)(remotePublicKey).start
@@ -205,10 +207,12 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "collect responses up to the timeout" in test {
     new Fixture {
-      override val kademliaTimeout: FiniteDuration = 500.millis
-      override val kademliaBucketSize: Int = 16
+      override lazy val config = defaultConfig.copy(
+        kademliaTimeout = 500.millis,
+        kademliaBucketSize = 16
+      )
 
-      val randomNodes = List.fill(kademliaBucketSize)(randomNode)
+      val randomNodes = List.fill(config.kademliaBucketSize)(randomNode)
 
       override val test = for {
         finding <- network.findNode(remoteAddress)(remotePublicKey).start
@@ -222,7 +226,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
         _ <- send(randomNodes.take(3))
         _ <- send(randomNodes.drop(3).take(7))
-        _ <- send(randomNodes.drop(10)).delayExecution(kademliaTimeout + 50.millis)
+        _ <- send(randomNodes.drop(10)).delayExecution(config.kademliaTimeout + 50.millis)
 
         nodes <- finding.join
       } yield {
@@ -233,10 +237,12 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "collect responses up to the bucket size" in test {
     new Fixture {
-      override val kademliaTimeout: FiniteDuration = 7.seconds
-      override val kademliaBucketSize: Int = 16
+      override lazy val config = defaultConfig.copy(
+        kademliaTimeout = 7.seconds,
+        kademliaBucketSize = 16
+      )
 
-      val randomGroups = List.fill(kademliaBucketSize + 6)(randomNode).grouped(6).toList
+      val randomGroups = List.fill(config.kademliaBucketSize + 6)(randomNode).grouped(6).toList
 
       override val test = for {
         finding <- network.findNode(remoteAddress)(remotePublicKey).start
@@ -253,16 +259,18 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
         nodes <- finding.join
       } yield {
         nodes should not be empty
-        nodes.get should have size kademliaBucketSize
-        nodes.get shouldBe randomGroups.flatten.take(kademliaBucketSize)
+        nodes.get should have size config.kademliaBucketSize
+        nodes.get shouldBe randomGroups.flatten.take(config.kademliaBucketSize)
       }
     }
   }
 
   it should "ignore expired neighbors" in test {
     new Fixture {
-      override val kademliaTimeout: FiniteDuration = 7.seconds
-      override val kademliaBucketSize: Int = 16
+      override lazy val config = defaultConfig.copy(
+        kademliaTimeout = 7.seconds,
+        kademliaBucketSize = 16
+      )
 
       override val test = for {
         finding <- network.findNode(remoteAddress)(remotePublicKey).start
@@ -434,12 +442,14 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "close idle channels" in test {
     new Fixture {
-      override val messageExpiration: FiniteDuration = 500.millis
+      override lazy val config = defaultConfig.copy(
+        messageExpiration = 500.millis
+      )
 
       override val test = for {
         _ <- network.startHandling(StubDiscoveryRPC())
         channel <- peerGroup.createServerChannel(from = remoteAddress)
-        _ <- Task.sleep(messageExpiration + 100.millis)
+        _ <- Task.sleep(config.messageExpiration + 100.millis)
       } yield {
         channel.isClosed shouldBe true
       }
@@ -494,7 +504,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "respond with multiple unexpired Neighbors each within the packet size limit, in total no more than the bucket size, if the handler returns Some Nodes" in test {
     new Fixture {
-      val randomNodes = List.fill(kademliaBucketSize * 2)(randomNode)
+      val randomNodes = List.fill(config.kademliaBucketSize * 2)(randomNode)
 
       override val test = for {
         _ <- network.startHandling {
@@ -528,7 +538,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
               nodes
           }
         }
-        nodes.flatten shouldBe randomNodes.take(kademliaBucketSize)
+        nodes.flatten shouldBe randomNodes.take(config.kademliaBucketSize)
       }
     }
   }
@@ -729,14 +739,18 @@ object DiscoveryNetworkSpec extends Matchers {
       tcpPort = address.getPort
     )
 
+  val defaultConfig = DiscoveryConfig(
+    requestTimeout = 100.millis,
+    messageExpiration = 60.seconds,
+    kademliaTimeout = 250.millis,
+    kademliaBucketSize = 16
+  )
+
   trait Fixture {
     // Implement `test` to assert something.
     def test: Task[Assertion]
 
-    val requestTimeout = 100.millis
-    val messageExpiration = 60.seconds
-    val kademliaTimeout = 250.millis
-    val kademliaBucketSize = 16
+    lazy val config = defaultConfig
 
     lazy val localAddress = aRandomAddress
     // Keys for the System Under Test.
@@ -776,17 +790,14 @@ object DiscoveryNetworkSpec extends Matchers {
         peerGroup = peerGroup,
         privateKey = privateKey,
         toNodeAddress = toNodeAddress,
-        messageExpiration = messageExpiration,
-        requestTimeout = requestTimeout,
-        kademliaTimeout = kademliaTimeout,
-        kademliaBucketSize = kademliaBucketSize
+        config = config
       ).runSyncUnsafe()
 
     def assertExpirationSet(expiration: Long) =
-      expiration shouldBe (System.currentTimeMillis + messageExpiration.toMillis) +- 3000
+      expiration shouldBe (System.currentTimeMillis + config.messageExpiration.toMillis) +- 3000
 
     def validExpiration =
-      System.currentTimeMillis + messageExpiration.toMillis
+      System.currentTimeMillis + config.messageExpiration.toMillis
 
     // Anything in the past is invalid.
     def invalidExpiration =

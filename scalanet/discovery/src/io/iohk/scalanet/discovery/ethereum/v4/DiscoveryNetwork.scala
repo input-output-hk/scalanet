@@ -42,20 +42,14 @@ object DiscoveryNetwork {
       peerGroup: PeerGroup[A, Packet],
       privateKey: PrivateKey,
       toNodeAddress: A => Node.Address,
-      messageExpiration: FiniteDuration = 60.seconds,
-      // Timeout for individual requests.
-      requestTimeout: FiniteDuration = 3.seconds,
-      // Timeout for collecting multiple potential Neighbors responses.
-      kademliaTimeout: FiniteDuration = 7.seconds,
-      // Max number of neighbours to expect.
-      kademliaBucketSize: Int = 16
+      config: DiscoveryConfig
   )(implicit codec: Codec[Payload], sigalg: SigAlg, clock: Clock[Task]): Task[DiscoveryNetwork[A]] = Task {
     new DiscoveryNetwork[A] with LazyLogging {
 
       import DiscoveryRPC.ENRSeq
       import Payload._
 
-      private val expirationMillis = messageExpiration.toMillis
+      private val expirationMillis = config.messageExpiration.toMillis
 
       private val currentTimeMillis = clock.realTime(MILLISECONDS)
 
@@ -102,7 +96,7 @@ object DiscoveryNetwork {
         channel
           .nextMessage()
           .withCancelToken(cancelToken)
-          .timeout(messageExpiration) // Messages older than this would be ignored anyway.
+          .timeout(config.messageExpiration) // Messages older than this would be ignored anyway.
           .toIterant
           .mapEval {
             case MessageReceived(packet) =>
@@ -159,7 +153,7 @@ object DiscoveryNetwork {
               handler.findNode(caller)(target)
             } { nodes =>
               nodes
-                .take(kademliaBucketSize)
+                .take(config.kademliaBucketSize)
                 .grouped(maxNeighborsPerPacket)
                 .toList
                 .traverse { group =>
@@ -226,11 +220,11 @@ object DiscoveryNetwork {
         (target: PublicKey) =>
           peerGroup.client(to).use { channel =>
             channel.send(FindNode(target, 0)).flatMap { _ =>
-              channel.collectAndFoldResponses(kademliaTimeout, Vector.empty[Node]) {
+              channel.collectAndFoldResponses(config.kademliaTimeout, Vector.empty[Node]) {
                 case Neighbors(nodes, _) => nodes
               } { (acc, nodes) =>
-                val found = (acc ++ nodes).take(kademliaBucketSize)
-                if (found.size < kademliaBucketSize) Left(found) else Right(found)
+                val found = (acc ++ nodes).take(config.kademliaBucketSize)
+                if (found.size < config.kademliaBucketSize) Left(found) else Right(found)
               }
             }
           }
@@ -268,7 +262,7 @@ object DiscoveryNetwork {
         )(pf: PartialFunction[Payload.Response, T]): Iterant[Task, T] =
           channel
             .nextMessage()
-            .timeoutL(Task(requestTimeout.min(deadline.timeLeft)))
+            .timeoutL(Task(config.requestTimeout.min(deadline.timeLeft)))
             .toIterant
             .collect {
               case MessageReceived(packet) => packet
@@ -304,7 +298,7 @@ object DiscoveryNetwork {
         /** Collect the first response that matches the partial function or return None if one cannot be found */
         def collectFirstResponse[T](pf: PartialFunction[Payload.Response, T]): Task[Option[T]] =
           channel
-            .collectResponses(requestTimeout.fromNow)(pf)
+            .collectResponses(config.requestTimeout.fromNow)(pf)
             .headOptionL
             .onErrorRecover {
               case NonFatal(ex) => None
