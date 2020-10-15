@@ -244,7 +244,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     )
     override lazy val rpc = unimplementedRPC.copy(
       ping = _ => _ => Task.pure(Some(None)),
-      enrRequest = _ => _ => Task.pure(None)
+      enrRequest = _ => _ => Task.pure(Some(remoteENR))
     )
   }
 
@@ -295,7 +295,17 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
-  it should "fetch the ENR once bonded" in (pending)
+  it should "fetch the ENR once bonded" in test {
+    new BondingFixture {
+      override val test = for {
+        _ <- service.bond(remotePeer)
+        state <- stateRef.get
+      } yield {
+        state.enrMap(remotePublicKey) shouldBe remoteENR
+        state.nodeMap should contain key (remotePublicKey)
+      }
+    }
+  }
 
   behavior of "fetchEnr"
   it should "only initiate one fetch at a time" in (pending)
@@ -392,6 +402,7 @@ object DiscoveryServiceSpec {
     lazy val (remotePublicKey, remotePrivateKey) = randomKeyPair
     lazy val remoteNode = makeNode(remotePublicKey, remoteAddress)
     lazy val remotePeer = Peer(remotePublicKey, remoteAddress)
+    lazy val remoteENR = EthereumNodeRecord.fromNode(remoteNode, remotePrivateKey, seq = 1).require
 
     lazy val stateRef = Ref.unsafe[Task, DiscoveryService.State[InetSocketAddress]](
       DiscoveryService.State[InetSocketAddress](localNode, localENR)

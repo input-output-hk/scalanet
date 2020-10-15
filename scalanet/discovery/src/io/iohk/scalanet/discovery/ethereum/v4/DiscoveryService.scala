@@ -10,7 +10,8 @@ import java.net.InetAddress
 import monix.eval.Task
 import scala.concurrent.duration._
 import scala.util.control.NonFatal
-import scodec.Codec
+import scodec.{Codec, Attempt}
+import com.typesafe.scalalogging.LazyLogging
 
 /** Represent the minimal set of operations the rest of the system
   * can expect from the service to be able to talk to other peers.
@@ -121,6 +122,15 @@ object DiscoveryService {
 
     def clearBondingResults(peer: Peer[A]): State[A] =
       copy(bondingResultsMap = bondingResultsMap - peer)
+
+    def removePeer(peer: Peer[A]): State[A] =
+      copy(
+        nodeMap = nodeMap - peer.id,
+        enrMap = enrMap - peer.id,
+        lastPongTimestampMap = lastPongTimestampMap - peer,
+        bondingResultsMap = bondingResultsMap - peer,
+        kBuckets = kBuckets.remove(peer.id)
+      )
   }
   protected[v4] object State {
     def apply[A](
@@ -144,7 +154,8 @@ object DiscoveryService {
       config: DiscoveryConfig
   )(implicit clock: Clock[Task], sigalg: SigAlg, enrCodec: Codec[EthereumNodeRecord.Content])
       extends DiscoveryService
-      with DiscoveryRPC[Peer[A]] {
+      with DiscoveryRPC[Peer[A]]
+      with LazyLogging {
 
     override def getNode(nodeId: NodeId): Task[Option[Node]] = ???
     override def getNodes: Task[Set[Node]] = ???
@@ -335,13 +346,43 @@ object DiscoveryService {
       } yield ()
 
     /** Fetch a fresh ENR from the peer and store it. */
-    protected[v4] def fetchEnr(peer: Peer[A]): Task[Option[EthereumNodeRecord]] =
+    protected[v4] def fetchEnr(peer: Peer[A]): Task[Unit] =
       rpc.enrRequest(peer)(()).flatMap {
         case None =>
-          Task.pure(None)
+          Task.unit
 
         case Some(enr) =>
-          ???
+          EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
+            case Attempt.Successful(true) =>
+              tryUpdateEnr(peer, enr)
+
+            case Attempt.Successful(false) =>
+              Task(logger.debug("Could not validate ENR signature!")) >>
+                removePeer(peer)
+
+            case Attempt.Failure(err) =>
+              Task(logger.error(s"Error validateing ENR: $err"))
+          }
       }
+
+    /** Try to extract the node address from the ENR record and update the node database,
+      * otherwise if there's no address we can use remove the peer.
+      */
+    protected[v4] def tryUpdateEnr(peer: Peer[A], enr: EthereumNodeRecord): Task[Unit] =
+      Node.Address.fromEnr(enr) match {
+        case None =>
+          Task(logger.debug(s"Could not extract node address from $enr")) >> removePeer(peer)
+        case Some(address) =>
+          stateRef.update { state =>
+            state.copy(
+              enrMap = state.enrMap.updated(peer.id, enr),
+              nodeMap = state.nodeMap.updated(peer.id, Node(peer.id, address))
+            )
+          }
+      }
+
+    /** Forget everything about this peer. */
+    protected[v4] def removePeer(peer: Peer[A]): Task[Unit] =
+      stateRef.update(_.removePeer(peer))
   }
 }
