@@ -3,7 +3,7 @@ package io.iohk.scalanet.discovery.ethereum.v4
 import cats.effect.{Clock, Resource}
 import cats.effect.concurrent.{Deferred, Ref}
 import cats.implicits._
-import io.iohk.scalanet.discovery.crypto.{PublicKey, SigAlg}
+import io.iohk.scalanet.discovery.crypto.{PublicKey, PrivateKey, SigAlg}
 import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord}
 import io.iohk.scalanet.kademlia.KBuckets
 import java.net.InetAddress
@@ -38,7 +38,7 @@ trait DiscoveryService {
   /** Update the local node with an updated external address,
     * incrementing the local ENR sequence.
     */
-  def updateExternalAddress(address: InetAddress): Task[Unit]
+  def updateExternalAddress(ip: InetAddress): Task[Unit]
 
   /** The local node representation. */
   def getLocalNode: Task[Node]
@@ -65,18 +65,22 @@ object DiscoveryService {
     * - periodically ping nodes
     */
   def apply[A](
+      privateKey: PrivateKey,
       node: Node,
       enr: EthereumNodeRecord,
-      network: DiscoveryNetwork[A],
       config: DiscoveryConfig,
       bootstraps: Set[Node],
+      network: DiscoveryNetwork[A],
       toAddress: Node.Address => A
-  )(implicit sigalg: SigAlg, enrCodec: Codec[EthereumNodeRecord.Content]): Resource[Task, DiscoveryService] =
+  )(
+      implicit sigalg: SigAlg,
+      enrCodec: Codec[EthereumNodeRecord.Content]
+  ): Resource[Task, DiscoveryService] =
     Resource
       .make {
         for {
           stateRef <- Ref[Task].of(State[A](node, enr))
-          service <- Task(new ServiceImpl[A](network, stateRef, config, toAddress))
+          service <- Task(new ServiceImpl[A](privateKey, config, network, stateRef, toAddress))
           // Start handling requests, we need them during enrolling so the peers can ping and bond with us.
           cancelToken <- network.startHandling(service)
           // Contact the bootstrap nodes.
@@ -198,12 +202,16 @@ object DiscoveryService {
   }
 
   protected[v4] class ServiceImpl[A](
+      privateKey: PrivateKey,
+      config: DiscoveryConfig,
       rpc: DiscoveryRPC[Peer[A]],
       stateRef: StateRef[A],
-      config: DiscoveryConfig,
       toAddress: Node.Address => A
-  )(implicit clock: Clock[Task], sigalg: SigAlg, enrCodec: Codec[EthereumNodeRecord.Content])
-      extends DiscoveryService
+  )(
+      implicit clock: Clock[Task],
+      sigalg: SigAlg,
+      enrCodec: Codec[EthereumNodeRecord.Content]
+  ) extends DiscoveryService
       with DiscoveryRPC[Peer[A]]
       with LazyLogging {
 
@@ -237,7 +245,21 @@ object DiscoveryService {
         if (state.node.id == nodeId) state else state.removePeer(nodeId)
       }
 
-    override def updateExternalAddress(address: InetAddress): Task[Unit] = ???
+    override def updateExternalAddress(ip: InetAddress): Task[Unit] = {
+      stateRef.update { state =>
+        val node = Node(
+          state.node.id,
+          Node.Address(ip, udpPort = state.node.address.udpPort, tcpPort = state.node.address.tcpPort)
+        )
+        val enr = EthereumNodeRecord.fromNode(node, privateKey, state.enr.content.seq + 1).require
+        state.copy(
+          node = node,
+          enr = enr,
+          nodeMap = state.nodeMap.updated(node.id, node),
+          enrMap = state.enrMap.updated(node.id, enr)
+        )
+      }
+    }
 
     /** Handle incoming Ping request. */
     override def ping: Call[Peer[A], Proc.Ping] =

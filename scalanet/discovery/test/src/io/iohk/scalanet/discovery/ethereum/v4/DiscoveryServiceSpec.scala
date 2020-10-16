@@ -16,6 +16,7 @@ import monix.execution.atomic.AtomicInt
 import org.scalatest._
 import scala.concurrent.duration._
 import scala.util.Random
+import java.net.InetAddress
 
 class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   import DiscoveryService.{State, BondingResults}
@@ -831,8 +832,20 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   }
 
   behavior of "updateExternalAddress"
-  it should "update the address of the local node" in (pending)
-  it should "increment the local ENR sequence" in (pending)
+
+  it should "update the address of the local node and increment the ENR sequence" in test {
+    new Fixture {
+      val newIP = InetAddress.getByName("iohk.io")
+
+      override val test = for {
+        _ <- service.updateExternalAddress(newIP)
+        state <- stateRef.get
+      } yield {
+        state.node.address.ip shouldBe newIP
+        state.enr.content.seq shouldBe (localENR.content.seq + 1)
+      }
+    }
+  }
 
   behavior of "getLocalNode"
 
@@ -897,10 +910,12 @@ object DiscoveryServiceSpec {
 
     lazy val rpc = unimplementedRPC
 
+    // Only using `new` for testing, normally we'd use it as a Resource with `apply`.
     lazy val service = new DiscoveryService.ServiceImpl[InetSocketAddress](
+      localPrivateKey,
+      config,
       rpc,
       stateRef,
-      config,
       toAddress = nodeAddressToInetSocketAddress
     )
   }

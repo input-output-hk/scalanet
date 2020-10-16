@@ -15,6 +15,9 @@ case class EthereumNodeRecord(
 )
 
 object EthereumNodeRecord {
+  implicit val byteOrdering: Ordering[ByteVector] =
+    Ordering.by[ByteVector, Iterable[Byte]](_.toIterable)
+
   case class Content(
       // Nodes should increment this number whenever their properties change, like their address, and re-publish.
       seq: Long,
@@ -52,8 +55,7 @@ object EthereumNodeRecord {
 
   def fromNode(node: Node, privateKey: PrivateKey, seq: Long)(
       implicit sigalg: SigAlg,
-      codec: Codec[Content],
-      ordering: Ordering[ByteVector]
+      codec: Codec[Content]
   ): Attempt[EthereumNodeRecord] = {
     val content = Content(
       seq,
