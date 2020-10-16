@@ -398,28 +398,24 @@ object DiscoveryService {
       } yield maybeExistingResults
 
     protected[v4] def updateLastPongTime(peer: Peer[A]): Task[Unit] =
-      for {
-        now <- currentTimeMillis
-        _ <- stateRef.update { state =>
+      currentTimeMillis.flatMap { now =>
+        stateRef.update { state =>
           state.withLastPongTimestamp(peer, now)
         }
-      } yield ()
+      }
 
     /** Update the bonding state of the peer with the result,
       * notifying all potentially waiting bonding processes about the outcome.
       */
-    protected[v4] def completePong(peer: Peer[A], responded: Boolean): Task[Unit] = {
-      for {
-        _ <- stateRef
-          .modify { state =>
-            val maybePongReceived = state.bondingResultsMap.get(peer).map(_.pongReceived)
-            state.clearBondingResults(peer) -> maybePongReceived
-          }
-          .flatMap { maybePongReceived =>
-            maybePongReceived.fold(Task.unit)(_.complete(responded))
-          }
-      } yield ()
-    }
+    protected[v4] def completePong(peer: Peer[A], responded: Boolean): Task[Unit] =
+      stateRef
+        .modify { state =>
+          val maybePongReceived = state.bondingResultsMap.get(peer).map(_.pongReceived)
+          state.clearBondingResults(peer) -> maybePongReceived
+        }
+        .flatMap { maybePongReceived =>
+          maybePongReceived.fold(Task.unit)(_.complete(responded))
+        }
 
     /** Allow the remote peer to ping us during bonding, so that we can have a more
       * fungible expectation that if we send a message they will consider us bonded and
@@ -623,7 +619,7 @@ object DiscoveryService {
           Task.pure(closest)
         else {
           Task
-            .traverse(contact) { node =>
+            .parTraverseUnordered(contact) { node =>
               val peer = toPeer(node)
               bond(peer).flatMap {
                 case true =>
