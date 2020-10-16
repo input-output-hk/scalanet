@@ -166,6 +166,19 @@ object DiscoveryService {
         bondingResultsMap = bondingResultsMap - peer,
         kBuckets = kBuckets.remove(peer.id)
       )
+
+    def removePeer(peerId: NodeId): State[A] =
+      copy(
+        nodeMap = nodeMap - peerId,
+        enrMap = enrMap - peerId,
+        lastPongTimestampMap = lastPongTimestampMap.filterNot {
+          case (peer, _) => peer.id == peerId
+        },
+        bondingResultsMap = bondingResultsMap.filterNot {
+          case (peer, _) => peer.id == peerId
+        },
+        kBuckets = kBuckets.remove(peerId)
+      )
   }
   protected[v4] object State {
     def apply[A](
@@ -219,7 +232,11 @@ object DiscoveryService {
         }
       }
 
-    override def removeNode(nodeId: NodeId): Task[Unit] = ???
+    override def removeNode(nodeId: NodeId): Task[Unit] =
+      stateRef.update { state =>
+        if (state.node.id == nodeId) state else state.removePeer(nodeId)
+      }
+
     override def updateExternalAddress(address: InetAddress): Task[Unit] = ???
 
     /** Handle incoming Ping request. */

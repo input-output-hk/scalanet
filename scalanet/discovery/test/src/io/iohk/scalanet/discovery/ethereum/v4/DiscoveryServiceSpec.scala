@@ -798,7 +798,37 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   }
 
   behavior of "removeNode"
-  it should "remove bonded or unbonded nodes from the cache" in (pending)
+
+  it should "remove bonded or unbonded nodes from the cache" in test {
+    new Fixture {
+      override val test = for {
+        _ <- stateRef.update(
+          _.withEnrAndAddress(remotePeer, remoteENR, remoteNode.address)
+            .withLastPongTimestamp(remotePeer, System.currentTimeMillis())
+        )
+        _ <- service.removeNode(remotePublicKey)
+        state <- stateRef.get
+      } yield {
+        state.enrMap should not contain key(remotePublicKey)
+        state.nodeMap should not contain key(remotePublicKey)
+        state.lastPongTimestampMap should not contain key(remotePeer)
+        state.kBuckets.contains(remotePublicKey) shouldBe false
+      }
+    }
+  }
+
+  it should "not remove the local node" in test {
+    new Fixture {
+      override val test = for {
+        _ <- service.removeNode(localPublicKey)
+        state <- stateRef.get
+      } yield {
+        state.enrMap should contain key (localPublicKey)
+        state.nodeMap should contain key (localPublicKey)
+        state.kBuckets.contains(localPublicKey) shouldBe true
+      }
+    }
+  }
 
   behavior of "updateExternalAddress"
   it should "update the address of the local node" in (pending)
