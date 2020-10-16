@@ -304,7 +304,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     new BondingFixture {
       override val test = for {
         _ <- service.bond(remotePeer)
-        _ <- stateRef.get.flatMap(_.fetchEnrMap.get(remotePeer).fold(Task.sleep(100.millis))(_.get))
+        _ <- stateRef.get.flatMap(_.fetchEnrMap.get(remotePeer).fold(Task.sleep(100.millis))(_.get.void))
         state <- stateRef.get
       } yield {
         state.enrMap(remotePublicKey) shouldBe remoteENR
@@ -511,7 +511,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       override val test = for {
         maybeEnrSeq <- service.ping(remotePeer)(None)
         _ <- stateRef.get.flatMap(_.bondingResultsMap.get(remotePeer).fold(Task.unit)(_.pongReceived.get.void))
-        _ <- stateRef.get.flatMap(_.fetchEnrMap.get(remotePeer).fold(Task.unit)(_.get))
+        _ <- stateRef.get.flatMap(_.fetchEnrMap.get(remotePeer).fold(Task.unit)(_.get.void))
         state <- stateRef.get
       } yield {
         maybeEnrSeq shouldBe Some(Some(localENR.content.seq))
@@ -586,6 +586,8 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   trait LookupFixture extends Fixture {
     val (targetPublicKey, _) = sigalg.newKeyPair
 
+    lazy val expectedTarget: Option[PublicKey] = Some(targetPublicKey)
+
     def newRandomNode = {
       val (publicKey, privateKey) = sigalg.newKeyPair
       val address = aRandomAddress
@@ -605,16 +607,19 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       enrRequest = peer =>
         _ =>
           Task.pure {
-            randomNodes.find(_._1.id == peer.id).map(_._2)
+            ((remoteNode -> remoteENR) +: randomNodes).find(_._1.id == peer.id).map(_._2)
           },
       findNode = _ =>
-        _ =>
-          Task.pure {
-            Some(Random.shuffle(randomNodes).take(config.kademliaBucketSize).map(_._1))
-          }
+        targetPublicKey =>
+          Task {
+            expectedTarget.foreach(targetPublicKey shouldBe _)
+          } >>
+            Task.pure {
+              Some(Random.shuffle(randomNodes).take(config.kademliaBucketSize).map(_._1))
+            }
     )
 
-    def initState = stateRef.update {
+    def addRemotePeer = stateRef.update {
       _.withEnrAndAddress(remotePeer, remoteENR, remoteNode.address)
     }
   }
@@ -622,7 +627,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "bond with nodes during recursive lookups before contacting them" in test {
     new LookupFixture {
       override val test = for {
-        _ <- initState
+        _ <- addRemotePeer
         _ <- service.lookup(targetPublicKey)
         state <- stateRef.get
       } yield {
@@ -642,7 +647,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         .take(config.kademliaBucketSize)
 
       override val test = for {
-        _ <- initState
+        _ <- addRemotePeer
         closestNodes <- service.lookup(targetPublicKey)
         state <- stateRef.get
       } yield {
@@ -654,7 +659,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "fetch the ENR records of the nodes encountered" in test {
     new LookupFixture {
       override val test = for {
-        _ <- initState
+        _ <- addRemotePeer
         closestNodes <- service.lookup(targetPublicKey)
         fetching <- stateRef.get.map {
           _.fetchEnrMap.values.toList.map(_.get)
@@ -674,8 +679,10 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   it should "lookup a random node" in test {
     new LookupFixture {
+      override lazy val expectedTarget = None
+
       override val test = for {
-        _ <- initState
+        _ <- addRemotePeer
         _ <- service.lookupRandom()
         state <- stateRef.get
       } yield {
@@ -685,8 +692,33 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   }
 
   behavior of "enroll"
-  it should "perform a self-lookup with the bootstrap nodes" in (pending)
-  it should "fail if it cannot retrieve any ENRs" in (pending)
+
+  it should "perform a self-lookup with the bootstrap nodes" in test {
+    new LookupFixture {
+      override lazy val expectedTarget = Some(localNode.id)
+
+      override val test = for {
+        enrolled <- service.enroll(Set(remoteNode))
+        state <- stateRef.get
+      } yield {
+        enrolled shouldBe true
+        state.lastPongTimestampMap.size should be > 1
+      }
+    }
+  }
+
+  it should "return false if it cannot retrieve any ENRs" in test {
+    new Fixture {
+      override lazy val rpc = unimplementedRPC.copy(
+        enrRequest = _ => _ => Task.pure(None)
+      )
+      override val test = for {
+        enrolled <- service.enroll(Set(remoteNode))
+      } yield {
+        enrolled shouldBe false
+      }
+    }
+  }
 
   behavior of "getNode"
   it should "return the local node" in (pending)

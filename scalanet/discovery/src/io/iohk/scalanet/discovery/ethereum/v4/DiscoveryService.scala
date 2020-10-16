@@ -69,6 +69,7 @@ object DiscoveryService {
       enr: EthereumNodeRecord,
       network: DiscoveryNetwork[A],
       config: DiscoveryConfig,
+      bootstraps: Set[Node],
       toAddress: Node.Address => A
   )(implicit sigalg: SigAlg, enrCodec: Codec[EthereumNodeRecord.Content]): Resource[Task, DiscoveryService] =
     Resource
@@ -76,11 +77,13 @@ object DiscoveryService {
         for {
           stateRef <- Ref[Task].of(State[A](node, enr))
           service <- Task(new ServiceImpl[A](network, stateRef, config, toAddress))
-          // Start handling requests, we need them to enroll.
+          // Start handling requests, we need them during enrolling so the peers can ping and bond with us.
           cancelToken <- network.startHandling(service)
           // Contact the bootstrap nodes.
-          _ <- service.enroll().loopForever
+          _ <- service.enroll(bootstraps).whenA(bootstraps.nonEmpty)
+          // Periodically discover new nodes.
           discoveryFiber <- service.lookupRandom().delayExecution(config.discoveryPeriod).loopForever.start
+          // TODO: Periodically ping peers before they become unbonded.
         } yield (service, cancelToken, discoveryFiber)
       } {
         case (_, cancelToken, discoveryFiber) =>
@@ -105,6 +108,8 @@ object DiscoveryService {
       BondingResults(Deferred.unsafe[Task, Boolean], Deferred.unsafe[Task, Unit])
   }
 
+  protected[v4] type FetchEnrResult = Deferred[Task, Option[EthereumNodeRecord]]
+
   protected[v4] case class State[A](
       node: Node,
       enr: EthereumNodeRecord,
@@ -117,7 +122,7 @@ object DiscoveryService {
       // Deferred results so we can ensure there's only one concurrent Ping to a given peer.
       bondingResultsMap: Map[Peer[A], BondingResults],
       // Deferred ENR fetches so we only do one at a time to a given peer.
-      fetchEnrMap: Map[Peer[A], Deferred[Task, Unit]]
+      fetchEnrMap: Map[Peer[A], FetchEnrResult]
   ) {
     def isSelf(peer: Peer[A]): Boolean =
       peer.id == node.id
@@ -147,7 +152,7 @@ object DiscoveryService {
     def clearBondingResults(peer: Peer[A]): State[A] =
       copy(bondingResultsMap = bondingResultsMap - peer)
 
-    def withEnrFetch(peer: Peer[A], result: Deferred[Task, Unit]): State[A] =
+    def withEnrFetch(peer: Peer[A], result: FetchEnrResult): State[A] =
       copy(fetchEnrMap = fetchEnrMap.updated(peer, result))
 
     def clearEnrFetch(peer: Peer[A]): State[A] =
@@ -175,7 +180,7 @@ object DiscoveryService {
       enrMap = Map(node.id -> enr),
       lastPongTimestampMap = Map.empty[Peer[A], Timestamp],
       bondingResultsMap = Map.empty[Peer[A], BondingResults],
-      fetchEnrMap = Map.empty[Peer[A], Deferred[Task, Unit]]
+      fetchEnrMap = Map.empty[Peer[A], FetchEnrResult]
     )
   }
 
@@ -230,6 +235,9 @@ object DiscoveryService {
     // The methods below are `protected[v4]` so that they can be called from tests individually.
     // Initially they were in the companion object as pure functions but there are just too many
     // parameters to pass around.
+
+    protected[v4] def toPeer(node: Node): Peer[A] =
+      Peer(node.id, toAddress(node.address))
 
     protected[v4] def currentTimeMillis: Task[Long] =
       clock.realTime(MILLISECONDS)
@@ -403,10 +411,10 @@ object DiscoveryService {
       } yield ()
 
     /** Fetch a fresh ENR from the peer and store it. */
-    protected[v4] def fetchEnr(peer: Peer[A]): Task[Unit] = {
+    protected[v4] def fetchEnr(peer: Peer[A]): Task[Option[EthereumNodeRecord]] = {
       val waitOrFetch =
         for {
-          d <- Deferred[Task, Unit]
+          d <- Deferred[Task, Option[EthereumNodeRecord]]
           decision <- stateRef.modify { state =>
             state.fetchEnrMap.get(peer) match {
               case Some(d) =>
@@ -428,7 +436,7 @@ object DiscoveryService {
               case None =>
                 // At this point we are still bonded with the peer, so they think they can send us requests.
                 // We just have to keep trying to get an ENR for them, until then we can't use them for routing.
-                Task(logger.warn(s"Could not fetch ENR from ${peer.address}"))
+                Task(logger.warn(s"Could not fetch ENR from ${peer.address}")).as(None)
 
               case Some(enr) =>
                 EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
@@ -438,7 +446,7 @@ object DiscoveryService {
                     Node.Address.fromEnr(enr) match {
                       case None =>
                         Task(logger.debug(s"Could not extract node address from $enr")) >>
-                          removePeer(peer)
+                          removePeer(peer).as(None)
 
                       case Some(address) =>
                         maybeStorePeer(peer, enr, address)
@@ -446,21 +454,25 @@ object DiscoveryService {
 
                   case Attempt.Successful(false) =>
                     Task(logger.debug("Could not validate ENR signature!")) >>
-                      removePeer(peer)
+                      removePeer(peer).as(None)
 
                   case Attempt.Failure(err) =>
-                    Task(logger.error(s"Error validateing ENR: $err"))
+                    Task(logger.error(s"Error validateing ENR: $err")).as(None)
                 }
             }
-            .guarantee {
-              stateRef.update(_.clearEnrFetch(peer)) >>
-                fetch.complete(())
-            }
+            .flatTap(fetch.complete)
+            .guarantee(stateRef.update(_.clearEnrFetch(peer)))
       }
     }
 
-    /** See if the bucket the node would fit into isn't already full. If it is, try to evict the least recently seen peer. */
-    protected[v4] def maybeStorePeer(peer: Peer[A], enr: EthereumNodeRecord, address: Node.Address): Task[Unit] = {
+    /** See if the bucket the node would fit into isn't already full. If it is, try to evict the least recently seen peer.
+      * Returns None if the record was discarded or Some if it was stored.
+      */
+    protected[v4] def maybeStorePeer(
+        peer: Peer[A],
+        enr: EthereumNodeRecord,
+        address: Node.Address
+    ): Task[Option[EthereumNodeRecord]] = {
       stateRef
         .modify { state =>
           if (state.isSelf(peer))
@@ -478,9 +490,10 @@ object DiscoveryService {
         }
         .flatMap {
           case None =>
-            Task.unit
+            Task.pure(Some(enr))
+
           case Some(evictionCandidate) =>
-            val evictionPeer = Peer(evictionCandidate.id, toAddress(evictionCandidate.address))
+            val evictionPeer = toPeer(evictionCandidate)
             pingAndMaybeUpdateTimestamp(evictionPeer).map(_.isDefined).flatMap {
               case true =>
                 // Keep the existing record, discard the new.
@@ -489,7 +502,7 @@ object DiscoveryService {
                 // lookups, but won't return the peer itself in results.
                 // A more sophisticated approach would be to put them in a separate replacement
                 // cache for the bucket where they can be drafted from if someone cannot bond again.
-                stateRef.update(_.withTouch(evictionPeer))
+                stateRef.update(_.withTouch(evictionPeer)).as(None)
               case false =>
                 // Get rid of the non-responding peer and add the new one
                 // then try to add this one again (something else might be trying as well,
@@ -544,7 +557,7 @@ object DiscoveryService {
         else {
           Task
             .traverse(contact) { node =>
-              val peer = Peer(node.id, toAddress(node.address))
+              val peer = toPeer(node)
               bond(peer).flatMap {
                 case true =>
                   rpc.findNode(peer)(target).recoverWith {
@@ -573,10 +586,35 @@ object DiscoveryService {
     protected[v4] def lookupRandom(): Task[Unit] =
       lookup(target = sigalg.newKeyPair._1).void
 
-    /** Look up self with the bootstrap nodes. That should involve bonding with the bootstraps.
-      * Raise an error if in the end we failed to get the ENR from any node as that would mean
-      * that we won't be able to participate in discovery.
+    /** Look up self with the bootstrap nodes. First we have to fetch their ENR
+      * records to verify they are reachable and so that they can participate
+      * in the lookup.
+      *
+      * Return `true` if we managed to get the ENR with at least one boostrap
+      * or `false` if none of them responded with a correct ENR,
+      * which would mean we don't have anyone to do lookups with.
       */
-    protected[v4] def enroll(): Task[Unit] = ???
+    protected[v4] def enroll(boostrapNodes: Set[Node]): Task[Boolean] =
+      if (boostrapNodes.isEmpty)
+        Task.pure(false)
+      else {
+        val tryEnroll = for {
+          nodeId <- stateRef.get.map(_.node.id)
+          bootstrapPeers = boostrapNodes.toList.map(toPeer).filterNot(_.id == nodeId)
+          maybeBootstrapEnrs <- bootstrapPeers.traverse(fetchEnr)
+          result <- if (maybeBootstrapEnrs.exists(_.isDefined)) {
+            lookup(nodeId).as(true)
+          } else {
+            Task.pure(false)
+          }
+        } yield result
+
+        tryEnroll.flatTap {
+          case true =>
+            Task(logger.info("Successfully enrolled with the bootstrap nodes."))
+          case false =>
+            Task(logger.warn("Failed to enroll with the bootstrap nodes."))
+        }
+      }
   }
 }
