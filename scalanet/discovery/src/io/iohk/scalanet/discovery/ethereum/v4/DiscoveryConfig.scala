@@ -15,6 +15,8 @@ case class DiscoveryConfig(
     kademliaTimeout: FiniteDuration,
     // Max number of neighbours to expect.
     kademliaBucketSize: Int,
+    // Concurrencly parameter 'alpha' for recursive Kademlia lookups.
+    kademliaAlpha: Int,
     // Maximum time we consider a peer bonded without receiving a Pong response to a Ping.
     bondExpiration: FiniteDuration,
     // How often to look for new peers.
@@ -28,6 +30,7 @@ object DiscoveryConfig {
     requestTimeout = 3.seconds,
     kademliaTimeout = 7.seconds,
     kademliaBucketSize = 16,
+    kademliaAlpha = 3,
     bondExpiration = 12.hours,
     discoveryPeriod = 15.minutes
   )

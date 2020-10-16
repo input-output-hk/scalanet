@@ -578,6 +578,18 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
+  behavior of "lookup"
+  it should "bond with nodes while doing recursive lookups while contacting them" in (pending)
+  it should "return the k closest nodes to the target" in (pending)
+  it should "fetch the ENR records of the nodes encountered" in (pending)
+
+  behavior of "lookupRandom"
+  it should "lookup a random node" in (pending)
+
+  behavior of "enroll"
+  it should "perform a self-lookup with the bootstrap nodes" in (pending)
+  it should "fail if it cannot retrieve any ENRs" in (pending)
+
   behavior of "getNode"
   it should "return the local node" in (pending)
   it should "not return a nodes which is not bonded" in (pending)
@@ -602,17 +614,6 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   behavior of "localNode"
   it should "return the latest local node record" in (pending)
-
-  behavior of "enroll"
-  it should "perform a self-lookup with the bootstrap nodes" in (pending)
-
-  behavior of "lookupRandom"
-  it should "lookup a random node" in (pending)
-
-  behavior of "lookup"
-  it should "bond with nodes while doing recursive lookups before contacting them" in (pending)
-  it should "return the node seeked or nothing" in (pending)
-  it should "fetch the ENR record of the node" in (pending)
 }
 
 object DiscoveryServiceSpec {

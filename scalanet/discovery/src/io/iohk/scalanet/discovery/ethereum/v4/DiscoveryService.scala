@@ -12,6 +12,9 @@ import scala.concurrent.duration._
 import scala.util.control.NonFatal
 import scodec.{Codec, Attempt}
 import com.typesafe.scalalogging.LazyLogging
+import scala.collection.immutable.SortedSet
+import io.iohk.scalanet.kademlia.XorOrdering
+import scodec.bits.BitVector
 
 /** Represent the minimal set of operations the rest of the system
   * can expect from the service to be able to talk to other peers.
@@ -223,12 +226,6 @@ object DiscoveryService {
     /** Handle incoming ENRRequest. */
     override def enrRequest: Call[Peer[A], Proc.ENRRequest] =
       caller => _ => ifBonded(caller)(stateRef.get.map(_.enr))
-
-    def enroll(): Task[Unit] = ???
-
-    def lookupRandom(): Task[Unit] = ???
-
-    def lookup(nodeId: NodeId): Task[Option[Node]] = ???
 
     // The methods below are `protected[v4]` so that they can be called from tests individually.
     // Initially they were in the companion object as pure functions but there are just too many
@@ -505,5 +502,79 @@ object DiscoveryService {
     /** Forget everything about this peer. */
     protected[v4] def removePeer(peer: Peer[A]): Task[Unit] =
       stateRef.update(_.removePeer(peer))
+
+    /** Locate the k closest nodes to a node ID.
+      *
+      * https://github.com/ethereum/devp2p/blob/master/discv4.md#recursive-lookup
+      */
+    protected[v4] def lookup(target: NodeId): Task[SortedSet[Node]] = {
+      implicit val targetIdOrdering: Ordering[BitVector] =
+        new XorOrdering(target)
+
+      implicit val nodeOrder: Ordering[Node] =
+        Ordering.by[Node, BitVector](node => node.id)
+
+      // Find the 16 closest nodes we know of.
+      // We'll contact 'alpha' at a time but eventually try all of them
+      // unless better candidates are found.
+      val init = for {
+        state <- stateRef.get
+
+        closestIds = state.kBuckets
+          .closestNodes(target, config.kademliaBucketSize)
+          .map(PublicKey(_))
+
+        closestNodes = closestIds.map(state.nodeMap)
+      } yield (state.node, closestNodes)
+
+      def loop(
+          local: Node,
+          closest: SortedSet[Node],
+          asked: Set[Node]
+      ): Task[SortedSet[Node]] = {
+        // Contact the alpha closest nodes to the target that we haven't asked before.
+        val contact = closest
+          .filterNot(asked)
+          .filterNot(_.id == local.id)
+          .take(config.kademliaAlpha)
+          .toList
+
+        if (contact.isEmpty)
+          Task.pure(closest)
+        else {
+          Task
+            .traverse(contact) { node =>
+              val peer = Peer(node.id, toAddress(node.address))
+              bond(peer).flatMap {
+                case true =>
+                  rpc.findNode(peer)(target).recoverWith {
+                    case NonFatal(ex) =>
+                      Task(logger.debug(s"Failed to fetch neighbors of $target from $node: $ex")).as(None)
+                  }
+                case false =>
+                  Task(logger.debug(s"Could not bond with $node to fetch neighbors of $target")).as(None)
+              }
+            }
+            .flatMap { results =>
+              val newClosest = (closest ++ results.flatten.flatten).take(config.kademliaBucketSize)
+              val newAsked = asked ++ contact
+              loop(local, newClosest, newAsked)
+            }
+        }
+      }
+
+      init.flatMap {
+        case (localNode, closestNodes) =>
+          loop(localNode, SortedSet(closestNodes: _*), Set(localNode))
+      }
+    }
+
+    protected[v4] def lookupRandom(): Task[Unit] = ???
+
+    /** Look up self with the bootstrap nodes. That should involve bonding with the bootstraps.
+      * Raise an error if in the end we failed to get the ENR from any node as that would mean
+      * that we won't be able to participate in discovery.
+      */
+    protected[v4] def enroll(): Task[Unit] = ???
   }
 }
