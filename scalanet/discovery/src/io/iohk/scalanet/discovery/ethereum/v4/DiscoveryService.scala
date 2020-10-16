@@ -41,7 +41,7 @@ trait DiscoveryService {
   def updateExternalAddress(address: InetAddress): Task[Unit]
 
   /** The local node representation. */
-  def localNode: Task[Node]
+  def getLocalNode: Task[Node]
 }
 
 object DiscoveryService {
@@ -194,12 +194,14 @@ object DiscoveryService {
       with DiscoveryRPC[Peer[A]]
       with LazyLogging {
 
+    override def getLocalNode: Task[Node] =
+      stateRef.get.map(_.node)
+
     override def getNode(nodeId: NodeId): Task[Option[Node]] = ???
     override def getNodes: Task[Set[Node]] = ???
     override def addNode(node: Node): Task[Unit] = ???
     override def removeNode(nodeId: NodeId): Task[Unit] = ???
     override def updateExternalAddress(address: InetAddress): Task[Unit] = ???
-    override def localNode: Task[Node] = ???
 
     /** Handle incoming Ping request. */
     override def ping: Call[Peer[A], Proc.Ping] =

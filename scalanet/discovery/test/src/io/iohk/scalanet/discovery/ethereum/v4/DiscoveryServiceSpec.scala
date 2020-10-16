@@ -742,8 +742,17 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "update the address of the local node" in (pending)
   it should "increment the local ENR sequence" in (pending)
 
-  behavior of "localNode"
-  it should "return the latest local node record" in (pending)
+  behavior of "getLocalNode"
+
+  it should "return the latest local node record" in test {
+    new Fixture {
+      override val test = for {
+        node <- service.getLocalNode
+      } yield {
+        node shouldBe localNode
+      }
+    }
+  }
 }
 
 object DiscoveryServiceSpec {
