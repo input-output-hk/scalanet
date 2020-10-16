@@ -245,19 +245,29 @@ object DiscoveryService {
       }
 
     override def updateExternalAddress(ip: InetAddress): Task[Unit] = {
-      stateRef.update { state =>
-        val node = Node(
-          state.node.id,
-          Node.Address(ip, udpPort = state.node.address.udpPort, tcpPort = state.node.address.tcpPort)
-        )
-        val enr = EthereumNodeRecord.fromNode(node, privateKey, state.enr.content.seq + 1).require
-        state.copy(
-          node = node,
-          enr = enr,
-          nodeMap = state.nodeMap.updated(node.id, node),
-          enrMap = state.enrMap.updated(node.id, enr)
-        )
-      }
+      stateRef
+        .modify { state =>
+          val node = Node(
+            state.node.id,
+            Node.Address(ip, udpPort = state.node.address.udpPort, tcpPort = state.node.address.tcpPort)
+          )
+          if (node == state.node)
+            state -> Nil
+          else {
+            val enr = EthereumNodeRecord.fromNode(node, privateKey, state.enr.content.seq + 1).require
+            val notify = state.lastPongTimestampMap.keySet.toList
+            state.copy(
+              node = node,
+              enr = enr,
+              nodeMap = state.nodeMap.updated(node.id, node),
+              enrMap = state.enrMap.updated(node.id, enr)
+            ) -> notify
+          }
+        }
+        .flatMap { peers =>
+          // Send our new ENR sequence to the peers so they can pull our latest data.
+          Task.parTraverseN(config.kademliaAlpha)(peers)(pingAndMaybeUpdateTimestamp).startAndForget
+        }
     }
 
     /** Handle incoming Ping request. */

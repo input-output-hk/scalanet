@@ -880,6 +880,28 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
+  it should "ping existing peers with the new ENR seq" in test {
+    new Fixture {
+      val newIP = InetAddress.getByName("iohk.io")
+
+      override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(Some(None))
+      )
+
+      override val test = for {
+        time0 <- service.currentTimeMillis
+        _ <- stateRef.update {
+          _.withLastPongTimestamp(remotePeer, time0)
+        }
+        _ <- service.updateExternalAddress(newIP)
+        _ <- Task.sleep(250.millis) // It's running in the background.
+        state <- stateRef.get
+      } yield {
+        state.lastPongTimestampMap(remotePeer) should be > time0
+      }
+    }
+  }
+
   behavior of "getLocalNode"
 
   it should "return the latest local node record" in test {
