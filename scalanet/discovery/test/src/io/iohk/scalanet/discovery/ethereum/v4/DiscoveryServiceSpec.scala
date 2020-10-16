@@ -1,11 +1,13 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
+import cats.implicits._
 import cats.effect.concurrent.Ref
 import io.iohk.scalanet.discovery.crypto.{PublicKey, Signature}
 import io.iohk.scalanet.discovery.ethereum.{EthereumNodeRecord, Node}
 import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs
 import io.iohk.scalanet.discovery.ethereum.v4.mocks.MockSigAlg
 import io.iohk.scalanet.discovery.ethereum.v4.DiscoveryNetwork.Peer
+import io.iohk.scalanet.kademlia.Xor
 import io.iohk.scalanet.NetUtils.aRandomAddress
 import java.net.InetSocketAddress
 import monix.eval.Task
@@ -13,6 +15,7 @@ import monix.execution.Scheduler
 import monix.execution.atomic.AtomicInt
 import org.scalatest._
 import scala.concurrent.duration._
+import scala.util.Random
 
 class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   import DiscoveryService.{State, BondingResults}
@@ -579,9 +582,95 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   }
 
   behavior of "lookup"
-  it should "bond with nodes while doing recursive lookups while contacting them" in (pending)
-  it should "return the k closest nodes to the target" in (pending)
-  it should "fetch the ENR records of the nodes encountered" in (pending)
+
+  trait LookupFixture extends Fixture {
+    val (targetPublicKey, _) = sigalg.newKeyPair
+
+    def newRandomNode = {
+      val (publicKey, privateKey) = sigalg.newKeyPair
+      val address = aRandomAddress
+      val node = makeNode(publicKey, address)
+      val enr = EthereumNodeRecord.fromNode(node, privateKey, seq = 1).require
+      node -> enr
+    }
+
+    val randomNodes = List.fill(config.kademliaBucketSize * 2)(newRandomNode)
+
+    override lazy val config = defaultConfig.copy(
+      requestTimeout = 50.millis
+    )
+
+    override lazy val rpc = unimplementedRPC.copy(
+      ping = _ => _ => Task.pure(Some(None)),
+      enrRequest = peer =>
+        _ =>
+          Task.pure {
+            randomNodes.find(_._1.id == peer.id).map(_._2)
+          },
+      findNode = _ =>
+        _ =>
+          Task.pure {
+            Some(Random.shuffle(randomNodes).take(config.kademliaBucketSize).map(_._1))
+          }
+    )
+  }
+
+  it should "bond with nodes during recursive lookups before contacting them" in test {
+    new LookupFixture {
+      override val test = for {
+        _ <- stateRef.update {
+          _.withEnrAndAddress(remotePeer, remoteENR, remoteNode.address)
+        }
+        _ <- service.lookup(targetPublicKey)
+        state <- stateRef.get
+      } yield {
+        state.lastPongTimestampMap should contain key (remotePeer)
+        assert(state.lastPongTimestampMap.size > 1)
+      }
+    }
+  }
+
+  it should "return the k closest nodes to the target" in test {
+    new LookupFixture {
+      val allNodes = List(localNode -> localENR, remoteNode -> remoteENR) ++ randomNodes
+
+      val expectedNodes = allNodes
+        .map(_._1)
+        .sortBy(node => Xor.d(node.id, targetPublicKey))
+        .take(config.kademliaBucketSize)
+
+      override val test = for {
+        _ <- stateRef.update {
+          _.withEnrAndAddress(remotePeer, remoteENR, remoteNode.address)
+        }
+        closestNodes <- service.lookup(targetPublicKey)
+        state <- stateRef.get
+      } yield {
+        closestNodes should contain theSameElementsInOrderAs expectedNodes
+      }
+    }
+  }
+
+  it should "fetch the ENR records of the nodes encountered" in test {
+    new LookupFixture {
+      override val test = for {
+        _ <- stateRef.update {
+          _.withEnrAndAddress(remotePeer, remoteENR, remoteNode.address)
+        }
+        closestNodes <- service.lookup(targetPublicKey)
+        fetching <- stateRef.get.map {
+          _.fetchEnrMap.values.toList.map(_.get)
+        }
+        _ <- fetching.sequence
+        state <- stateRef.get
+      } yield {
+        assert(state.enrMap.size > 2)
+        Inspectors.forAtLeast(1, randomNodes.map(_._1)) { node =>
+          state.enrMap should contain key (node.id)
+        }
+      }
+    }
+  }
 
   behavior of "lookupRandom"
   it should "lookup a random node" in (pending)
