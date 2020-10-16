@@ -86,7 +86,6 @@ object DiscoveryService {
           _ <- service.enroll(bootstraps).whenA(bootstraps.nonEmpty)
           // Periodically discover new nodes.
           discoveryFiber <- service.lookupRandom().delayExecution(config.discoveryPeriod).loopForever.start
-          // TODO: Periodically ping peers before they become unbonded.
         } yield (service, cancelToken, discoveryFiber)
       } {
         case (_, cancelToken, discoveryFiber) =>
