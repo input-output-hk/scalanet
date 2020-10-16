@@ -569,7 +569,9 @@ object DiscoveryService {
       }
     }
 
-    protected[v4] def lookupRandom(): Task[Unit] = ???
+    /** Look up a random node ID to discovery new peers. */
+    protected[v4] def lookupRandom(): Task[Unit] =
+      lookup(target = sigalg.newKeyPair._1).void
 
     /** Look up self with the bootstrap nodes. That should involve bonding with the bootstraps.
       * Raise an error if in the end we failed to get the ENR from any node as that would mean

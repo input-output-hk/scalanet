@@ -613,14 +613,16 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
             Some(Random.shuffle(randomNodes).take(config.kademliaBucketSize).map(_._1))
           }
     )
+
+    def initState = stateRef.update {
+      _.withEnrAndAddress(remotePeer, remoteENR, remoteNode.address)
+    }
   }
 
   it should "bond with nodes during recursive lookups before contacting them" in test {
     new LookupFixture {
       override val test = for {
-        _ <- stateRef.update {
-          _.withEnrAndAddress(remotePeer, remoteENR, remoteNode.address)
-        }
+        _ <- initState
         _ <- service.lookup(targetPublicKey)
         state <- stateRef.get
       } yield {
@@ -640,9 +642,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         .take(config.kademliaBucketSize)
 
       override val test = for {
-        _ <- stateRef.update {
-          _.withEnrAndAddress(remotePeer, remoteENR, remoteNode.address)
-        }
+        _ <- initState
         closestNodes <- service.lookup(targetPublicKey)
         state <- stateRef.get
       } yield {
@@ -654,9 +654,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "fetch the ENR records of the nodes encountered" in test {
     new LookupFixture {
       override val test = for {
-        _ <- stateRef.update {
-          _.withEnrAndAddress(remotePeer, remoteENR, remoteNode.address)
-        }
+        _ <- initState
         closestNodes <- service.lookup(targetPublicKey)
         fetching <- stateRef.get.map {
           _.fetchEnrMap.values.toList.map(_.get)
@@ -673,7 +671,18 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   }
 
   behavior of "lookupRandom"
-  it should "lookup a random node" in (pending)
+
+  it should "lookup a random node" in test {
+    new LookupFixture {
+      override val test = for {
+        _ <- initState
+        _ <- service.lookupRandom()
+        state <- stateRef.get
+      } yield {
+        state.lastPongTimestampMap.size should be > 1
+      }
+    }
+  }
 
   behavior of "enroll"
   it should "perform a self-lookup with the bootstrap nodes" in (pending)
