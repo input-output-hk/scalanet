@@ -29,7 +29,7 @@ trait DiscoveryService {
   /** Return all currently bonded nodes. */
   def getNodes: Task[Set[Node]]
 
-  /** Add a node to the local cache and try to bond with it. */
+  /** Try to get the ENR record of the given node to add it to the cache. */
   def addNode(node: Node): Task[Unit]
 
   /** Remove a node from the local cache. */
@@ -197,9 +197,11 @@ object DiscoveryService {
     override def getLocalNode: Task[Node] =
       stateRef.get.map(_.node)
 
+    override def addNode(node: Node): Task[Unit] =
+      maybeFetchEnr(toPeer(node), None)
+
     override def getNode(nodeId: NodeId): Task[Option[Node]] = ???
     override def getNodes: Task[Set[Node]] = ???
-    override def addNode(node: Node): Task[Unit] = ???
     override def removeNode(nodeId: NodeId): Task[Unit] = ???
     override def updateExternalAddress(address: InetAddress): Task[Unit] = ???
 
@@ -432,36 +434,43 @@ object DiscoveryService {
           wait.get
 
         case Right(fetch) =>
-          rpc
-            .enrRequest(peer)(())
-            .flatMap {
-              case None =>
-                // At this point we are still bonded with the peer, so they think they can send us requests.
-                // We just have to keep trying to get an ENR for them, until then we can't use them for routing.
-                Task(logger.warn(s"Could not fetch ENR from ${peer.address}")).as(None)
+          val maybeEnr = bond(peer).flatMap {
+            case false =>
+              Task(logger.warn(s"Could not bond with ${peer.address} to fetch ENR")).as(None)
+            case true =>
+              rpc
+                .enrRequest(peer)(())
+                .flatMap {
+                  case None =>
+                    // At this point we are still bonded with the peer, so they think they can send us requests.
+                    // We just have to keep trying to get an ENR for them, until then we can't use them for routing.
+                    Task(logger.warn(s"Could not fetch ENR from ${peer.address}")).as(None)
 
-              case Some(enr) =>
-                EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
-                  case Attempt.Successful(true) =>
-                    // Try to extract the node address from the ENR record and update the node database,
-                    // otherwise if there's no address we can use remove the peer.
-                    Node.Address.fromEnr(enr) match {
-                      case None =>
-                        Task(logger.debug(s"Could not extract node address from $enr")) >>
+                  case Some(enr) =>
+                    EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
+                      case Attempt.Successful(true) =>
+                        // Try to extract the node address from the ENR record and update the node database,
+                        // otherwise if there's no address we can use remove the peer.
+                        Node.Address.fromEnr(enr) match {
+                          case None =>
+                            Task(logger.debug(s"Could not extract node address from $enr")) >>
+                              removePeer(peer).as(None)
+
+                          case Some(address) =>
+                            maybeStorePeer(peer, enr, address)
+                        }
+
+                      case Attempt.Successful(false) =>
+                        Task(logger.debug("Could not validate ENR signature!")) >>
                           removePeer(peer).as(None)
 
-                      case Some(address) =>
-                        maybeStorePeer(peer, enr, address)
+                      case Attempt.Failure(err) =>
+                        Task(logger.error(s"Error validateing ENR: $err")).as(None)
                     }
-
-                  case Attempt.Successful(false) =>
-                    Task(logger.debug("Could not validate ENR signature!")) >>
-                      removePeer(peer).as(None)
-
-                  case Attempt.Failure(err) =>
-                    Task(logger.error(s"Error validateing ENR: $err")).as(None)
                 }
-            }
+          }
+
+          maybeEnr
             .flatTap(fetch.complete)
             .guarantee(stateRef.update(_.clearEnrFetch(peer)))
       }

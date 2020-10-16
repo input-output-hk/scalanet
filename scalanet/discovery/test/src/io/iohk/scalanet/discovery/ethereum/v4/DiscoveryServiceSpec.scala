@@ -244,9 +244,6 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   }
 
   trait BondingFixture extends Fixture {
-    override lazy val config = defaultConfig.copy(
-      requestTimeout = 100.millis // To not wait for pings during bonding.
-    )
     override lazy val rpc = unimplementedRPC.copy(
       ping = _ => _ => Task.pure(Some(None)),
       enrRequest = _ => _ => Task.pure(Some(remoteENR))
@@ -348,6 +345,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "fetch if the address changed" in test {
     new Fixture {
       override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(Some(None)),
         enrRequest = _ => _ => Task(Some(remoteENR))
       )
       val previousAddress = aRandomAddress
@@ -376,6 +374,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       val callCount = AtomicInt(0)
 
       override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(Some(None)),
         enrRequest = _ =>
           _ =>
             Task {
@@ -397,6 +396,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "update the ENR, node maps and the k-buckets" in test {
     new Fixture {
       override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(Some(None)),
         enrRequest = _ => _ => Task(Some(remoteENR))
       )
       override val test = for {
@@ -414,6 +414,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "remove the node if the ENR signature validation fails" in test {
     new Fixture {
       override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(Some(None)),
         enrRequest = _ => _ => Task(Some(remoteENR.copy(signature = Signature(remoteENR.signature.reverse))))
       )
       override val test = for {
@@ -599,7 +600,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     val randomNodes = List.fill(config.kademliaBucketSize * 2)(newRandomNode)
 
     override lazy val config = defaultConfig.copy(
-      requestTimeout = 50.millis
+      requestTimeout = 50.millis // To not wait for pings during bonding.
     )
 
     override lazy val rpc = unimplementedRPC.copy(
@@ -710,12 +711,15 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "return false if it cannot retrieve any ENRs" in test {
     new Fixture {
       override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(Some(None)),
         enrRequest = _ => _ => Task.pure(None)
       )
       override val test = for {
         enrolled <- service.enroll(Set(remoteNode))
+        state <- stateRef.get
       } yield {
         enrolled shouldBe false
+        state.lastPongTimestampMap should contain key (remotePeer)
       }
     }
   }
@@ -733,7 +737,21 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "return bonded nodes" in (pending)
 
   behavior of "addNode"
-  it should "try to bond with the node" in (pending)
+  it should "try to fetch the ENR of the node" in test {
+    new Fixture {
+      override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(Some(None)),
+        enrRequest = _ => _ => Task.pure(Some(remoteENR))
+      )
+      override val test = for {
+        _ <- service.addNode(remoteNode)
+        state <- stateRef.get
+      } yield {
+        state.lastPongTimestampMap should contain key (remotePeer)
+        state.enrMap should contain key (remotePublicKey)
+      }
+    }
+  }
 
   behavior of "removeNode"
   it should "remove bonded or unbonded nodes from the cache" in (pending)
@@ -772,7 +790,10 @@ object DiscoveryServiceSpec {
   ) extends DiscoveryRPC[Peer[InetSocketAddress]]
 
   val unimplementedRPC = StubDiscoveryRPC()
-  val defaultConfig = DiscoveryConfig.default
+
+  val defaultConfig = DiscoveryConfig.default.copy(
+    requestTimeout = 50.millis
+  )
 
   trait Fixture {
     def test: Task[Assertion]
