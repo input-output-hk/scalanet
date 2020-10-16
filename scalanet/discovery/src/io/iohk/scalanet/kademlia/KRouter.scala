@@ -164,7 +164,7 @@ class KRouter[A](
           toPing <- routerState.modify { current =>
             val (_, bucket) = current.kBuckets.getBucket(nodeRecord.id)
             if (bucket.contains(nodeRecord.id)) {
-              // The bucket is full but here we're handling a node we already have, perhaps as a side effect of an incoming request.
+              // We're handling a node we already have, perhaps as a side effect of an incoming request.
               // In this case it's enough to update the timestamp.
               (current.touchNodeRecord(nodeRecord), None)
             } else if (bucket.size < config.k) {
@@ -232,8 +232,8 @@ class KRouter[A](
         .map(id => state.nodeRecords(id))
     }.memoizeOnSuccess
 
-    implicit val xorOrder = new XorOrder[A](targetNodeId)
-    implicit val xorOrdering = xorOrder.xorNodeOrder
+    implicit val xorNodeOrder = new XorNodeOrder[A](targetNodeId)
+    implicit val xorNodeOrdering = xorNodeOrder.xorNodeOrdering
 
     def query(knownNodeRecord: NodeRecord[A]): Task[Seq[NodeRecord[A]]] = {
 
@@ -300,7 +300,7 @@ class KRouter[A](
     ): Task[Seq[NodeRecord[A]]] = {
 
       // All nodes which are closer to target, than the closest already found node
-      val closestNodes = receivedNodes.filter(node => xorOrder.compare(node, currentClosestNode) < 0)
+      val closestNodes = receivedNodes.filter(node => xorNodeOrder.compare(node, currentClosestNode) < 0)
 
       // we chose either:
       // k nodes from already found or

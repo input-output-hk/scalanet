@@ -639,6 +639,39 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
+  it should "bond before accepting returned neighbors as new closest" in test {
+    new LookupFixture {
+      // Return nodes which are really close to the target but don't exist and cannot be pinged.
+      val nonExistingNodes = List.fill(config.kademliaBucketSize) {
+        newRandomNode._1.copy(id = targetPublicKey)
+      }
+
+      override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(None),
+        findNode = _ => _ => Task.pure(Some(nonExistingNodes))
+      )
+
+      override val test = for {
+        // Add all the known nodes as bonded so they don't have to be pinged.
+        _ <- randomNodes.traverse {
+          case (node, enr) =>
+            stateRef.update { state =>
+              val peer = Peer(node.id, nodeAddressToInetSocketAddress(node.address))
+              state.withEnrAndAddress(peer, enr, node.address).withLastPongTimestamp(peer, System.currentTimeMillis)
+            }
+        }
+        // If they all return non-existing nodes and we eagerly consider those closest,
+        // then try to ping, we won't have anything left to return.
+        closest <- service.lookup(targetPublicKey)
+      } yield {
+        closest.size shouldBe config.kademliaBucketSize
+        Inspectors.forAll(closest) { node =>
+          nonExistingNodes should not contain (node)
+        }
+      }
+    }
+  }
+
   it should "return the k closest nodes to the target" in test {
     new LookupFixture {
       val allNodes = List(localNode -> localENR, remoteNode -> remoteENR) ++ randomNodes

@@ -14,7 +14,6 @@ import scodec.{Codec, Attempt}
 import com.typesafe.scalalogging.LazyLogging
 import scala.collection.immutable.SortedSet
 import io.iohk.scalanet.kademlia.XorOrdering
-import scodec.bits.BitVector
 
 /** Represent the minimal set of operations the rest of the system
   * can expect from the service to be able to talk to other peers.
@@ -584,11 +583,8 @@ object DiscoveryService {
       * https://github.com/ethereum/devp2p/blob/master/discv4.md#recursive-lookup
       */
     protected[v4] def lookup(target: NodeId): Task[SortedSet[Node]] = {
-      implicit val targetIdOrdering: Ordering[BitVector] =
-        new XorOrdering(target)
-
-      implicit val nodeOrder: Ordering[Node] =
-        Ordering.by[Node, BitVector](node => node.id)
+      implicit val nodeOrdering: Ordering[Node] =
+        XorOrdering[Node](target)(_.id)
 
       // Find the 16 closest nodes we know of.
       // We'll contact 'alpha' at a time but eventually try all of them
@@ -631,8 +627,16 @@ object DiscoveryService {
                   Task(logger.debug(s"Could not bond with $node to fetch neighbors of $target")).as(None)
               }
             }
-            .flatMap { results =>
-              val newClosest = (closest ++ results.flatten.flatten).take(config.kademliaBucketSize)
+            .flatMap { neighbors =>
+              // Make sure these new nodes can be bonded with before we consider them,
+              // otherwise they might appear to be be closer to the target but actually
+              // be fakes with unreachable addresses that could knock out legit nodes.
+              neighbors.flatten.flatten.distinct.filterA { neighbor =>
+                bond(toPeer(neighbor))
+              }
+            }
+            .flatMap { newNeighbors =>
+              val newClosest = (closest ++ newNeighbors).take(config.kademliaBucketSize)
               val newAsked = asked ++ contact
               loop(local, newClosest, newAsked)
             }

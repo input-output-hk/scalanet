@@ -3,6 +3,8 @@ package io.iohk.scalanet.kademlia
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
 import scodec.bits.BitVector
+import io.iohk.scalanet.kademlia.KRouter.NodeRecord
+import scala.collection.SortedSet
 
 class XorOrderingSpec extends FlatSpec {
 
@@ -41,5 +43,13 @@ class XorOrderingSpec extends FlatSpec {
     val rhs = BitVector.fromValidBin("0000000000000000")
 
     an[IllegalArgumentException] should be thrownBy ordering.compare(lhs, rhs)
+  }
+
+  "XorNodeOrdering" should "work with SortedSet" in {
+    implicit val ordering = XorNodeOrdering[Int](id0)
+    val node0 = NodeRecord[Int](BitVector.fromValidBin("0000"), 1, 2)
+    val node1 = NodeRecord[Int](BitVector.fromValidBin("0000"), 3, 4)
+    val nodes = SortedSet(node0, node1)
+    nodes should have size 2
   }
 }

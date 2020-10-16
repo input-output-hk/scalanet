@@ -22,13 +22,29 @@ class XorOrdering(val base: BitVector) extends Ordering[BitVector] {
   }
 }
 
-class XorNodeOrdering[A](val base: BitVector) extends Ordering[NodeRecord[A]] {
-  private val xorIdOrdering = new XorOrdering(base)
-
-  override def compare(lhs: NodeRecord[A], rhs: NodeRecord[A]): Int = xorIdOrdering.compare(lhs.id, rhs.id)
+object XorOrdering {
+  // Ordering for a SortedSet needs to be unique. In practice it shouldn't
+  // matter since all keys are unique, therefore they all have a different
+  // distance, but in pathological tests it's not intuitive that sets of
+  // different nodes with the same ID but different attributes disappear
+  // from the set.
+  def apply[T](base: BitVector)(f: T => BitVector): Ordering[T] = {
+    val xorOrdering = new XorOrdering(base)
+    val tupleOrdering = Ordering.Tuple2(xorOrdering, Ordering.Int)
+    Ordering.by[T, (BitVector, Int)] { x =>
+      f(x) -> x.hashCode
+    }(tupleOrdering)
+  }
 }
 
-class XorOrder[A](val base: BitVector) extends Order[NodeRecord[A]] {
-  val xorNodeOrder = new XorNodeOrdering[A](base)
-  override def compare(lhs: NodeRecord[A], rhs: NodeRecord[A]): Int = xorNodeOrder.compare(lhs, rhs)
+object XorNodeOrdering {
+  def apply[A](base: BitVector): Ordering[NodeRecord[A]] =
+    XorOrdering[NodeRecord[A]](base)(_.id)
+}
+
+class XorNodeOrder[A](val base: BitVector) extends Order[NodeRecord[A]] {
+  val xorNodeOrdering = XorNodeOrdering[A](base)
+
+  override def compare(lhs: NodeRecord[A], rhs: NodeRecord[A]): Int =
+    xorNodeOrdering.compare(lhs, rhs)
 }
