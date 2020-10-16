@@ -3,7 +3,6 @@ package io.iohk.scalanet.discovery.ethereum
 import io.iohk.scalanet.NetUtils.aRandomAddress
 import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs
 import io.iohk.scalanet.discovery.ethereum.v4.mocks.MockSigAlg
-import io.iohk.scalanet.discovery.ethereum.v4.DiscoveryNetworkSpec.randomKeyPair
 import org.scalatest._
 
 class EthereumNodeRecordSpec extends FlatSpec with Matchers {
@@ -13,7 +12,7 @@ class EthereumNodeRecordSpec extends FlatSpec with Matchers {
   behavior of "fromNode"
 
   it should "survive a roundtrip" in {
-    val (publicKey, privateKey) = randomKeyPair
+    val (publicKey, privateKey) = sigalg.newKeyPair
     val address = aRandomAddress
     val node = Node(publicKey, Node.Address(address.getAddress, address.getPort, address.getPort))
 

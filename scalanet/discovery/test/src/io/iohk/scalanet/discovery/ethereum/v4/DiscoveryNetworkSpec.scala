@@ -153,7 +153,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "return None if the Pong is signed by an unexpected key" in test {
     new Fixture {
-      val (_, unexpectedPrivateKey) = randomKeyPair
+      val (_, unexpectedPrivateKey) = sigalg.newKeyPair
 
       override val test = for {
         channel <- peerGroup.getOrCreateChannel(remoteAddress)
@@ -182,7 +182,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
   it should "send an unexpired FindNode Packet with the given target" in test {
     new Fixture {
-      val (targetPublicKey, _) = randomKeyPair
+      val (targetPublicKey, _) = sigalg.newKeyPair
 
       override val test = for {
         _ <- network.findNode(remotePeer)(targetPublicKey)
@@ -420,7 +420,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   // from earlier channels are exhausted before it would handle later ones.
   it should "handle multiple channels in concurrently" in test {
     new Fixture {
-      val remotes = List.fill(5)(aRandomAddress -> randomKeyPair)
+      val remotes = List.fill(5)(aRandomAddress -> sigalg.newKeyPair)
 
       override val test = for {
         _ <- network.startHandling {
@@ -747,7 +747,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
 
     def packetSizeOfNNeighbors(n: Int) = {
       val neighbours = Neighbors(List.fill(n)(randomIPv6Node), System.currentTimeMillis)
-      val (_, privateKey) = randomKeyPair
+      val (_, privateKey) = sigalg.newKeyPair
       val packet = Packet.pack(neighbours, privateKey).require
       val packetSize = packet.hash.size + packet.signature.size + packet.data.size
       packetSize
@@ -768,16 +768,8 @@ object DiscoveryNetworkSpec extends Matchers {
     bytes
   }
 
-  def randomKeyPair: (PublicKey, PrivateKey) = {
-    // Using mock keys with the MockSigAlg, it returns the private as public.
-    assert(sigalg.PrivateKeyBytesSize == sigalg.PublicKeyBytesSize)
-    val privateKey = PrivateKey(BitVector(randomBytes(sigalg.PrivateKeyBytesSize)))
-    val publicKey = PublicKey(privateKey)
-    publicKey -> privateKey
-  }
-
   def randomNode: Node = {
-    val (publicKey, _) = randomKeyPair
+    val (publicKey, _) = sigalg.newKeyPair
     val address = aRandomAddress()
     Node(publicKey, toNodeAddress(address))
   }
@@ -805,10 +797,10 @@ object DiscoveryNetworkSpec extends Matchers {
 
     lazy val localAddress = aRandomAddress
     // Keys for the System Under Test.
-    lazy val (publicKey, privateKey) = randomKeyPair
+    lazy val (publicKey, privateKey) = sigalg.newKeyPair
 
     lazy val localENR = EthereumNodeRecord(
-      signature = Signature(BitVector(randomBytes(65))),
+      signature = Signature(BitVector(randomBytes(sigalg.SignatureBytesSize))),
       content = EthereumNodeRecord.Content(
         seq = 456L,
         attrs = SortedMap(
@@ -821,11 +813,11 @@ object DiscoveryNetworkSpec extends Matchers {
 
     // A random peer to talk to.
     lazy val remoteAddress = aRandomAddress
-    lazy val (remotePublicKey, remotePrivateKey) = randomKeyPair
+    lazy val (remotePublicKey, remotePrivateKey) = sigalg.newKeyPair
     lazy val remotePeer = Peer(remotePublicKey, remoteAddress)
 
     lazy val remoteENR = EthereumNodeRecord(
-      signature = Signature(BitVector(randomBytes(65))),
+      signature = Signature(BitVector(randomBytes(sigalg.SignatureBytesSize))),
       content = EthereumNodeRecord.Content(
         seq = 123L,
         attrs = SortedMap(

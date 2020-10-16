@@ -3,15 +3,24 @@ package io.iohk.scalanet.discovery.ethereum.v4.mocks
 import io.iohk.scalanet.discovery.crypto.{Signature, PublicKey, PrivateKey, SigAlg}
 import scodec.bits.BitVector
 import scodec.Attempt
+import scala.util.Random
 
 class MockSigAlg extends SigAlg {
   override val name = "MockSignature"
 
-  // For testing I'll use the same key for public and private,
-  // so that I can recover the public key from the signature.
   override val PrivateKeyBytesSize = 65
   override val PublicKeyBytesSize = 65
   override val SignatureBytesSize = 65
+
+  // For testing I'll use the same key for public and private,
+  // so that I can recover the public key from the signature.
+  override def newKeyPair: (PublicKey, PrivateKey) = {
+    val bytes = Array.ofDim[Byte](PrivateKeyBytesSize)
+    Random.nextBytes(bytes)
+    val privateKey = PrivateKey(BitVector(bytes))
+    val publicKey = PublicKey(privateKey)
+    publicKey -> privateKey
+  }
 
   override def sign(privateKey: PrivateKey, data: BitVector): Signature =
     Signature(xor(privateKey, data))

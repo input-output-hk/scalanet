@@ -16,7 +16,6 @@ import scala.concurrent.duration._
 
 class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   import DiscoveryService.{State, BondingResults}
-  import DiscoveryNetworkSpec.{randomKeyPair}
   import DiscoveryServiceSpec._
   import DefaultCodecs._
 
@@ -480,7 +479,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "return peers for who we have an ENR record" in test {
     new Fixture {
       val caller = {
-        val (callerPublicKey, _) = randomKeyPair
+        val (callerPublicKey, _) = sigalg.newKeyPair
         val callerAddress = aRandomAddress
         Peer(callerPublicKey, callerAddress)
       }
@@ -562,7 +561,6 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 }
 
 object DiscoveryServiceSpec {
-  import DiscoveryNetworkSpec.randomKeyPair
   import DefaultCodecs._
 
   implicit val scheduler: Scheduler = Scheduler.Implicits.global
@@ -587,14 +585,14 @@ object DiscoveryServiceSpec {
     def makeNode(publicKey: PublicKey, address: InetSocketAddress) =
       Node(publicKey, Node.Address(address.getAddress, address.getPort, address.getPort))
 
-    lazy val (localPublicKey, localPrivateKey) = randomKeyPair
+    lazy val (localPublicKey, localPrivateKey) = sigalg.newKeyPair
     lazy val localAddress = aRandomAddress
     lazy val localNode = makeNode(localPublicKey, localAddress)
     lazy val localPeer = Peer(localPublicKey, localAddress)
     lazy val localENR = EthereumNodeRecord.fromNode(localNode, localPrivateKey, seq = 1).require
 
     lazy val remoteAddress = aRandomAddress
-    lazy val (remotePublicKey, remotePrivateKey) = randomKeyPair
+    lazy val (remotePublicKey, remotePrivateKey) = sigalg.newKeyPair
     lazy val remoteNode = makeNode(remotePublicKey, remoteAddress)
     lazy val remotePeer = Peer(remotePublicKey, remoteAddress)
     lazy val remoteENR = EthereumNodeRecord.fromNode(remoteNode, remotePrivateKey, seq = 1).require
