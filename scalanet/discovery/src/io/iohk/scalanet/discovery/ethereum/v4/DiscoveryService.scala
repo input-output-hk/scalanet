@@ -116,6 +116,9 @@ object DiscoveryService {
       // Deferred ENR fetches so we only do one at a time to a given peer.
       fetchEnrMap: Map[Peer[A], Deferred[Task, Unit]]
   ) {
+    def isSelf(peer: Peer[A]): Boolean =
+      peer.id == node.id
+
     def withLastPongTimestamp(peer: Peer[A], timestamp: Timestamp): State[A] =
       copy(lastPongTimestampMap = lastPongTimestampMap.updated(peer, timestamp))
 
@@ -126,8 +129,17 @@ object DiscoveryService {
       copy(
         enrMap = enrMap.updated(peer.id, enr),
         nodeMap = nodeMap.updated(peer.id, Node(peer.id, address)),
-        kBuckets = kBuckets.add(peer.id)
+        kBuckets =
+          if (isSelf(peer))
+            kBuckets
+          else if (kBuckets.getBucket(peer.id)._2.contains(peer.id))
+            kBuckets.touch(peer.id)
+          else
+            kBuckets.add(peer.id)
       )
+
+    def withTouch(peer: Peer[A]): State[A] =
+      copy(kBuckets = kBuckets.touch(peer.id))
 
     def clearBondingResults(peer: Peer[A]): State[A] =
       copy(bondingResultsMap = bondingResultsMap - peer)
@@ -193,7 +205,7 @@ object DiscoveryService {
             // We may already be bonded but the remote node could have changed its address.
             _ <- maybeFetchEnr(caller, maybeRemoteEnrSeq).startAndForget
             // Return the latet local ENR sequence.
-            enrSeq <- stateRef.get.map(_.enr.content.seq)
+            enrSeq <- localEnrSeq
           } yield Some(Some(enrSeq))
 
     /** Handle incoming FindNode request. */
@@ -225,13 +237,16 @@ object DiscoveryService {
     protected[v4] def currentTimeMillis: Task[Long] =
       clock.realTime(MILLISECONDS)
 
+    protected[v4] def localEnrSeq: Task[ENRSeq] =
+      stateRef.get.map(_.enr.content.seq)
+
     /** Check if the given peer has a valid bond at the moment. */
     protected[v4] def isBonded(
         peer: Peer[A]
     ): Task[Boolean] = {
       currentTimeMillis.flatMap { now =>
         stateRef.get.map { state =>
-          if (peer.id == state.node.id)
+          if (state.isSelf(peer))
             true
           else
             state.lastPongTimestampMap.get(peer) match {
@@ -265,20 +280,14 @@ object DiscoveryService {
 
         case false =>
           initBond(peer).flatMap {
-            case Left(result) =>
+            case Some(result) =>
               result.pongReceived.get
 
-            case Right(enrSeq) =>
-              rpc
-                .ping(peer)(Some(enrSeq))
-                .recover {
-                  case NonFatal(_) => None
-                }
+            case None =>
+              pingAndMaybeUpdateTimestamp(peer)
                 .flatMap {
                   case Some(maybeRemoteEnrSeq) =>
                     for {
-                      // Update the time in case there are incoming requests from that node.
-                      _ <- updateLastPongTime(peer)
                       // Allow some time for the reciprocating ping to arrive.
                       _ <- awaitPing(peer)
                       // Complete all bonds waiting on this pong, after any pings were received
@@ -295,23 +304,33 @@ object DiscoveryService {
           }
       }
 
+    /** Try to ping the remote peer and update the last pong timestamp if they respond. */
+    protected[v4] def pingAndMaybeUpdateTimestamp(peer: Peer[A]): Task[Option[Option[ENRSeq]]] =
+      for {
+        enrSeq <- localEnrSeq
+        maybeResponse <- rpc.ping(peer)(Some(enrSeq)).recover {
+          case NonFatal(_) => None
+        }
+        _ <- updateLastPongTime(peer).whenA(maybeResponse.isDefined)
+      } yield maybeResponse
+
     /** Check and modify the bonding state of the peer: if we're already bonding
       * return the Deferred result we can wait on, otherwise add a new Deferred
-      * and return the current local ENR sequence we can ping with.
+      * and return None, in which case the caller has to perform the bonding.
       */
-    protected[v4] def initBond(peer: Peer[A]): Task[Either[BondingResults, ENRSeq]] =
+    protected[v4] def initBond(peer: Peer[A]): Task[Option[BondingResults]] =
       for {
         results <- BondingResults()
-        decision <- stateRef.modify { state =>
+        maybeExistingResults <- stateRef.modify { state =>
           state.bondingResultsMap.get(peer) match {
             case Some(results) =>
-              state -> Left(results)
+              state -> Some(results)
 
             case None =>
-              state.withBondingResults(peer, results) -> Right(state.enr.content.seq)
+              state.withBondingResults(peer, results) -> None
           }
         }
-      } yield decision
+      } yield maybeExistingResults
 
     protected[v4] def updateLastPongTime(peer: Peer[A]): Task[Unit] =
       for {
@@ -369,10 +388,11 @@ object DiscoveryService {
         maybeRemoteEnrSeq: Option[ENRSeq]
     ): Task[Unit] =
       for {
-        maybeEnrAndNode <- stateRef.get.map { state =>
-          (state.enrMap.get(peer.id), state.nodeMap.get(peer.id))
-        }
+        state <- stateRef.get
+        maybeEnrAndNode = (state.enrMap.get(peer.id), state.nodeMap.get(peer.id))
         needsFetching = maybeEnrAndNode match {
+          case _ if state.isSelf(peer) =>
+            false
           case (None, _) =>
             true
           case (Some(enr), _) if maybeRemoteEnrSeq.getOrElse(enr.content.seq) > enr.content.seq =>
@@ -416,7 +436,16 @@ object DiscoveryService {
               case Some(enr) =>
                 EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
                   case Attempt.Successful(true) =>
-                    tryUpdateEnr(peer, enr)
+                    // Try to extract the node address from the ENR record and update the node database,
+                    // otherwise if there's no address we can use remove the peer.
+                    Node.Address.fromEnr(enr) match {
+                      case None =>
+                        Task(logger.debug(s"Could not extract node address from $enr")) >>
+                          removePeer(peer)
+
+                      case Some(address) =>
+                        maybeStorePeer(peer, enr, address)
+                    }
 
                   case Attempt.Successful(false) =>
                     Task(logger.debug("Could not validate ENR signature!")) >>
@@ -433,17 +462,45 @@ object DiscoveryService {
       }
     }
 
-    /** Try to extract the node address from the ENR record and update the node database,
-      * otherwise if there's no address we can use remove the peer.
-      */
-    protected[v4] def tryUpdateEnr(peer: Peer[A], enr: EthereumNodeRecord): Task[Unit] =
-      Node.Address.fromEnr(enr) match {
-        case None =>
-          Task(logger.debug(s"Could not extract node address from $enr")) >>
-            removePeer(peer)
-        case Some(address) =>
-          stateRef.update(_.withEnrAndAddress(peer, enr, address))
-      }
+    /** See if the bucket the node would fit into isn't already full. If it is, try to evict the least recently seen peer. */
+    protected[v4] def maybeStorePeer(peer: Peer[A], enr: EthereumNodeRecord, address: Node.Address): Task[Unit] = {
+      stateRef
+        .modify { state =>
+          if (state.isSelf(peer))
+            state -> None
+          else {
+            val (_, bucket) = state.kBuckets.getBucket(peer.id)
+            if (bucket.contains(peer.id) || bucket.size < config.kademliaBucketSize) {
+              // We can just update the records, the bucket either has room or won't need to grow.
+              state.withEnrAndAddress(peer, enr, address) -> None
+            } else {
+              // We have to consider evicting somebody or dropping this node.
+              state -> Some(state.nodeMap(PublicKey(bucket.head)))
+            }
+          }
+        }
+        .flatMap {
+          case None =>
+            Task.unit
+          case Some(evictionCandidate) =>
+            val evictionPeer = Peer(evictionCandidate.id, toAddress(evictionCandidate.address))
+            pingAndMaybeUpdateTimestamp(evictionPeer).map(_.isDefined).flatMap {
+              case true =>
+                // Keep the existing record, discard the new.
+                // NOTE: We'll still consider them bonded because they reponded to a ping,
+                // so we'll respond to queries and maybe even send requests in recursive
+                // lookups, but won't return the peer itself in results.
+                // A more sophisticated approach would be to put them in a separate replacement
+                // cache for the bucket where they can be drafted from if someone cannot bond again.
+                stateRef.update(_.withTouch(evictionPeer))
+              case false =>
+                // Get rid of the non-responding peer and add the new one
+                // then try to add this one again (something else might be trying as well,
+                // don't want to end up overfilling the bucket).
+                removePeer(evictionPeer) >> maybeStorePeer(peer, enr, address)
+            }
+        }
+    }
 
     /** Forget everything about this peer. */
     protected[v4] def removePeer(peer: Peer[A]): Task[Unit] =

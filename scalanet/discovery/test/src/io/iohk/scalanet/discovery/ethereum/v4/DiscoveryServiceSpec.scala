@@ -99,9 +99,9 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "return a the current ENR sequence if there's no current bonding running" in test {
     new Fixture {
       override val test = for {
-        decision <- service.initBond(remotePeer)
+        maybeExistingResults <- service.initBond(remotePeer)
       } yield {
-        decision shouldBe Right(localENR.content.seq)
+        maybeExistingResults shouldBe empty
       }
     }
   }
@@ -109,9 +109,9 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     new Fixture {
       override val test = for {
         _ <- service.initBond(remotePeer)
-        decision <- service.initBond(remotePeer)
+        maybeExistingResults <- service.initBond(remotePeer)
       } yield {
-        decision.isLeft shouldBe true
+        maybeExistingResults should not be empty
       }
     }
   }
@@ -440,7 +440,62 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
-  it should "handle the case when the bucket is full and the oldest node may need eviction" in (pending)
+  behavior of "maybeStorePeer"
+
+  trait FullBucketFixture extends Fixture {
+    override lazy val config = defaultConfig.copy(
+      kademliaBucketSize = 1
+    )
+    // Make two peers that don't share the first bit in their ID with the local one.
+    // These will share the same k-bucket.
+    def makePeerInFirstBucket: (Peer[InetSocketAddress], EthereumNodeRecord, Node.Address) = {
+      val (publicKey, privateKey) = sigalg.newKeyPair
+      if (publicKey(0) == localPublicKey(0)) makePeerInFirstBucket
+      else {
+        val address = aRandomAddress
+        val node = makeNode(publicKey, address)
+        val peer = Peer(publicKey, address)
+        val enr = EthereumNodeRecord.fromNode(node, privateKey, seq = 1).require
+        (peer, enr, node.address)
+      }
+    }
+    val peer1 = makePeerInFirstBucket
+    val peer2 = makePeerInFirstBucket
+
+    def responds: Boolean
+
+    // We'll try to ping the first peer.
+    override lazy val rpc = unimplementedRPC.copy(
+      ping = _ => _ => Task.pure(if (responds) Some(None) else None)
+    )
+    override val test = for {
+      _ <- stateRef.update(
+        _.withEnrAndAddress(peer1._1, peer1._2, peer1._3)
+      )
+      _ <- service.maybeStorePeer(peer2._1, peer2._2, peer2._3)
+      state <- stateRef.get
+    } yield {
+      state.nodeMap.contains(peer1._1.id) shouldBe responds
+      state.enrMap.contains(peer1._1.id) shouldBe responds
+      state.kBuckets.contains(peer1._1.id) shouldBe responds
+
+      state.nodeMap.contains(peer2._1.id) shouldBe !responds
+      state.enrMap.contains(peer2._1.id) shouldBe !responds
+      state.kBuckets.contains(peer2._1.id) shouldBe !responds
+    }
+  }
+
+  it should "evict the oldest peer if the bucket is full and the peer is not responding" in test {
+    new FullBucketFixture {
+      val responds = false
+    }
+  }
+
+  it should "not evict the oldest peer if it still responds" in test {
+    new FullBucketFixture {
+      val responds = true
+    }
+  }
 
   behavior of "ping"
 
