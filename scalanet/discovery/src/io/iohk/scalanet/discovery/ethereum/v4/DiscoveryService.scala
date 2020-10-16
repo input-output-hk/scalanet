@@ -200,8 +200,10 @@ object DiscoveryService {
     override def addNode(node: Node): Task[Unit] =
       maybeFetchEnr(toPeer(node), None)
 
+    override def getNodes: Task[Set[Node]] =
+      stateRef.get.map(_.nodeMap.values.toSet)
+
     override def getNode(nodeId: NodeId): Task[Option[Node]] = ???
-    override def getNodes: Task[Set[Node]] = ???
     override def removeNode(nodeId: NodeId): Task[Unit] = ???
     override def updateExternalAddress(address: InetAddress): Task[Unit] = ???
 

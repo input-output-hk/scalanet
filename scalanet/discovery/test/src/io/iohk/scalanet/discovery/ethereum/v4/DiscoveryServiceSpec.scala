@@ -732,11 +732,26 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "lookup a node remotely if not found locally" in (pending)
 
   behavior of "getNodes"
-  it should "not return the local node" in (pending)
-  it should "not return nodes which aren't bonded" in (pending)
-  it should "return bonded nodes" in (pending)
+
+  it should "return the local node among all nodes which have an ENR" in test {
+    new LookupFixture {
+      override val test = for {
+        nodes0 <- service.getNodes
+        _ <- addRemotePeer
+        nodes1 <- service.getNodes
+        _ <- service.lookup(targetPublicKey)
+        nodes2 <- service.getNodes
+        state <- stateRef.get
+      } yield {
+        nodes0 shouldBe Set(localNode)
+        nodes1 shouldBe Set(localNode, remoteNode)
+        nodes2.size shouldBe state.enrMap.size
+      }
+    }
+  }
 
   behavior of "addNode"
+
   it should "try to fetch the ENR of the node" in test {
     new Fixture {
       override lazy val rpc = unimplementedRPC.copy(
