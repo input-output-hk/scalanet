@@ -587,7 +587,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   trait LookupFixture extends Fixture {
     val (targetPublicKey, _) = sigalg.newKeyPair
 
-    lazy val expectedTarget: Option[PublicKey] = Some(targetPublicKey)
+    def expectedTarget: Option[PublicKey] = Some(targetPublicKey)
 
     def newRandomNode = {
       val (publicKey, privateKey) = sigalg.newKeyPair
@@ -680,7 +680,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   it should "lookup a random node" in test {
     new LookupFixture {
-      override lazy val expectedTarget = None
+      override val expectedTarget = None
 
       override val test = for {
         _ <- addRemotePeer
@@ -696,7 +696,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   it should "perform a self-lookup with the bootstrap nodes" in test {
     new LookupFixture {
-      override lazy val expectedTarget = Some(localNode.id)
+      override val expectedTarget = Some(localNode.id)
 
       override val test = for {
         enrolled <- service.enroll(Set(remoteNode))
@@ -725,11 +725,40 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   }
 
   behavior of "getNode"
-  it should "return the local node" in (pending)
-  it should "not return a nodes which is not bonded" in (pending)
-  it should "return a bonded node" in (pending)
-  it should "return a node from the local cache" in (pending)
-  it should "lookup a node remotely if not found locally" in (pending)
+
+  it should "return the local node" in test {
+    new Fixture {
+      override val test = for {
+        node <- service.getNode(localPublicKey)
+      } yield {
+        node shouldBe Some(localNode)
+      }
+    }
+  }
+
+  it should "return nodes from the cache" in test {
+    new Fixture {
+      override val test = for {
+        _ <- stateRef.update(_.withEnrAndAddress(remotePeer, remoteENR, remoteNode.address))
+        node <- service.getNode(remotePublicKey)
+      } yield {
+        node shouldBe Some(remoteNode)
+      }
+    }
+  }
+
+  it should "lookup a node remotely if not found locally" in test {
+    new LookupFixture {
+      override val expectedTarget = Some(randomNodes.head._1.id)
+
+      override val test = for {
+        _ <- addRemotePeer
+        node <- service.getNode(expectedTarget.get)
+      } yield {
+        node shouldBe Some(randomNodes.head._1)
+      }
+    }
+  }
 
   behavior of "getNodes"
 

@@ -203,7 +203,22 @@ object DiscoveryService {
     override def getNodes: Task[Set[Node]] =
       stateRef.get.map(_.nodeMap.values.toSet)
 
-    override def getNode(nodeId: NodeId): Task[Option[Node]] = ???
+    override def getNode(nodeId: NodeId): Task[Option[Node]] =
+      stateRef.get.flatMap { state =>
+        state.nodeMap.get(nodeId) match {
+          case cached @ Some(_) =>
+            Task.pure(cached)
+          case None =>
+            lookup(nodeId).flatMap {
+              case closest if closest.head.id == nodeId =>
+                maybeFetchEnr(toPeer(closest.head), None) >>
+                  stateRef.get.map(_.nodeMap.get(nodeId))
+              case _ =>
+                Task.pure(None)
+            }
+        }
+      }
+
     override def removeNode(nodeId: NodeId): Task[Unit] = ???
     override def updateExternalAddress(address: InetAddress): Task[Unit] = ???
 
