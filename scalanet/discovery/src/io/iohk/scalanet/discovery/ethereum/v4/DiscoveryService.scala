@@ -160,14 +160,23 @@ object DiscoveryService {
     def clearEnrFetch(peer: Peer[A]): State[A] =
       copy(fetchEnrMap = fetchEnrMap - peer)
 
-    def removePeer(peer: Peer[A]): State[A] =
-      copy(
-        nodeMap = nodeMap - peer.id,
-        enrMap = enrMap - peer.id,
+    def removePeer(peer: Peer[A], toAddress: Node.Address => A): State[A] = {
+      // We'll have ony one node/enr for this peer ID, but it may be with a different address.
+      // This can happen if we get a fake neighbor respose from a malicious peer, with the ID
+      // of an honest node and an ureachable address. We shouldn't remote the honest node.
+      (nodeMap.get(peer.id) match {
+        case Some(node) if toAddress(node.address) == peer.address =>
+          copy(
+            nodeMap = nodeMap - peer.id,
+            enrMap = enrMap - peer.id,
+            kBuckets = kBuckets.remove(peer.id)
+          )
+        case _ => this
+      }).copy(
         lastPongTimestampMap = lastPongTimestampMap - peer,
-        bondingResultsMap = bondingResultsMap - peer,
-        kBuckets = kBuckets.remove(peer.id)
+        bondingResultsMap = bondingResultsMap - peer
       )
+    }
 
     def removePeer(peerId: NodeId): State[A] =
       copy(
@@ -585,7 +594,7 @@ object DiscoveryService {
 
     /** Forget everything about this peer. */
     protected[v4] def removePeer(peer: Peer[A]): Task[Unit] =
-      stateRef.update(_.removePeer(peer))
+      stateRef.update(_.removePeer(peer, toAddress))
 
     /** Locate the k closest nodes to a node ID.
       *
