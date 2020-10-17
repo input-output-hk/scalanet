@@ -649,9 +649,11 @@ object DiscoveryService {
               // Make sure these new nodes can be bonded with before we consider them,
               // otherwise they might appear to be be closer to the target but actually
               // be fakes with unreachable addresses that could knock out legit nodes.
-              neighbors.flatten.flatten.distinct.filterA { neighbor =>
-                bond(toPeer(neighbor))
-              }
+              Task
+                .parTraverseUnordered(neighbors.flatten.flatten.distinct) { neighbor =>
+                  bond(toPeer(neighbor)).map(if (_) Some(neighbor) else None)
+                }
+                .map(_.flatten)
             }
             .flatMap { newNeighbors =>
               val newClosest = (closest ++ newNeighbors).take(config.kademliaBucketSize)
