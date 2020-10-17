@@ -9,6 +9,7 @@
 
     <logger name="io.netty" level="OFF"/>
 
+    <!-- Don't want to see all the logs induced by unit tests. -->
     <root level="ERROR">
         <appender-ref ref="STDOUT"/>
     </root>

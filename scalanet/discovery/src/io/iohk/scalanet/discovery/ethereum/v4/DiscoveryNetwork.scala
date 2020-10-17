@@ -39,7 +39,10 @@ object DiscoveryNetwork {
     * We have to use the pair for addressing a peer as well to set an expectation of the identity we
     * expect to talk to, i.e. who should sign the packets.
     */
-  case class Peer[A](id: PublicKey, address: A)
+  case class Peer[A](id: PublicKey, address: A) {
+    override def toString: String =
+      s"Peer(id = ${id.toHex}, address = $address)"
+  }
 
   // Errors that stop the processing of incoming messages on a channel.
   class PacketException(message: String) extends Exception(message) with NoStackTrace

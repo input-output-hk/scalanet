@@ -505,7 +505,7 @@ object DiscoveryService {
         case Right(fetch) =>
           val maybeEnr = bond(peer).flatMap {
             case false =>
-              Task(logger.debug(s"Could not bond with ${peer.address} to fetch ENR")).as(None)
+              Task(logger.debug(s"Could not bond with ${peer} to fetch ENR")).as(None)
             case true =>
               rpc
                 .enrRequest(peer)(())
@@ -513,7 +513,7 @@ object DiscoveryService {
                   case None =>
                     // At this point we are still bonded with the peer, so they think they can send us requests.
                     // We just have to keep trying to get an ENR for them, until then we can't use them for routing.
-                    Task(logger.debug(s"Could not fetch ENR from ${peer.address}")).as(None)
+                    Task(logger.debug(s"Could not fetch ENR from ${peer}")).as(None)
 
                   case Some(enr) =>
                     EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
@@ -530,11 +530,11 @@ object DiscoveryService {
                         }
 
                       case Attempt.Successful(false) =>
-                        Task(logger.debug("Could not validate ENR signature!")) >>
+                        Task(logger.info(s"Could not validate ENR signature from ${peer}!")) >>
                           removePeer(peer).as(None)
 
                       case Attempt.Failure(err) =>
-                        Task(logger.error(s"Error validateing ENR: $err")).as(None)
+                        Task(logger.error(s"Error validateing ENR from ${peer}: $err")).as(None)
                     }
                 }
           }
@@ -570,7 +570,7 @@ object DiscoveryService {
         }
         .flatMap {
           case None =>
-            Task.pure(Some(enr))
+            Task(logger.info(s"Stored ENR for ${peer}")).as(Some(enr))
 
           case Some(evictionCandidate) =>
             val evictionPeer = toPeer(evictionCandidate)
@@ -582,12 +582,16 @@ object DiscoveryService {
                 // lookups, but won't return the peer itself in results.
                 // A more sophisticated approach would be to put them in a separate replacement
                 // cache for the bucket where they can be drafted from if someone cannot bond again.
-                stateRef.update(_.withTouch(evictionPeer)).as(None)
+                Task(logger.debug(s"Discarding ENR from ${peer}")) >>
+                  stateRef.update(_.withTouch(evictionPeer)).as(None)
+
               case false =>
                 // Get rid of the non-responding peer and add the new one
                 // then try to add this one again (something else might be trying as well,
                 // don't want to end up overfilling the bucket).
-                removePeer(evictionPeer) >> maybeStorePeer(peer, enr, address)
+                Task(logger.debug(s"Evicting $evictionPeer")) >>
+                  removePeer(evictionPeer) >>
+                  maybeStorePeer(peer, enr, address)
             }
         }
     }
