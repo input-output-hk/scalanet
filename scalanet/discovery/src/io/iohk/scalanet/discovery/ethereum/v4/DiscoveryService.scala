@@ -505,7 +505,7 @@ object DiscoveryService {
         case Right(fetch) =>
           val maybeEnr = bond(peer).flatMap {
             case false =>
-              Task(logger.warn(s"Could not bond with ${peer.address} to fetch ENR")).as(None)
+              Task(logger.debug(s"Could not bond with ${peer.address} to fetch ENR")).as(None)
             case true =>
               rpc
                 .enrRequest(peer)(())
@@ -513,7 +513,7 @@ object DiscoveryService {
                   case None =>
                     // At this point we are still bonded with the peer, so they think they can send us requests.
                     // We just have to keep trying to get an ENR for them, until then we can't use them for routing.
-                    Task(logger.warn(s"Could not fetch ENR from ${peer.address}")).as(None)
+                    Task(logger.debug(s"Could not fetch ENR from ${peer.address}")).as(None)
 
                   case Some(enr) =>
                     EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
@@ -617,47 +617,57 @@ object DiscoveryService {
         closestNodes = closestIds.map(state.nodeMap)
       } yield (state.node, closestNodes)
 
+      def fetchNeighbors(from: Node): Task[Option[Seq[Node]]] = {
+        val peer = toPeer(from)
+        bond(peer).flatMap {
+          case true =>
+            rpc.findNode(peer)(target).recoverWith {
+              case NonFatal(ex) =>
+                Task(logger.debug(s"Failed to fetch neighbors of $target from $from: $ex")).as(None)
+            }
+          case false =>
+            Task(logger.debug(s"Could not bond with $from to fetch neighbors of $target")).as(None)
+        }
+      }
+
+      // Make sure these new nodes can be bonded with before we consider them,
+      // otherwise they might appear to be be closer to the target but actually
+      // be fakes with unreachable addresses that could knock out legit nodes.
+      def bondNeighbors(neighbors: Seq[Node]): Task[Seq[Node]] = {
+        Task
+          .parTraverseUnordered(neighbors) { neighbor =>
+            bond(toPeer(neighbor)).flatMap {
+              case true =>
+                Task.pure(Some(neighbor))
+              case false =>
+                Task(logger.debug(s"Could not bond with neighbor candidate $neighbor")).as(None)
+            }
+          }
+          .map(_.flatten)
+      }
+
       def loop(
           local: Node,
           closest: SortedSet[Node],
           asked: Set[Node]
       ): Task[SortedSet[Node]] = {
         // Contact the alpha closest nodes to the target that we haven't asked before.
-        val contact = closest
+        val contacts = closest
           .filterNot(asked)
           .filterNot(_.id == local.id)
           .take(config.kademliaAlpha)
           .toList
 
-        if (contact.isEmpty)
+        if (contacts.isEmpty)
           Task.pure(closest)
         else {
           Task
-            .parTraverseUnordered(contact) { node =>
-              val peer = toPeer(node)
-              bond(peer).flatMap {
-                case true =>
-                  rpc.findNode(peer)(target).recoverWith {
-                    case NonFatal(ex) =>
-                      Task(logger.debug(s"Failed to fetch neighbors of $target from $node: $ex")).as(None)
-                  }
-                case false =>
-                  Task(logger.debug(s"Could not bond with $node to fetch neighbors of $target")).as(None)
-              }
-            }
-            .flatMap { neighbors =>
-              // Make sure these new nodes can be bonded with before we consider them,
-              // otherwise they might appear to be be closer to the target but actually
-              // be fakes with unreachable addresses that could knock out legit nodes.
-              Task
-                .parTraverseUnordered(neighbors.flatten.flatten.distinct) { neighbor =>
-                  bond(toPeer(neighbor)).map(if (_) Some(neighbor) else None)
-                }
-                .map(_.flatten)
-            }
+            .parTraverseUnordered(contacts)(fetchNeighbors)
+            .map(_.flatten.flatten.distinct)
+            .flatMap(bondNeighbors)
             .flatMap { newNeighbors =>
               val newClosest = (closest ++ newNeighbors).take(config.kademliaBucketSize)
-              val newAsked = asked ++ contact
+              val newAsked = asked ++ contacts
               loop(local, newClosest, newAsked)
             }
         }
