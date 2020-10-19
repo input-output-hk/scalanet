@@ -30,7 +30,7 @@ class DiscoveryKademliaIntegrationSpec extends KademliaIntegrationSpec("Discover
   }
 
   override def makeXorOrdering(baseId: BitVector): Ordering[Node] =
-    XorOrdering[Node](baseId)(_.id)
+    XorOrdering[Node](_.id)(baseId)
 
   override def startNode(
       selfRecord: PeerRecord,

@@ -630,7 +630,7 @@ object DiscoveryService {
       */
     protected[v4] def lookup(target: NodeId): Task[SortedSet[Node]] = {
       implicit val nodeOrdering: Ordering[Node] =
-        XorOrdering[Node](target)(_.id)
+        XorOrdering[Node](_.id)(target)
 
       // Find the 16 closest nodes we know of.
       // We'll contact 'alpha' at a time but eventually try all of them

@@ -28,7 +28,7 @@ object XorOrdering {
   // distance, but in pathological tests it's not intuitive that sets of
   // different nodes with the same ID but different attributes disappear
   // from the set.
-  def apply[T](base: BitVector)(f: T => BitVector): Ordering[T] = {
+  def apply[T](f: T => BitVector)(base: BitVector): Ordering[T] = {
     val xorOrdering = new XorOrdering(base)
     val tupleOrdering = Ordering.Tuple2(xorOrdering, Ordering.Int)
     Ordering.by[T, (BitVector, Int)] { x =>
@@ -39,7 +39,7 @@ object XorOrdering {
 
 object XorNodeOrdering {
   def apply[A](base: BitVector): Ordering[NodeRecord[A]] =
-    XorOrdering[NodeRecord[A]](base)(_.id)
+    XorOrdering[NodeRecord[A]](_.id)(base)
 }
 
 class XorNodeOrder[A](val base: BitVector) extends Order[NodeRecord[A]] {
