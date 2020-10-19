@@ -786,9 +786,9 @@ object DiscoveryService {
 
         tryEnroll.flatTap {
           case true =>
-            Task(logger.info("Successfully enrolled with the bootstrap nodes."))
+            Task(logger.info("Successfully enrolled with some of the bootstrap nodes."))
           case false =>
-            Task(logger.warn("Failed to enroll with the bootstrap nodes."))
+            Task(logger.warn("Failed to enroll with any of the the bootstrap nodes."))
         }
       }
   }

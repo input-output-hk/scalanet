@@ -55,8 +55,8 @@ class DiscoveryKademliaIntegrationSpec extends KademliaIntegrationSpec("Discover
         )
       )
       config = DiscoveryConfig.default.copy(
-        requestTimeout = 1.second,
-        kademliaTimeout = 2.seconds,
+        requestTimeout = 500.millis,
+        kademliaTimeout = 100.millis, // We won't get that many results and waiting for them is slow.
         kademliaAlpha = testConfig.alpha,
         kademliaBucketSize = testConfig.k,
         discoveryPeriod = testConfig.refreshRate,

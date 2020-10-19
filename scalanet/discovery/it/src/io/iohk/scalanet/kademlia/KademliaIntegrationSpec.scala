@@ -75,7 +75,7 @@ abstract class KademliaIntegrationSpec(name: String)
 
   behavior of s"Kademlia with $name"
 
-  ignore should "only find self node when there are no bootstrap nodes" in taskTestCase {
+  it should "only find self node when there are no bootstrap nodes" in taskTestCase {
     startNode().use { node =>
       node.getPeers.map { knownNodes =>
         knownNodes should have size 1
@@ -83,7 +83,7 @@ abstract class KademliaIntegrationSpec(name: String)
     }
   }
 
-  ignore should "enable finding nodes with common bootstrap node" in taskTestCase {
+  it should "enable finding nodes with common bootstrap node" in taskTestCase {
     (for {
       node <- startNode()
       node1 <- startNode(initialNodes = Set(node.self))
@@ -98,7 +98,7 @@ abstract class KademliaIntegrationSpec(name: String)
     }
   }
 
-  ignore should "enable discovering neighbours of boostrap node" in taskTestCase {
+  it should "enable discovering neighbours of boostrap node" in taskTestCase {
     (for {
       node <- startNode()
       node1 <- startNode()
@@ -111,7 +111,7 @@ abstract class KademliaIntegrationSpec(name: String)
           eventually {
             // node3 joins 3 others, and get joined by node4
             node3.getPeers.runSyncUnsafe().size shouldEqual 5
-            // node4 joins node3 so ignore should learn about all its peers
+            // node4 joins node3 so it should learn about all its peers
             node4.getPeers.runSyncUnsafe().size shouldEqual 5
 
             // These nodes received messages from node3 and node4 so they should add them to their routing tables,
@@ -125,7 +125,7 @@ abstract class KademliaIntegrationSpec(name: String)
     }
   }
 
-  ignore should "enable discovering neighbours of the neighbours" in taskTestCase {
+  it should "enable discovering neighbours of the neighbours" in taskTestCase {
     (for {
       node <- startNode()
       node1 <- startNode(initialNodes = Set(node.self))
@@ -143,7 +143,7 @@ abstract class KademliaIntegrationSpec(name: String)
     }
   }
 
-  ignore should "add only online nodes to routing table" in taskTestCase {
+  it should "add only online nodes to routing table" in taskTestCase {
     (for {
       node <- startNode()
       node1A <- Resource.liftF(startNode().allocated)
@@ -163,7 +163,7 @@ abstract class KademliaIntegrationSpec(name: String)
     }
   }
 
-  ignore should "refresh routing table" in taskTestCase {
+  it should "refresh routing table" in taskTestCase {
     val lowRefConfig = defaultConfig.copy(refreshRate = 3.seconds)
     val randomNode = generatePeerRecordWithKey
     (for {
@@ -184,7 +184,6 @@ abstract class KademliaIntegrationSpec(name: String)
     }
   }
 
-  // FIXME
   it should "refresh table with many nodes in the network " in taskTestCase {
     val lowRefConfig = defaultConfig.copy(refreshRate = 1.seconds)
     val randomNode = generatePeerRecordWithKey
@@ -213,7 +212,7 @@ abstract class KademliaIntegrationSpec(name: String)
     }
   }
 
-  ignore should "add to routing table multiple concurrent nodes" in taskTestCase {
+  it should "add to routing table multiple concurrent nodes" in taskTestCase {
     val nodesRound1 = List.fill(5)(generatePeerRecordWithKey)
     val nodesRound2 = List.fill(5)(generatePeerRecordWithKey)
     (for {
@@ -229,7 +228,7 @@ abstract class KademliaIntegrationSpec(name: String)
     }
   }
 
-  ignore should "finish lookup when k closest nodes are found" in taskTestCase {
+  it should "finish lookup when k closest nodes are found" in taskTestCase {
     // alpha = 1 makes sure we are adding nodes one by one, so the final count should be equal exactly k, if alpha > 1
     // then final count could be at least k.
     val lowKConfig = defaultConfig.copy(k = 3, alpha = 1)
