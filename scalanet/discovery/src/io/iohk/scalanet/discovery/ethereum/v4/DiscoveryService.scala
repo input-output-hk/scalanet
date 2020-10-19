@@ -367,7 +367,7 @@ object DiscoveryService {
     protected[v4] def respondIfBonded[T](caller: Peer[A], request: String)(response: Task[T]): Task[Option[T]] =
       isBonded(caller).flatMap {
         case true => response.map(Some(_))
-        case false => Task(logger.debug(s"Ignoring $request request from unbonded ${caller}")).as(None)
+        case false => Task(logger.debug(s"Ignoring $request request from unbonded $caller")).as(None)
       }
 
     /** Runs the bonding process with the peer, unless already bonded.
@@ -549,9 +549,9 @@ object DiscoveryService {
         case Right(fetch) =>
           val maybeEnr = bond(peer).flatMap {
             case false =>
-              Task(logger.debug(s"Could not bond with ${peer} to fetch ENR")).as(None)
+              Task(logger.debug(s"Could not bond with $peer to fetch ENR")).as(None)
             case true =>
-              Task(logger.debug(s"Fetching the ENR from ${peer}...")) >>
+              Task(logger.debug(s"Fetching the ENR from $peer...")) >>
                 rpc
                   .enrRequest(peer)(())
                   .delayExecution(if (delay) config.requestTimeout else Duration.Zero)
@@ -559,7 +559,7 @@ object DiscoveryService {
                     case None =>
                       // At this point we are still bonded with the peer, so they think they can send us requests.
                       // We just have to keep trying to get an ENR for them, until then we can't use them for routing.
-                      Task(logger.debug(s"Could not fetch ENR from ${peer}")).as(None)
+                      Task(logger.debug(s"Could not fetch ENR from $peer")).as(None)
 
                     case Some(enr) =>
                       EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
@@ -577,11 +577,11 @@ object DiscoveryService {
                           }
 
                         case Attempt.Successful(false) =>
-                          Task(logger.info(s"Could not validate ENR signature from ${peer}!")) >>
+                          Task(logger.info(s"Could not validate ENR signature from $peer!")) >>
                             removePeer(peer).as(None)
 
                         case Attempt.Failure(err) =>
-                          Task(logger.error(s"Error validateing ENR from ${peer}: $err")).as(None)
+                          Task(logger.error(s"Error validateing ENR from $peer: $err")).as(None)
                       }
                   }
           }
@@ -627,7 +627,7 @@ object DiscoveryService {
         }
         .flatMap {
           case None =>
-            Task(logger.debug(s"Added ${peer} to the k-buckets.")).as(Some(enr))
+            Task(logger.debug(s"Added $peer to the k-buckets.")).as(Some(enr))
 
           case Some(evictionCandidate) =>
             val evictionPeer = toPeer(evictionCandidate)
@@ -639,7 +639,7 @@ object DiscoveryService {
                 // lookups, but won't return the peer itself in results.
                 // A more sophisticated approach would be to put them in a separate replacement
                 // cache for the bucket where they can be drafted from if someone cannot bond again.
-                Task(logger.debug(s"Not adding ${peer} to the k-buckets, keeping ${evictionPeer}")) >>
+                Task(logger.debug(s"Not adding $peer to the k-buckets, keeping $evictionPeer")) >>
                   stateRef.update(_.withTouch(evictionPeer)).as(None)
 
               case false =>
