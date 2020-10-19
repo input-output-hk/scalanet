@@ -44,6 +44,8 @@ case class InetMultiAddress(inetSocketAddress: InetSocketAddress) {
     val state = Seq(inetAddress)
     state.map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
   }
+
+  override def toString = inetSocketAddress.toString
 }
 
 object InetMultiAddress {

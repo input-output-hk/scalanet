@@ -289,6 +289,10 @@ object DiscoveryNetwork {
           for {
             expiring <- setExpiration(payload)
             packet <- pack(expiring)
+            _ <- Task(
+              logger
+                .debug(s"Sending ${payload.getClass.getSimpleName} from ${peerGroup.processAddress} to ${channel.to}")
+            )
             _ <- channel.sendMessage(packet)
           } yield packet
         }
@@ -343,8 +347,9 @@ object DiscoveryNetwork {
           channel
             .collectResponses(publicKey: PublicKey, config.requestTimeout.fromNow)(pf)
             .headOptionL
-            .onErrorRecover {
-              case NonFatal(ex) => None
+            .onErrorRecoverWith {
+              case NonFatal(ex) =>
+                Task(logger.debug(s"Failed to collect response from ${channel.to}: ${ex.getMessage}")).as(None)
             }
 
         /** Collect responses that match the partial function and fold them while the folder function returns Left.  */
@@ -356,19 +361,19 @@ object DiscoveryNetwork {
           channel
             .collectResponses(publicKey, timeout.fromNow)(pf)
             .attempt
-            .foldWhileLeftL((seed -> 0).some) {
+            .foldWhileLeftEvalL(Task.pure((seed -> 0).some)) {
               case (Some((acc, count)), Left(ex: TimeoutException)) if count > 0 =>
                 // We have a timeout but we already accumulated some results, so return those.
-                Right(Some((acc, count)))
+                Task.pure(Right(Some((acc, count))))
 
-              case (_, Left(_)) =>
+              case (_, Left(ex)) =>
                 // Unexpected error, discard results, if any.
-                Right(None)
+                Task(logger.debug(s"Failed to fold responses from ${channel.to}: ${ex.getMessage}")).as(Right(None))
 
               case (Some((acc, count)), Right(response)) =>
                 // New response, fold it with the existing to decide if we need more.
                 val next = (acc: Z) => Some(acc -> (count + 1))
-                f(acc, response).bimap(next, next)
+                Task.pure(f(acc, response).bimap(next, next))
             }
             .map(_.map(_._1))
 

@@ -299,10 +299,16 @@ object DiscoveryService {
           for {
             // Complete any deferred waiting for a ping from this peer, if we initiated the bonding.
             _ <- completePing(caller)
-            // Try to bond back, if this is a new node.
-            _ <- bond(caller).startAndForget
-            // We may already be bonded but the remote node could have changed its address.
-            _ <- maybeFetchEnr(caller, maybeRemoteEnrSeq).startAndForget
+            _ <- isBonded(caller)
+              .ifM(
+                // We may already be bonded but the remote node could have changed its address.
+                // It is possible that this is happening during a bonding, in which case we should
+                // wait for our Pong response to get to the remote node and be processed first.
+                maybeFetchEnr(caller, maybeRemoteEnrSeq, delay = true),
+                // Try to bond back, if this is a new node.
+                bond(caller)
+              )
+              .startAndForget
             // Return the latet local ENR sequence.
             enrSeq <- localEnrSeq
           } yield Some(Some(enrSeq))
@@ -311,7 +317,7 @@ object DiscoveryService {
     override def findNode: Call[Peer[A], Proc.FindNode] =
       caller =>
         target =>
-          ifBonded(caller) {
+          respondIfBonded(caller, "FindNode") {
             for {
               state <- stateRef.get
               targetId = Node.kademliaId(target)
@@ -324,7 +330,7 @@ object DiscoveryService {
 
     /** Handle incoming ENRRequest. */
     override def enrRequest: Call[Peer[A], Proc.ENRRequest] =
-      caller => _ => ifBonded(caller)(stateRef.get.map(_.enr))
+      caller => _ => respondIfBonded(caller, "ENRRequest")(stateRef.get.map(_.enr))
 
     // The methods below are `protected[v4]` so that they can be called from tests individually.
     // Initially they were in the companion object as pure functions but there are just too many
@@ -358,8 +364,12 @@ object DiscoveryService {
       }
     }
 
-    protected[v4] def ifBonded[T](caller: Peer[A])(thunk: Task[T]): Task[Option[T]] =
-      isBonded(caller).ifM(thunk.map(Some(_)), Task.pure(None))
+    /** Return Some response if the peer is bonded or log some hint about what was requested and return None. */
+    protected[v4] def respondIfBonded[T](caller: Peer[A], request: String)(response: Task[T]): Task[Option[T]] =
+      isBonded(caller).flatMap {
+        case true => response.map(Some(_))
+        case false => Task(logger.debug(s"Ignoring $request request from unbonded ${caller}")).as(None)
+      }
 
     /** Runs the bonding process with the peer, unless already bonded.
       *
@@ -383,23 +393,29 @@ object DiscoveryService {
               result.pongReceived.get
 
             case None =>
-              pingAndMaybeUpdateTimestamp(peer)
-                .flatMap {
-                  case Some(maybeRemoteEnrSeq) =>
-                    for {
-                      // Allow some time for the reciprocating ping to arrive.
-                      _ <- awaitPing(peer)
-                      // Complete all bonds waiting on this pong, after any pings were received
-                      // so that we can now try and send requests with as much confidence as we can get.
-                      _ <- completePong(peer, responded = true)
-                      // We need the ENR record for the full address to be verified.
-                      _ <- maybeFetchEnr(peer, maybeRemoteEnrSeq).startAndForget
-                    } yield true
+              Task(logger.debug(s"Trying to bond with $peer...")) >>
+                pingAndMaybeUpdateTimestamp(peer)
+                  .flatMap {
+                    case Some(maybeRemoteEnrSeq) =>
+                      for {
+                        _ <- Task(logger.debug(s"$peer responded to bond attempt."))
+                        // Allow some time for the reciprocating ping to arrive.
+                        _ <- awaitPing(peer)
+                        // Complete all bonds waiting on this pong, after any pings were received
+                        // so that we can now try and send requests with as much confidence as we can get.
+                        _ <- completePong(peer, responded = true)
+                        // We need the ENR record for the full address to be verified.
+                        // First allow some time for our Pong to go back to the caller.
+                        _ <- maybeFetchEnr(peer, maybeRemoteEnrSeq, delay = true).startAndForget
+                      } yield true
 
-                  case None =>
-                    removePeer(peer) >>
-                      completePong(peer, responded = false).as(false)
-                }
+                    case None =>
+                      for {
+                        _ <- Task(logger.debug(s"$peer did not respond to bond attempt."))
+                        _ <- removePeer(peer)
+                        _ <- completePong(peer, responded = false)
+                      } yield false
+                  }
           }
       }
 
@@ -477,10 +493,16 @@ object DiscoveryService {
         }
 
     /** Fetch the remote ENR if we don't already have it or if
-      * the sequence number we have is less than what we got just now.  */
+      * the sequence number we have is less than what we got just now.
+      *
+      * The execution might be delayed in case we are expecting the other side
+      * to receive our Pong first, lest they think we are unbonded.
+      * Passing on the variable so the Deferred is entered into the state.
+      *  */
     protected[v4] def maybeFetchEnr(
         peer: Peer[A],
-        maybeRemoteEnrSeq: Option[ENRSeq]
+        maybeRemoteEnrSeq: Option[ENRSeq],
+        delay: Boolean = false
     ): Task[Unit] =
       for {
         state <- stateRef.get
@@ -497,11 +519,17 @@ object DiscoveryService {
           case _ =>
             false
         }
-        _ <- fetchEnr(peer).whenA(needsFetching)
+        _ <- fetchEnr(peer, delay).whenA(needsFetching)
       } yield ()
 
-    /** Fetch a fresh ENR from the peer and store it. */
-    protected[v4] def fetchEnr(peer: Peer[A]): Task[Option[EthereumNodeRecord]] = {
+    /** Fetch a fresh ENR from the peer and store it.
+      *
+      * Use delay=true if there's a high chance that the other side is still bonding with us.
+      */
+    protected[v4] def fetchEnr(
+        peer: Peer[A],
+        delay: Boolean = false
+    ): Task[Option[EthereumNodeRecord]] = {
       val waitOrFetch =
         for {
           d <- Deferred[Task, Option[EthereumNodeRecord]]
@@ -524,37 +552,39 @@ object DiscoveryService {
             case false =>
               Task(logger.debug(s"Could not bond with ${peer} to fetch ENR")).as(None)
             case true =>
-              rpc
-                .enrRequest(peer)(())
-                .flatMap {
-                  case None =>
-                    // At this point we are still bonded with the peer, so they think they can send us requests.
-                    // We just have to keep trying to get an ENR for them, until then we can't use them for routing.
-                    Task(logger.debug(s"Could not fetch ENR from ${peer}")).as(None)
+              Task(logger.debug(s"Fetching the ENR from ${peer}...")) >>
+                rpc
+                  .enrRequest(peer)(())
+                  .delayExecution(if (delay) config.requestTimeout else Duration.Zero)
+                  .flatMap {
+                    case None =>
+                      // At this point we are still bonded with the peer, so they think they can send us requests.
+                      // We just have to keep trying to get an ENR for them, until then we can't use them for routing.
+                      Task(logger.debug(s"Could not fetch ENR from ${peer}")).as(None)
 
-                  case Some(enr) =>
-                    EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
-                      case Attempt.Successful(true) =>
-                        // Try to extract the node address from the ENR record and update the node database,
-                        // otherwise if there's no address we can use remove the peer.
-                        Node.Address.fromEnr(enr) match {
-                          case None =>
-                            Task(logger.debug(s"Could not extract node address from $enr")) >>
-                              removePeer(peer).as(None)
+                    case Some(enr) =>
+                      EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
+                        case Attempt.Successful(true) =>
+                          // Try to extract the node address from the ENR record and update the node database,
+                          // otherwise if there's no address we can use remove the peer.
+                          Node.Address.fromEnr(enr) match {
+                            case None =>
+                              Task(logger.debug(s"Could not extract node address from $enr")) >>
+                                removePeer(peer).as(None)
 
-                          case Some(address) =>
-                            Task(logger.info(s"Storing the ENR for $peer")) >>
-                              storePeer(peer, enr, address)
-                        }
+                            case Some(address) =>
+                              Task(logger.info(s"Storing the ENR for $peer")) >>
+                                storePeer(peer, enr, address)
+                          }
 
-                      case Attempt.Successful(false) =>
-                        Task(logger.info(s"Could not validate ENR signature from ${peer}!")) >>
-                          removePeer(peer).as(None)
+                        case Attempt.Successful(false) =>
+                          Task(logger.info(s"Could not validate ENR signature from ${peer}!")) >>
+                            removePeer(peer).as(None)
 
-                      case Attempt.Failure(err) =>
-                        Task(logger.error(s"Error validateing ENR from ${peer}: $err")).as(None)
-                    }
-                }
+                        case Attempt.Failure(err) =>
+                          Task(logger.error(s"Error validateing ENR from ${peer}: $err")).as(None)
+                      }
+                  }
           }
 
           maybeEnr
@@ -738,7 +768,9 @@ object DiscoveryService {
         val tryEnroll = for {
           nodeId <- stateRef.get.map(_.node.id)
           bootstrapPeers = boostrapNodes.toList.map(toPeer).filterNot(_.id == nodeId)
-          maybeBootstrapEnrs <- bootstrapPeers.traverse(fetchEnr)
+          // TODO: It may be worth adding an option to retry this a couple of times
+          // due to bonding timing issues when the bootstrap gets our request too soon.
+          maybeBootstrapEnrs <- bootstrapPeers.traverse(fetchEnr(_, delay = true))
           result <- if (maybeBootstrapEnrs.exists(_.isDefined)) {
             lookup(nodeId).as(true)
           } else {

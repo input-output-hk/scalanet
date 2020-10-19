@@ -56,7 +56,10 @@ class DiscoveryKademliaIntegrationSpec extends KademliaIntegrationSpec("Discover
       )
       config = DiscoveryConfig.default.copy(
         requestTimeout = 1.second,
-        kademliaTimeout = 2.seconds
+        kademliaTimeout = 2.seconds,
+        kademliaAlpha = testConfig.alpha,
+        kademliaBucketSize = testConfig.k,
+        discoveryPeriod = testConfig.refreshRate
       )
       network <- Resource.liftF {
         DiscoveryNetwork[InetMultiAddress](

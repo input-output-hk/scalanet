@@ -288,11 +288,14 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       override val test = for {
         time0 <- service.currentTimeMillis
         bonding <- service.bond(remotePeer).start
-        _ <- service.completePing(remotePeer)
+        // Simulating a Ping from the remote.
+        _ <- service.completePing(remotePeer).delayExecution(50.millis)
         bonded <- bonding.join
         time1 <- service.currentTimeMillis
       } yield {
         bonded shouldBe true
+        // We shouldn't need to wait for a full timeout since the
+        // ping from the remote peer should arrive quicker.
         assert(time1 - time0 < config.requestTimeout.toMillis)
       }
     }
@@ -302,6 +305,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     new BondingFixture {
       override val test = for {
         _ <- service.bond(remotePeer)
+        // Allow the ENR fetching to finish.
         _ <- stateRef.get.flatMap(_.fetchEnrMap.get(remotePeer).fold(Task.sleep(100.millis))(_.get.void))
         state <- stateRef.get
       } yield {

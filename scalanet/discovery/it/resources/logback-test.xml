@@ -3,13 +3,15 @@
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%t %0logger %-5level %msg%n</pattern>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} %msg%n</pattern>
         </encoder>
     </appender>
 
     <logger name="io.netty" level="OFF"/>
 
-    <root level="WARN">
+    <logger name="io.iohk.scalanet.peergroup.udp" level="ERROR"/>
+
+    <root level="DEBUG">
         <appender-ref ref="STDOUT"/>
     </root>
 
