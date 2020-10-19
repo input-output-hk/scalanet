@@ -143,7 +143,6 @@ abstract class KademliaIntegrationSpec(name: String)
     }
   }
 
-  // FIXME
   ignore should "add only online nodes to routing table" in taskTestCase {
     (for {
       node <- startNode()
@@ -164,8 +163,7 @@ abstract class KademliaIntegrationSpec(name: String)
     }
   }
 
-  // FIXME
-  it should "refresh routing table" in taskTestCase {
+  ignore should "refresh routing table" in taskTestCase {
     val lowRefConfig = defaultConfig.copy(refreshRate = 3.seconds)
     val randomNode = generatePeerRecordWithKey
     (for {
@@ -187,7 +185,7 @@ abstract class KademliaIntegrationSpec(name: String)
   }
 
   // FIXME
-  ignore should "refresh table with many nodes in the network " in taskTestCase {
+  it should "refresh table with many nodes in the network " in taskTestCase {
     val lowRefConfig = defaultConfig.copy(refreshRate = 1.seconds)
     val randomNode = generatePeerRecordWithKey
     (for {

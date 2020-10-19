@@ -67,7 +67,6 @@ object DiscoveryService {
       node: Node,
       enr: EthereumNodeRecord,
       config: DiscoveryConfig,
-      bootstraps: Set[Node],
       network: DiscoveryNetwork[A],
       toAddress: Node.Address => A
   )(
@@ -82,7 +81,7 @@ object DiscoveryService {
           // Start handling requests, we need them during enrolling so the peers can ping and bond with us.
           cancelToken <- network.startHandling(service)
           // Contact the bootstrap nodes.
-          _ <- service.enroll(bootstraps).whenA(bootstraps.nonEmpty)
+          _ <- service.enroll()
           // Periodically discover new nodes.
           discoveryFiber <- service.lookupRandom().delayExecution(config.discoveryPeriod).loopForever.start
         } yield (service, cancelToken, discoveryFiber)
@@ -683,7 +682,16 @@ object DiscoveryService {
           .closestNodes(targetId, config.kademliaBucketSize)
 
         closestNodes = closestIds.map(state.kademliaIdToNodeId).map(state.nodeMap)
-      } yield (state.node, closestNodes)
+
+        // In case we haven't been able to bond with the bootstrap nodes at startup,
+        // and we don't have enough nodes to contact now, try them again, maybe
+        // they are online now. This is so that we don't have to pretend they
+        // are online and store them in the ENR map until they really are available.
+        closestOrBootstraps = if (closestNodes.size < config.kademliaBucketSize)
+          (closestNodes ++ config.knownPeers).distinct.take(config.kademliaBucketSize)
+        else closestNodes
+
+      } yield (state.node, closestOrBootstraps)
 
       def fetchNeighbors(from: Node): Task[Option[Seq[Node]]] = {
         val peer = toPeer(from)
@@ -761,15 +769,13 @@ object DiscoveryService {
       * or `false` if none of them responded with a correct ENR,
       * which would mean we don't have anyone to do lookups with.
       */
-    protected[v4] def enroll(boostrapNodes: Set[Node]): Task[Boolean] =
-      if (boostrapNodes.isEmpty)
+    protected[v4] def enroll(): Task[Boolean] =
+      if (config.knownPeers.isEmpty)
         Task.pure(false)
       else {
         val tryEnroll = for {
           nodeId <- stateRef.get.map(_.node.id)
-          bootstrapPeers = boostrapNodes.toList.map(toPeer).filterNot(_.id == nodeId)
-          // TODO: It may be worth adding an option to retry this a couple of times
-          // due to bonding timing issues when the bootstrap gets our request too soon.
+          bootstrapPeers = config.knownPeers.toList.map(toPeer).filterNot(_.id == nodeId)
           maybeBootstrapEnrs <- bootstrapPeers.traverse(fetchEnr(_, delay = true))
           result <- if (maybeBootstrapEnrs.exists(_.isDefined)) {
             lookup(nodeId).as(true)

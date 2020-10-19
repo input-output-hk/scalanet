@@ -746,8 +746,12 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     new LookupFixture {
       override val expectedTarget = Some(localNode.id)
 
+      override lazy val config = defaultConfig.copy(
+        knownPeers = Set(remoteNode)
+      )
+
       override val test = for {
-        enrolled <- service.enroll(Set(remoteNode))
+        enrolled <- service.enroll()
         state <- stateRef.get
       } yield {
         enrolled shouldBe true
@@ -762,8 +766,13 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         ping = _ => _ => Task.pure(Some(None)),
         enrRequest = _ => _ => Task.pure(None)
       )
+
+      override lazy val config = defaultConfig.copy(
+        knownPeers = Set(remoteNode)
+      )
+
       override val test = for {
-        enrolled <- service.enroll(Set(remoteNode))
+        enrolled <- service.enroll()
         state <- stateRef.get
       } yield {
         enrolled shouldBe false
