@@ -135,7 +135,12 @@ object DiscoveryService {
     def withBondingResults(peer: Peer[A], results: BondingResults): State[A] =
       copy(bondingResultsMap = bondingResultsMap.updated(peer, results))
 
-    def withEnrAndAddress(peer: Peer[A], enr: EthereumNodeRecord, address: Node.Address): State[A] =
+    def withEnrAndAddress(
+        peer: Peer[A],
+        enr: EthereumNodeRecord,
+        address: Node.Address,
+        addToBucket: Boolean = true
+    ): State[A] =
       copy(
         enrMap = enrMap.updated(peer.id, enr),
         nodeMap = nodeMap.updated(peer.id, Node(peer.id, address)),
@@ -144,8 +149,10 @@ object DiscoveryService {
             kBuckets
           else if (kBuckets.getBucket(peer.id)._2.contains(peer.id))
             kBuckets.touch(peer.id)
-          else
+          else if (addToBucket)
             kBuckets.add(peer.id)
+          else
+            kBuckets
       )
 
     def withTouch(peer: Peer[A]): State[A] =
@@ -252,6 +259,7 @@ object DiscoveryService {
         if (state.node.id == nodeId) state else state.removePeer(nodeId)
       }
 
+    /** Update the node and ENR of the local peer with the new address and ping peers with the new ENR seq. */
     override def updateExternalAddress(ip: InetAddress): Task[Unit] = {
       stateRef
         .modify { state =>
@@ -526,7 +534,8 @@ object DiscoveryService {
                               removePeer(peer).as(None)
 
                           case Some(address) =>
-                            maybeStorePeer(peer, enr, address)
+                            Task(logger.info(s"Storing the ENR for $peer")) >>
+                              storePeer(peer, enr, address)
                         }
 
                       case Attempt.Successful(false) =>
@@ -545,10 +554,17 @@ object DiscoveryService {
       }
     }
 
-    /** See if the bucket the node would fit into isn't already full. If it is, try to evict the least recently seen peer.
-      * Returns None if the record was discarded or Some if it was stored.
+    /** Add the peer to the node and ENR maps, then see if the bucket the node would fit into isn't already full.
+      * If it isn't, add the peer to the routing table, otherwise try to evict the least recently seen peer.
+      *
+      * Returns None if the routing record was discarded or Some if it was added to the k-buckets.
+      *
+      * NOTE: Half of the network falls in the first bucket, so we only track `k` of them. If we used
+      * this component for routing messages it would be a waste to discard the ENR and use `lookup`
+      * every time we need to talk to someone on the other half of the address space, so the ENR is
+      * stored regardless of whether we enter the record in the k-buckets.
       */
-    protected[v4] def maybeStorePeer(
+    protected[v4] def storePeer(
         peer: Peer[A],
         enr: EthereumNodeRecord,
         address: Node.Address
@@ -559,18 +575,21 @@ object DiscoveryService {
             state -> None
           else {
             val (_, bucket) = state.kBuckets.getBucket(peer.id)
-            if (bucket.contains(peer.id) || bucket.size < config.kademliaBucketSize) {
-              // We can just update the records, the bucket either has room or won't need to grow.
-              state.withEnrAndAddress(peer, enr, address) -> None
-            } else {
-              // We have to consider evicting somebody or dropping this node.
-              state -> Some(state.nodeMap(PublicKey(bucket.head)))
-            }
+            val (addToBucket, maybeEvict) =
+              if (bucket.contains(peer.id) || bucket.size < config.kademliaBucketSize) {
+                // We can just update the records, the bucket either has room or won't need to grow.
+                true -> None
+              } else {
+                // We have to consider evicting somebody or dropping this node.
+                false -> Some(state.nodeMap(PublicKey(bucket.head)))
+              }
+            // Store the ENR record and maybe update the k-buckets.
+            state.withEnrAndAddress(peer, enr, address, addToBucket) -> maybeEvict
           }
         }
         .flatMap {
           case None =>
-            Task(logger.info(s"Stored ENR for ${peer}")).as(Some(enr))
+            Task(logger.debug(s"Added ${peer} to the k-buckets.")).as(Some(enr))
 
           case Some(evictionCandidate) =>
             val evictionPeer = toPeer(evictionCandidate)
@@ -582,16 +601,16 @@ object DiscoveryService {
                 // lookups, but won't return the peer itself in results.
                 // A more sophisticated approach would be to put them in a separate replacement
                 // cache for the bucket where they can be drafted from if someone cannot bond again.
-                Task(logger.debug(s"Discarding ENR from ${peer}")) >>
+                Task(logger.debug(s"Not adding ${peer} to the k-buckets, keeping ${evictionPeer}")) >>
                   stateRef.update(_.withTouch(evictionPeer)).as(None)
 
               case false =>
                 // Get rid of the non-responding peer and add the new one
                 // then try to add this one again (something else might be trying as well,
                 // don't want to end up overfilling the bucket).
-                Task(logger.debug(s"Evicting $evictionPeer")) >>
+                Task(logger.debug(s"Evicting $evictionPeer, maybe replacing with $peer")) >>
                   removePeer(evictionPeer) >>
-                  maybeStorePeer(peer, enr, address)
+                  storePeer(peer, enr, address)
             }
         }
     }
@@ -601,6 +620,11 @@ object DiscoveryService {
       stateRef.update(_.removePeer(peer, toAddress))
 
     /** Locate the k closest nodes to a node ID.
+      *
+      * Note that it keeps going even if we know the target or find it along the way.
+      * Due to the way it allows by default 7 seconds for the k closest neihbors to
+      * arrive from each peer we ask (or if they return k quicker then it returns earlier)
+      * it could be quite slow if it was used for routing.
       *
       * https://github.com/ethereum/devp2p/blob/master/discv4.md#recursive-lookup
       */

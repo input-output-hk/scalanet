@@ -445,7 +445,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
-  behavior of "maybeStorePeer"
+  behavior of "storePeer"
 
   trait FullBucketFixture extends Fixture {
     override lazy val config = defaultConfig.copy(
@@ -477,15 +477,18 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       _ <- stateRef.update(
         _.withEnrAndAddress(peer1._1, peer1._2, peer1._3)
       )
-      _ <- service.maybeStorePeer(peer2._1, peer2._2, peer2._3)
+      _ <- service.storePeer(peer2._1, peer2._2, peer2._3)
       state <- stateRef.get
     } yield {
+      // If the existing peer didn't respond, forget them completely.
       state.nodeMap.contains(peer1._1.id) shouldBe responds
       state.enrMap.contains(peer1._1.id) shouldBe responds
       state.kBuckets.contains(peer1._1.id) shouldBe responds
 
-      state.nodeMap.contains(peer2._1.id) shouldBe !responds
-      state.enrMap.contains(peer2._1.id) shouldBe !responds
+      // Add the new ENR of the peer regardless of the existing.
+      state.nodeMap.contains(peer2._1.id) shouldBe true
+      state.enrMap.contains(peer2._1.id) shouldBe true
+      // Only use them for routing if the existing got evicted.
       state.kBuckets.contains(peer2._1.id) shouldBe !responds
     }
   }

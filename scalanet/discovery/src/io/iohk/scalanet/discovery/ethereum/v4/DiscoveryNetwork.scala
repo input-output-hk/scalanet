@@ -163,7 +163,7 @@ object DiscoveryNetwork {
               handler.findNode(caller)(target)
             } { nodes =>
               nodes
-                .take(config.kademliaBucketSize)
+                .take(config.kademliaBucketSize) // NOTE: Other nodes could use a different setting.
                 .grouped(maxNeighborsPerPacket)
                 .toList
                 .traverse { group =>
@@ -225,6 +225,7 @@ object DiscoveryNetwork {
       private def isExpired(payload: HasExpiration[_], now: Long): Boolean =
         payload.expiration < now - maxClockDriftMillis
 
+      /** Ping a peer. */
       override val ping = (peer: Peer[A]) =>
         (localEnrSeq: Option[ENRSeq]) =>
           peerGroup.client(peer.address).use { channel =>
@@ -240,6 +241,16 @@ object DiscoveryNetwork {
               }
           }
 
+      /** Ask a peer about neighbors of a target.
+        *
+        * NOTE: There can be many responses to a request due to the size limits of packets.
+        * The responses cannot be tied to the request, so if we do multiple requests concurrently
+        * we might end up mixing the results. One option to remedy would be to make sure we
+        * only send one request to a given node at any time, waiting with the next until all
+        * responses are collected, which can be 16 nodes or 7 seconds, whichever comes first.
+        * However that would serialize all requests, might result in some of them taking much
+        * longer than expected.
+        */
       override val findNode = (peer: Peer[A]) =>
         (target: PublicKey) =>
           peerGroup.client(peer.address).use { channel =>
@@ -253,6 +264,7 @@ object DiscoveryNetwork {
             }
           }
 
+      /** Fetch the ENR of a peer. */
       override val enrRequest = (peer: Peer[A]) =>
         (_: Unit) =>
           peerGroup.client(peer.address).use { channel =>

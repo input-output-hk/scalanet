@@ -228,7 +228,7 @@ abstract class KademliaIntegrationSpec(peerGroupName: String)
     val lowKConfig = defaultConfig.copy(k = 3, alpha = 1)
     val nodes = (0 until 5).map(_ => generateNodeRecord()).toSeq
     val testNode = nodes.head
-    val rest = nodes.tail.sorted(ord = new XorNodeOrdering[InetMultiAddress](testNode.id))
+    val rest = nodes.tail.sorted(ord = XorNodeOrdering[InetMultiAddress](testNode.id))
     val bootStrapNode = rest.head
     val bootStrapNodeNeighbours = rest.tail.toSet
 
