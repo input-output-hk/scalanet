@@ -13,6 +13,7 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scodec.bits.BitVector
 import scala.language.reflectiveCalls
+import io.iohk.scalanet.discovery.crypto.PrivateKey
 
 abstract class KademliaIntegrationSpec(name: String)
     extends AsyncFlatSpec
@@ -31,8 +32,8 @@ abstract class KademliaIntegrationSpec(name: String)
 
   def makeXorOrdering(nodeId: BitVector): Ordering[PeerRecord]
 
-  /** Generate a random peer. */
-  def generatePeerRecord(): PeerRecord
+  /** Generate a random peer with a private key. */
+  def generatePeerRecordWithKey: (PeerRecord, PrivateKey)
 
   case class TestNodeKademliaConfig(
       alpha: Int = 3,
@@ -44,7 +45,7 @@ abstract class KademliaIntegrationSpec(name: String)
   val defaultConfig = TestNodeKademliaConfig()
 
   def startNode(
-      selfRecord: PeerRecord = generatePeerRecord(),
+      selfRecordWithKey: (PeerRecord, PrivateKey) = generatePeerRecordWithKey,
       initialNodes: Set[PeerRecord] = Set(),
       testConfig: TestNodeKademliaConfig = defaultConfig
   ): Resource[Task, TestNode]
@@ -164,11 +165,11 @@ abstract class KademliaIntegrationSpec(name: String)
 
   it should "refresh routing table" in taskTestCase {
     val lowRefConfig = defaultConfig.copy(refreshRate = 3.seconds)
-    val randomNode = generatePeerRecord()
+    val randomNode = generatePeerRecordWithKey
     (for {
-      node <- startNode(initialNodes = Set(randomNode), testConfig = lowRefConfig)
+      node <- startNode(initialNodes = Set(randomNode._1), testConfig = lowRefConfig)
       node1 <- startNode(initialNodes = Set(node.self), testConfig = lowRefConfig)
-      _ <- startNode(selfRecord = randomNode)
+      _ <- startNode(selfRecordWithKey = randomNode)
     } yield node1).use { node1 =>
       Task {
         eventually {
@@ -180,15 +181,15 @@ abstract class KademliaIntegrationSpec(name: String)
 
   it should "refresh table with many nodes in the network " in taskTestCase {
     val lowRefConfig = defaultConfig.copy(refreshRate = 1.seconds)
-    val randomNode = generatePeerRecord()
+    val randomNode = generatePeerRecordWithKey
     (for {
-      node1 <- startNode(initialNodes = Set(randomNode), testConfig = lowRefConfig)
+      node1 <- startNode(initialNodes = Set(randomNode._1), testConfig = lowRefConfig)
       node2 <- startNode(initialNodes = Set(), testConfig = lowRefConfig)
       node3 <- startNode(initialNodes = Set(node2.self), testConfig = lowRefConfig)
       node4 <- startNode(initialNodes = Set(node3.self), testConfig = lowRefConfig)
       _ <- Resource.liftF(Task.sleep(10.seconds))
       node5 <- startNode(
-        selfRecord = randomNode,
+        selfRecordWithKey = randomNode,
         initialNodes = Set(node2.self, node3.self, node4.self),
         testConfig = lowRefConfig
       )
@@ -207,8 +208,8 @@ abstract class KademliaIntegrationSpec(name: String)
   }
 
   it should "add to routing table multiple concurrent nodes" in taskTestCase {
-    val nodesRound1 = List.fill(5)(generatePeerRecord())
-    val nodesRound2 = List.fill(5)(generatePeerRecord())
+    val nodesRound1 = List.fill(5)(generatePeerRecordWithKey)
+    val nodesRound2 = List.fill(5)(generatePeerRecordWithKey)
     (for {
       node <- startNode()
       _ <- nodesRound1.map(n => startNode(n, initialNodes = Set(node.self))).sequence
@@ -226,16 +227,18 @@ abstract class KademliaIntegrationSpec(name: String)
     // alpha = 1 makes sure we are adding nodes one by one, so the final count should be equal exactly k, if alpha > 1
     // then final count could be at least k.
     val lowKConfig = defaultConfig.copy(k = 3, alpha = 1)
-    val nodes = (0 until 5).map(_ => generatePeerRecord()).toSeq
+    val nodes = (0 until 5).map(_ => generatePeerRecordWithKey).toSeq
     val testNode = nodes.head
-    val rest = nodes.tail.sorted(ord = makeXorOrdering(testNode.id))
+    val nodeOrdering: Ordering[PeerRecord] = makeXorOrdering(testNode._1.id)
+    val nodeWithKeyOrdering = Ordering.by[(PeerRecord, BitVector), PeerRecord](_._1)(nodeOrdering)
+    val rest = nodes.tail.sorted(ord = nodeWithKeyOrdering)
     val bootStrapNode = rest.head
     val bootStrapNodeNeighbours = rest.tail.toSet
 
     (for {
       nodes <- bootStrapNodeNeighbours.toList.map(node => startNode(node, testConfig = lowKConfig)).sequence
-      bootNode <- startNode(bootStrapNode, initialNodes = bootStrapNodeNeighbours, testConfig = lowKConfig)
-      rootNode <- startNode(testNode, initialNodes = Set(bootStrapNode), testConfig = lowKConfig)
+      bootNode <- startNode(bootStrapNode, initialNodes = bootStrapNodeNeighbours.map(_._1), testConfig = lowKConfig)
+      rootNode <- startNode(testNode, initialNodes = Set(bootStrapNode._1), testConfig = lowKConfig)
     } yield (nodes, rootNode)).use {
       case (nodes, rootNode) =>
         Task {

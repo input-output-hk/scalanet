@@ -9,18 +9,20 @@ import monix.eval.Task
 
 import io.iohk.scalanet.peergroup.PeerGroup
 import scodec.bits.BitVector
+import io.iohk.scalanet.discovery.crypto.PrivateKey
 
 abstract class KRouterKademliaIntegrationSpec(peerGroupName: String)
     extends KademliaIntegrationSpec(s"KRouter and $peerGroupName") {
 
   override type PeerRecord = NodeRecord[InetMultiAddress]
 
-  override def generatePeerRecord(): PeerRecord = {
+  override def generatePeerRecordWithKey: (PeerRecord, PrivateKey) = {
     val randomGen = new SecureRandom()
     val testBitLength = 16
     val address = InetMultiAddress(InetPeerGroupUtils.aRandomAddress())
     val id = KBuckets.generateRandomId(testBitLength, randomGen)
-    NodeRecord(id, address, address)
+    val privateKey = PrivateKey(BitVector.empty) // Not using cryptography.
+    NodeRecord(id, address, address) -> privateKey
   }
 
   override def makeXorOrdering(baseId: BitVector): Ordering[NodeRecord[InetMultiAddress]] =
@@ -55,10 +57,11 @@ abstract class KRouterKademliaIntegrationSpec(peerGroupName: String)
   }
 
   override def startNode(
-      selfRecord: PeerRecord,
+      selfRecordWithKey: (PeerRecord, PrivateKey),
       initialNodes: Set[PeerRecord],
       testConfig: TestNodeKademliaConfig
   ): Resource[Task, TestNode] = {
+    val (selfRecord, _) = selfRecordWithKey
     val routerConfig = KRouter.Config(
       selfRecord,
       initialNodes,
