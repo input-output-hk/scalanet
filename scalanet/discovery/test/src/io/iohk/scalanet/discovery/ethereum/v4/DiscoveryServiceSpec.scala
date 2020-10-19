@@ -407,7 +407,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         state.fetchEnrMap should not contain key(remotePeer)
         state.nodeMap should contain key (remotePeer.id)
         state.enrMap(remotePeer.id) shouldBe remoteENR
-        state.kBuckets.contains(remotePeer.id) shouldBe true
+        state.kBuckets.contains(remotePeer.kademliaId) shouldBe true
       }
     }
   }
@@ -451,11 +451,12 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     override lazy val config = defaultConfig.copy(
       kademliaBucketSize = 1
     )
-    // Make two peers that don't share the first bit in their ID with the local one.
+    // Make two peers that don't share the first bit in their Kademlia ID with the local one.
     // These will share the same k-bucket.
     def makePeerInFirstBucket: (Peer[InetSocketAddress], EthereumNodeRecord, Node.Address) = {
       val (publicKey, privateKey) = sigalg.newKeyPair
-      if (publicKey(0) == localPublicKey(0)) makePeerInFirstBucket
+      if (Node.kademliaId(publicKey)(0) == Node.kademliaId(localPublicKey)(0))
+        makePeerInFirstBucket
       else {
         val address = aRandomAddress
         val node = makeNode(publicKey, address)
@@ -483,13 +484,13 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       // If the existing peer didn't respond, forget them completely.
       state.nodeMap.contains(peer1._1.id) shouldBe responds
       state.enrMap.contains(peer1._1.id) shouldBe responds
-      state.kBuckets.contains(peer1._1.id) shouldBe responds
+      state.kBuckets.contains(peer1._1.kademliaId) shouldBe responds
 
       // Add the new ENR of the peer regardless of the existing.
       state.nodeMap.contains(peer2._1.id) shouldBe true
       state.enrMap.contains(peer2._1.id) shouldBe true
       // Only use them for routing if the existing got evicted.
-      state.kBuckets.contains(peer2._1.id) shouldBe !responds
+      state.kBuckets.contains(peer2._1.kademliaId) shouldBe !responds
     }
   }
 
@@ -556,6 +557,8 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         maybeNodes <- service.findNode(caller)(remotePublicKey)
       } yield {
         maybeNodes should not be empty
+        // The caller is asking for the closest nodes to itself and we know about
+        // the local node and the remote node, so we should return those two.
         maybeNodes.get should have size 2
       }
     }
@@ -620,6 +623,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
             expectedTarget.foreach(targetPublicKey shouldBe _)
           } >>
             Task.pure {
+              // Every peer returns some random subset of the nodes we prepared.
               Some(Random.shuffle(randomNodes).take(config.kademliaBucketSize).map(_._1))
             }
     )
@@ -679,9 +683,10 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     new LookupFixture {
       val allNodes = List(localNode -> localENR, remoteNode -> remoteENR) ++ randomNodes
 
+      val targetId = Node.kademliaId(targetPublicKey)
       val expectedNodes = allNodes
         .map(_._1)
-        .sortBy(node => Xor.d(node.id, targetPublicKey))
+        .sortBy(node => Xor.d(node.kademliaId, targetId))
         .take(config.kademliaBucketSize)
 
       override val test = for {
@@ -724,6 +729,8 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         _ <- service.lookupRandom()
         state <- stateRef.get
       } yield {
+        // We should bond with nodes along the way, so in the end there should
+        // be more pinged nodes than just the remote we started with.
         state.lastPongTimestampMap.size should be > 1
       }
     }
@@ -849,7 +856,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         state.enrMap should not contain key(remotePublicKey)
         state.nodeMap should not contain key(remotePublicKey)
         state.lastPongTimestampMap should not contain key(remotePeer)
-        state.kBuckets.contains(remotePublicKey) shouldBe false
+        state.kBuckets.contains(remoteNode.kademliaId) shouldBe false
       }
     }
   }
@@ -862,7 +869,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       } yield {
         state.enrMap should contain key (localPublicKey)
         state.nodeMap should contain key (localPublicKey)
-        state.kBuckets.contains(localPublicKey) shouldBe true
+        state.kBuckets.contains(localNode.kademliaId) shouldBe true
       }
     }
   }

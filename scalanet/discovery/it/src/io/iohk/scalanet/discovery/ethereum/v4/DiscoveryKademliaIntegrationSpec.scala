@@ -1,6 +1,8 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
 import io.iohk.scalanet.kademlia.KademliaIntegrationSpec
+import io.iohk.scalanet.discovery.crypto.PublicKey
+import io.iohk.scalanet.discovery.hash.Hash
 import io.iohk.scalanet.discovery.ethereum.Node
 import io.iohk.scalanet.discovery.ethereum.v4.mocks.MockSigAlg
 import monix.eval.Task
@@ -29,8 +31,8 @@ class DiscoveryKademliaIntegrationSpec extends KademliaIntegrationSpec("Discover
     Node(publicKey, Node.Address(address.getAddress, address.getPort, address.getPort))
   }
 
-  override def makeXorOrdering(baseId: BitVector): Ordering[Node] =
-    XorOrdering[Node](_.id)(baseId)
+  override def makeXorOrdering(nodeId: BitVector): Ordering[Node] =
+    XorOrdering[Node, Hash](_.kademliaId)(Node.kademliaId(PublicKey(nodeId)))
 
   override def startNode(
       selfRecord: PeerRecord,

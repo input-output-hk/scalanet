@@ -1,13 +1,24 @@
 package io.iohk.scalanet.discovery.ethereum
 
 import io.iohk.scalanet.discovery.crypto.PublicKey
+import io.iohk.scalanet.discovery.hash.{Hash, Keccak256}
 import java.net.InetAddress
 import scodec.bits.ByteVector
 import scala.util.Try
 
-case class Node(id: PublicKey, address: Node.Address)
+case class Node(id: Node.Id, address: Node.Address) {
+  protected[discovery] lazy val kademliaId: Hash = Node.kademliaId(id)
+}
 
 object Node {
+
+  /** 64 bit uncompressed Secp256k1 public key. */
+  type Id = PublicKey
+
+  /** The ID of the node is the 64 bit public key, but for the XOR distance we use its hash. */
+  protected[discovery] def kademliaId(id: PublicKey): Hash =
+    Keccak256(id)
+
   case class Address(
       ip: InetAddress,
       udpPort: Int,

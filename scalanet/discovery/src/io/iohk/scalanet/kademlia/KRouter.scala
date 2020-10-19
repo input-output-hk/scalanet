@@ -139,7 +139,7 @@ class KRouter[A](
     routerState.update(current => current.removeNodeRecord(current.nodeRecords(nodeId)))
   }
 
-  def kBuckets: Task[KBuckets] = {
+  def kBuckets: Task[KBuckets[BitVector]] = {
     routerState.get.map(_.kBuckets)
   }
 
@@ -444,7 +444,10 @@ object KRouter {
   )
 
   private[scalanet] def getIndex[A](config: Config[A], clock: Clock): NodeRecordIndex[A] = {
-    NodeRecordIndex(new KBuckets(config.nodeRecord.id, clock), Map(config.nodeRecord.id -> config.nodeRecord))
+    NodeRecordIndex(
+      new KBuckets[BitVector](config.nodeRecord.id, clock),
+      Map(config.nodeRecord.id -> config.nodeRecord)
+    )
   }
 
   /**
@@ -551,7 +554,7 @@ object KRouter {
 
     }
 
-    case class NodeRecordIndex[A](kBuckets: KBuckets, nodeRecords: Map[BitVector, NodeRecord[A]]) {
+    case class NodeRecordIndex[A](kBuckets: KBuckets[BitVector], nodeRecords: Map[BitVector, NodeRecord[A]]) {
       def addNodeRecord(nodeRecord: NodeRecord[A]): NodeRecordIndex[A] = {
         copy(kBuckets = kBuckets.add(nodeRecord.id), nodeRecords = nodeRecords + (nodeRecord.id -> nodeRecord))
       }

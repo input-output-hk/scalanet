@@ -3,8 +3,9 @@ package io.iohk.scalanet.discovery.ethereum.v4
 import cats.effect.{Clock, Resource}
 import cats.effect.concurrent.{Deferred, Ref}
 import cats.implicits._
-import io.iohk.scalanet.discovery.crypto.{PublicKey, PrivateKey, SigAlg}
+import io.iohk.scalanet.discovery.crypto.{PrivateKey, SigAlg}
 import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord}
+import io.iohk.scalanet.discovery.hash.Hash
 import io.iohk.scalanet.kademlia.KBuckets
 import java.net.InetAddress
 import monix.eval.Task
@@ -19,11 +20,10 @@ import io.iohk.scalanet.kademlia.XorOrdering
   * can expect from the service to be able to talk to other peers.
   */
 trait DiscoveryService {
-  import DiscoveryService.NodeId
 
   /** Try to look up a node either in the local cache or
     * by performing a recursive lookup on the network. */
-  def getNode(nodeId: NodeId): Task[Option[Node]]
+  def getNode(nodeId: Node.Id): Task[Option[Node]]
 
   /** Return all currently bonded nodes. */
   def getNodes: Task[Set[Node]]
@@ -32,7 +32,7 @@ trait DiscoveryService {
   def addNode(node: Node): Task[Unit]
 
   /** Remove a node from the local cache. */
-  def removeNode(nodeId: NodeId): Task[Unit]
+  def removeNode(nodeId: Node.Id): Task[Unit]
 
   /** Update the local node with an updated external address,
     * incrementing the local ENR sequence.
@@ -49,7 +49,6 @@ object DiscoveryService {
 
   type ENRSeq = Long
   type Timestamp = Long
-  type NodeId = PublicKey
   type StateRef[A] = Ref[Task, State[A]]
 
   /** Implement the Discovery v4 protocol:
@@ -115,10 +114,11 @@ object DiscoveryService {
   protected[v4] case class State[A](
       node: Node,
       enr: EthereumNodeRecord,
-      // Kademlia buckets with node IDs in them.
-      kBuckets: KBuckets,
-      nodeMap: Map[NodeId, Node],
-      enrMap: Map[NodeId, EthereumNodeRecord],
+      // Kademlia buckets with hashes of the nodes' IDs in them.
+      kBuckets: KBuckets[Hash],
+      kademliaIdToNodeId: Map[Hash, Node.Id],
+      nodeMap: Map[Node.Id, Node],
+      enrMap: Map[Node.Id, EthereumNodeRecord],
       // Last time a peer responded with a Pong to our Ping.
       lastPongTimestampMap: Map[Peer[A], Timestamp],
       // Deferred results so we can ensure there's only one concurrent Ping to a given peer.
@@ -140,23 +140,25 @@ object DiscoveryService {
         enr: EthereumNodeRecord,
         address: Node.Address,
         addToBucket: Boolean = true
-    ): State[A] =
+    ): State[A] = {
       copy(
         enrMap = enrMap.updated(peer.id, enr),
         nodeMap = nodeMap.updated(peer.id, Node(peer.id, address)),
         kBuckets =
           if (isSelf(peer))
             kBuckets
-          else if (kBuckets.getBucket(peer.id)._2.contains(peer.id))
-            kBuckets.touch(peer.id)
+          else if (kBuckets.getBucket(peer.kademliaId)._2.contains(peer.kademliaId))
+            kBuckets.touch(peer.kademliaId)
           else if (addToBucket)
-            kBuckets.add(peer.id)
+            kBuckets.add(peer.kademliaId)
           else
-            kBuckets
+            kBuckets,
+        kademliaIdToNodeId = kademliaIdToNodeId.updated(peer.kademliaId, peer.id)
       )
+    }
 
     def withTouch(peer: Peer[A]): State[A] =
-      copy(kBuckets = kBuckets.touch(peer.id))
+      copy(kBuckets = kBuckets.touch(peer.kademliaId))
 
     def clearBondingResults(peer: Peer[A]): State[A] =
       copy(bondingResultsMap = bondingResultsMap - peer)
@@ -176,16 +178,18 @@ object DiscoveryService {
           copy(
             nodeMap = nodeMap - peer.id,
             enrMap = enrMap - peer.id,
-            kBuckets = kBuckets.remove(peer.id)
+            kBuckets = kBuckets.remove(peer.kademliaId),
+            kademliaIdToNodeId = kademliaIdToNodeId - peer.kademliaId
           )
         case _ => this
       }).copy(
+        // We can always remove these entries as they are keyed by ID+Address.
         lastPongTimestampMap = lastPongTimestampMap - peer,
         bondingResultsMap = bondingResultsMap - peer
       )
     }
 
-    def removePeer(peerId: NodeId): State[A] =
+    def removePeer(peerId: Node.Id): State[A] =
       copy(
         nodeMap = nodeMap - peerId,
         enrMap = enrMap - peerId,
@@ -195,7 +199,8 @@ object DiscoveryService {
         bondingResultsMap = bondingResultsMap.filterNot {
           case (peer, _) => peer.id == peerId
         },
-        kBuckets = kBuckets.remove(peerId)
+        kBuckets = kBuckets.remove(Node.kademliaId(peerId)),
+        kademliaIdToNodeId = kademliaIdToNodeId - Node.kademliaId(peerId)
       )
   }
   protected[v4] object State {
@@ -206,7 +211,8 @@ object DiscoveryService {
     ): State[A] = State[A](
       node = node,
       enr = enr,
-      kBuckets = new KBuckets(node.id, clock),
+      kBuckets = new KBuckets[Hash](node.kademliaId, clock),
+      kademliaIdToNodeId = Map(node.kademliaId -> node.id),
       nodeMap = Map(node.id -> node),
       enrMap = Map(node.id -> enr),
       lastPongTimestampMap = Map.empty[Peer[A], Timestamp],
@@ -238,7 +244,7 @@ object DiscoveryService {
     override def getNodes: Task[Set[Node]] =
       stateRef.get.map(_.nodeMap.values.toSet)
 
-    override def getNode(nodeId: NodeId): Task[Option[Node]] =
+    override def getNode(nodeId: Node.Id): Task[Option[Node]] =
       stateRef.get.flatMap { state =>
         state.nodeMap.get(nodeId) match {
           case cached @ Some(_) =>
@@ -254,7 +260,7 @@ object DiscoveryService {
         }
       }
 
-    override def removeNode(nodeId: NodeId): Task[Unit] =
+    override def removeNode(nodeId: Node.Id): Task[Unit] =
       stateRef.update { state =>
         if (state.node.id == nodeId) state else state.removePeer(nodeId)
       }
@@ -308,8 +314,11 @@ object DiscoveryService {
           ifBonded(caller) {
             for {
               state <- stateRef.get
-              closestNodeIds = state.kBuckets.closestNodes(target, config.kademliaBucketSize)
-              closestNodes = closestNodeIds.map(id => state.nodeMap.get(PublicKey(id))).flatten
+              targetId = Node.kademliaId(target)
+              closestNodeIds = state.kBuckets.closestNodes(targetId, config.kademliaBucketSize)
+              closestNodes = closestNodeIds
+                .map(state.kademliaIdToNodeId)
+                .map(state.nodeMap)
             } yield closestNodes
           }
 
@@ -574,14 +583,14 @@ object DiscoveryService {
           if (state.isSelf(peer))
             state -> None
           else {
-            val (_, bucket) = state.kBuckets.getBucket(peer.id)
+            val (_, bucket) = state.kBuckets.getBucket(peer.kademliaId)
             val (addToBucket, maybeEvict) =
-              if (bucket.contains(peer.id) || bucket.size < config.kademliaBucketSize) {
+              if (bucket.contains(peer.kademliaId) || bucket.size < config.kademliaBucketSize) {
                 // We can just update the records, the bucket either has room or won't need to grow.
                 true -> None
               } else {
                 // We have to consider evicting somebody or dropping this node.
-                false -> Some(state.nodeMap(PublicKey(bucket.head)))
+                false -> Some(state.nodeMap(state.kademliaIdToNodeId(bucket.head)))
               }
             // Store the ENR record and maybe update the k-buckets.
             state.withEnrAndAddress(peer, enr, address, addToBucket) -> maybeEvict
@@ -628,9 +637,11 @@ object DiscoveryService {
       *
       * https://github.com/ethereum/devp2p/blob/master/discv4.md#recursive-lookup
       */
-    protected[v4] def lookup(target: NodeId): Task[SortedSet[Node]] = {
+    protected[v4] def lookup(target: Node.Id): Task[SortedSet[Node]] = {
+      val targetId = Node.kademliaId(target)
+
       implicit val nodeOrdering: Ordering[Node] =
-        XorOrdering[Node](_.id)(target)
+        XorOrdering[Node, Hash](_.kademliaId)(targetId)
 
       // Find the 16 closest nodes we know of.
       // We'll contact 'alpha' at a time but eventually try all of them
@@ -639,10 +650,9 @@ object DiscoveryService {
         state <- stateRef.get
 
         closestIds = state.kBuckets
-          .closestNodes(target, config.kademliaBucketSize)
-          .map(PublicKey(_))
+          .closestNodes(targetId, config.kademliaBucketSize)
 
-        closestNodes = closestIds.map(state.nodeMap)
+        closestNodes = closestIds.map(state.kademliaIdToNodeId).map(state.nodeMap)
       } yield (state.node, closestNodes)
 
       def fetchNeighbors(from: Node): Task[Option[Seq[Node]]] = {
@@ -703,7 +713,9 @@ object DiscoveryService {
 
       init.flatMap {
         case (localNode, closestNodes) =>
-          loop(localNode, SortedSet(closestNodes: _*), Set(localNode))
+          val closest = SortedSet(closestNodes: _*)
+          val asked = Set(localNode)
+          loop(localNode, closest, asked)
       }
     }
 

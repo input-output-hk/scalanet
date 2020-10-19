@@ -29,7 +29,7 @@ abstract class KademliaIntegrationSpec(name: String)
     def getPeers: Task[Seq[PeerRecord]]
   }
 
-  def makeXorOrdering(baseId: BitVector): Ordering[PeerRecord]
+  def makeXorOrdering(nodeId: BitVector): Ordering[PeerRecord]
 
   /** Generate a random peer. */
   def generatePeerRecord(): PeerRecord
