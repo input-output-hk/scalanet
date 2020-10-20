@@ -384,7 +384,8 @@ object DiscoveryService {
     ): Task[Boolean] =
       isBonded(peer).flatMap {
         case true =>
-          Task.pure(true)
+          // Check that we have an ENR for this peer.
+          maybeFetchEnr(peer, maybeRemoteEnrSeq = None, delay = false).startAndForget.as(true)
 
         case false =>
           initBond(peer).flatMap {
