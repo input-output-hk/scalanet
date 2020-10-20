@@ -588,6 +588,10 @@ object DiscoveryService {
           }
 
           maybeEnr
+            .recoverWith {
+              case NonFatal(ex) =>
+                Task(logger.debug(s"Failed not fetch ENR from $peer: $ex")).as(None)
+            }
             .flatTap(fetch.complete)
             .guarantee(stateRef.update(_.clearEnrFetch(peer)))
       }
@@ -752,13 +756,11 @@ object DiscoveryService {
 
       init.flatMap {
         case (localNode, closestNodes) =>
-          val closest = SortedSet(closestNodes: _*)
-          val asked = Set(localNode)
-          loop(localNode, closest, asked)
+          loop(localNode, closest = SortedSet(closestNodes: _*), asked = Set(localNode))
       }
     }
 
-    /** Look up a random node ID to discovery new peers. */
+    /** Look up a random node ID to discover new peers. */
     protected[v4] def lookupRandom(): Task[Unit] =
       lookup(target = sigalg.newKeyPair._1).void
 
