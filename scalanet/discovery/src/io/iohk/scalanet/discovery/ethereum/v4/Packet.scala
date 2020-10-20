@@ -34,12 +34,12 @@ object Packet {
       Attempt.successful(DecodeResult(bits, BitVector.empty))
     }
 
-  private val packetDecoder: Decoder[Packet] =
+  private def packetDecoder(allowDecodeOverMaxPacketSize: Boolean): Decoder[Packet] =
     for {
       _ <- Decoder { bits =>
         Attempt
           .guard(
-            bits.size <= MaxPacketBitsSize,
+            allowDecodeOverMaxPacketSize || bits.size <= MaxPacketBitsSize,
             "Packet to decode exceeds maximum size."
           )
           .map(_ => DecodeResult((), bits))
@@ -61,8 +61,11 @@ object Packet {
       } yield bits
     }
 
-  implicit val packetCodec: Codec[Packet] =
-    Codec[Packet](packetEncoder, packetDecoder)
+  /** Create a codec for packets. Some Ethereum clients don't respect the size limits;
+    * for compatibility with them the check during decode can be turned off.
+    */
+  def packetCodec(allowDecodeOverMaxPacketSize: Boolean): Codec[Packet] =
+    Codec[Packet](packetEncoder, packetDecoder(allowDecodeOverMaxPacketSize))
 
   /** Serialize the payload, sign the data and compute the hash. */
   def pack(
