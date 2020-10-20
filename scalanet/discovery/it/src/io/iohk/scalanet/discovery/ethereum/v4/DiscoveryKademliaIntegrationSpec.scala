@@ -66,6 +66,7 @@ class DiscoveryKademliaIntegrationSpec extends KademliaIntegrationSpec("Discover
         DiscoveryNetwork[InetMultiAddress](
           peerGroup,
           privateKey,
+          localNodeAddress = selfNode.address,
           toNodeAddress = inetMultiAddressToNodeAddress,
           config = config
         )

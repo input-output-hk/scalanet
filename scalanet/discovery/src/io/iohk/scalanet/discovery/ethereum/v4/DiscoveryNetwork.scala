@@ -52,6 +52,8 @@ object DiscoveryNetwork {
   def apply[A](
       peerGroup: PeerGroup[A, Packet],
       privateKey: PrivateKey,
+      // Sent in pings; some clients use the the TCP port in the `from` so it should be accurate.
+      localNodeAddress: Node.Address,
       toNodeAddress: A => Node.Address,
       config: DiscoveryConfig
   )(implicit codec: Codec[Payload], sigalg: SigAlg, clock: Clock[Task]): Task[DiscoveryNetwork[A]] = Task {
@@ -65,9 +67,6 @@ object DiscoveryNetwork {
       private val currentTimeMillis = clock.realTime(MILLISECONDS)
 
       private val maxNeighborsPerPacket = getMaxNeighborsPerPacket
-
-      // This is only sent in Ping packets and is basically ignored by nodes.
-      private val localNodeAddress = toNodeAddress(peerGroup.processAddress)
 
       /** Start a fiber that accepts incoming channels and starts a dedicated fiber
         * to handle every channel separtely, processing their messages one by one.

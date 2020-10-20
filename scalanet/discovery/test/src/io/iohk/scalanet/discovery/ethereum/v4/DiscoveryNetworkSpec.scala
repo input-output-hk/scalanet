@@ -837,6 +837,7 @@ object DiscoveryNetworkSpec extends Matchers {
       DiscoveryNetwork[InetSocketAddress](
         peerGroup = peerGroup,
         privateKey = privateKey,
+        localNodeAddress = toNodeAddress(localAddress),
         toNodeAddress = toNodeAddress,
         config = config
       ).runSyncUnsafe()
