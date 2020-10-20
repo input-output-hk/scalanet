@@ -93,7 +93,7 @@ object scalanet extends ScalanetModule with PublishModule {
     ivy"org.eclipse.californium:scandium:2.0.0-M15",
     ivy"org.eclipse.californium:element-connector:2.0.0-M15",
     ivy"org.scodec::scodec-bits:1.1.12",
-    ivy"org.scodec::scodec-core:1.11.4",
+    ivy"org.scodec::scodec-core:1.11.7",
     ivy"org.bouncycastle:bcprov-jdk15on:1.64",
     ivy"org.bouncycastle:bcpkix-jdk15on:1.64",
     ivy"org.bouncycastle:bctls-jdk15on:1.64"
@@ -105,7 +105,7 @@ object scalanet extends ScalanetModule with PublishModule {
   // object test extends ScoverageTests {
   object test extends TestModule
 
-  object kademlia extends SubModule {
+  object discovery extends SubModule {
     object test extends TestModule {
       override def moduleDeps: Seq[JavaModule] =
         super.moduleDeps ++ Seq(scalanet.test)
@@ -126,7 +126,7 @@ object scalanet extends ScalanetModule with PublishModule {
     )
 
     override def moduleDeps: Seq[JavaModule] =
-      super.moduleDeps ++ Seq(scalanet.kademlia)
+      super.moduleDeps ++ Seq(scalanet.discovery)
 
     object test extends TestModule
   }
