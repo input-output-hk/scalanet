@@ -7,9 +7,8 @@ import com.typesafe.scalalogging.LazyLogging
 import io.iohk.scalanet.discovery.crypto.{PrivateKey, PublicKey, SigAlg}
 import io.iohk.scalanet.discovery.ethereum.Node
 import io.iohk.scalanet.discovery.hash.Hash
-import io.iohk.scalanet.peergroup.PeerGroup
+import io.iohk.scalanet.peergroup.{Addressable, Channel, PeerGroup}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import io.iohk.scalanet.peergroup.Channel
 import io.iohk.scalanet.peergroup.Channel.{MessageReceived, DecodingError, UnexpectedError}
 import java.util.concurrent.TimeoutException
 import java.net.InetAddress
@@ -21,6 +20,7 @@ import scodec.{Codec, Attempt}
 import scala.util.control.{NonFatal, NoStackTrace}
 import scodec.bits.BitVector
 import io.iohk.scalanet.discovery.ethereum.v4.Payload.Neighbors
+import java.net.InetSocketAddress
 
 /** Present a stateless facade implementing the RPC methods
   * that correspond to the discovery protocol messages on top
@@ -44,6 +44,12 @@ object DiscoveryNetwork {
       s"Peer(id = ${id.toHex}, address = $address)"
 
     lazy val kademliaId: Hash = Node.kademliaId(id)
+  }
+  object Peer {
+    implicit def addressable[A: Addressable]: Addressable[Peer[A]] = new Addressable[Peer[A]] {
+      override def getAddress(a: Peer[A]): InetSocketAddress =
+        Addressable[A].getAddress(a.address)
+    }
   }
 
   // Errors that stop the processing of incoming messages on a channel.

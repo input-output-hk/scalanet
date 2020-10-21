@@ -6,7 +6,8 @@ import cats.implicits._
 import io.iohk.scalanet.discovery.crypto.{PrivateKey, SigAlg}
 import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord}
 import io.iohk.scalanet.discovery.hash.Hash
-import io.iohk.scalanet.kademlia.KBuckets
+import io.iohk.scalanet.kademlia.{KBuckets, XorOrdering}
+import io.iohk.scalanet.peergroup.Addressable
 import java.net.InetAddress
 import monix.eval.Task
 import scala.concurrent.duration._
@@ -15,7 +16,6 @@ import scodec.{Codec, Attempt}
 import scodec.bits.BitVector
 import com.typesafe.scalalogging.LazyLogging
 import scala.collection.immutable.SortedSet
-import io.iohk.scalanet.kademlia.XorOrdering
 
 /** Represent the minimal set of operations the rest of the system
   * can expect from the service to be able to talk to other peers.
@@ -72,7 +72,8 @@ object DiscoveryService {
       toAddress: Node.Address => A
   )(
       implicit sigalg: SigAlg,
-      enrCodec: Codec[EthereumNodeRecord.Content]
+      enrCodec: Codec[EthereumNodeRecord.Content],
+      addressable: Addressable[A]
   ): Resource[Task, DiscoveryService] =
     Resource
       .make {
@@ -241,7 +242,8 @@ object DiscoveryService {
   )(
       implicit clock: Clock[Task],
       sigalg: SigAlg,
-      enrCodec: Codec[EthereumNodeRecord.Content]
+      enrCodec: Codec[EthereumNodeRecord.Content],
+      addressable: Addressable[A]
   ) extends DiscoveryService
       with DiscoveryRPC[Peer[A]]
       with LazyLogging {
@@ -582,7 +584,11 @@ object DiscoveryService {
                           // otherwise if there's no address we can use remove the peer.
                           Node.Address.fromEnr(enr) match {
                             case None =>
-                              Task(logger.debug(s"Could not extract node address from $enr")) >>
+                              Task(logger.debug(s"Could not extract node address from ENR $enr")) >>
+                                removePeer(peer).as(None)
+
+                            case Some(address) if !address.checkRelay(peer) =>
+                              Task(logger.debug(s"Ignoring ENR with $address from $peer because of invalid relay IP.")) >>
                                 removePeer(peer).as(None)
 
                             case Some(address) =>
@@ -595,7 +601,7 @@ object DiscoveryService {
                             removePeer(peer).as(None)
 
                         case Attempt.Failure(err) =>
-                          Task(logger.error(s"Error validateing ENR from $peer: $err")).as(None)
+                          Task(logger.error(s"Error validating ENR from $peer: $err")).as(None)
                       }
                   }
           }
@@ -713,16 +719,28 @@ object DiscoveryService {
 
       } yield (state.node, closestOrBootstraps)
 
-      def fetchNeighbors(from: Node): Task[Option[Seq[Node]]] = {
+      def fetchNeighbors(from: Node): Task[List[Node]] = {
         val peer = toPeer(from)
+
         bond(peer).flatMap {
           case true =>
-            rpc.findNode(peer)(target).recoverWith {
-              case NonFatal(ex) =>
-                Task(logger.debug(s"Failed to fetch neighbors of $target from $from: $ex")).as(None)
-            }
+            rpc
+              .findNode(peer)(target)
+              .map(_.map(_.toList).getOrElse(Nil))
+              .flatMap { neighbors =>
+                neighbors.filterA { neighbor =>
+                  if (neighbor.address.checkRelay(peer))
+                    Task.pure(true)
+                  else
+                    Task(logger.debug(s"Ignoring neighbor $neighbor from $peer because of invalid relay IP.")).as(false)
+                }
+              }
+              .recoverWith {
+                case NonFatal(ex) =>
+                  Task(logger.debug(s"Failed to fetch neighbors of $target from $from: $ex")).as(Nil)
+              }
           case false =>
-            Task(logger.debug(s"Could not bond with $from to fetch neighbors of $target")).as(None)
+            Task(logger.debug(s"Could not bond with $from to fetch neighbors of $target")).as(Nil)
         }
       }
 
@@ -759,7 +777,7 @@ object DiscoveryService {
         else {
           Task
             .parTraverseUnordered(contacts)(fetchNeighbors)
-            .map(_.flatten.flatten.distinct)
+            .map(_.flatten.distinct)
             .flatMap(bondNeighbors)
             .flatMap { newNeighbors =>
               val newClosest = (closest ++ newNeighbors).take(config.kademliaBucketSize)

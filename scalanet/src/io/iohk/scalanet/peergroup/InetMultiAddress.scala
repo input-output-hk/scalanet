@@ -8,6 +8,10 @@ trait Addressable[A] {
 
 object Addressable {
   def apply[A](implicit sh: Addressable[A]): Addressable[A] = sh
+
+  implicit val `Addressable[InetSocketAddress]` : Addressable[InetSocketAddress] = new Addressable[InetSocketAddress] {
+    override def getAddress(a: InetSocketAddress): InetSocketAddress = a
+  }
 }
 
 /**

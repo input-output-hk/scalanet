@@ -722,6 +722,53 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
+  it should "filter out invalid relay IPs" in test {
+    new Fixture {
+      val localNodes = List.fill(config.kademliaBucketSize) {
+        val (publicKey, privateKey) = sigalg.newKeyPair
+        val address = aRandomAddress
+        val node = makeNode(publicKey, address)
+        val enr = EthereumNodeRecord.fromNode(node, privateKey, seq = 1).require
+        node -> enr
+      }
+
+      val remoteNodes = List.range(0, config.kademliaBucketSize).map { i =>
+        val (publicKey, privateKey) = sigalg.newKeyPair
+        val address = new InetSocketAddress("140.82.121.4", 40000 + i)
+        val node = makeNode(publicKey, address)
+        val enr = EthereumNodeRecord.fromNode(node, privateKey, seq = 1).require
+        node -> enr
+      }
+
+      val nodes = localNodes ++ remoteNodes
+
+      override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(Some(None)),
+        enrRequest = peer => _ => Task.pure(nodes.find(_._1.id == peer.id).map(_._2)),
+        // Return a mix of remote and local nodes.
+        findNode =
+          _ => targetPublicKey => Task.pure(Some(Random.shuffle(nodes).take(config.kademliaBucketSize).map(_._1)))
+      )
+
+      override val test = for {
+        _ <- stateRef.update { state =>
+          // Add the first remote peer to our database.
+          val (node, enr) = remoteNodes.head
+          val peer = Peer[InetSocketAddress](node.id, nodeAddressToInetSocketAddress(node.address))
+          state.withEnrAndAddress(peer, enr, node.address)
+        }
+        // Looking up will have to use the remote peer.
+        // While it gives us local addresses we should not return them from the lookup.
+        closest <- service.lookup(sigalg.newKeyPair._1)
+      } yield {
+        closest should not be empty
+        Inspectors.forAll(closest) { node =>
+          localNodes.map(_._1) should not contain node
+        }
+      }
+    }
+  }
+
   behavior of "lookupRandom"
 
   it should "lookup a random node" in test {
