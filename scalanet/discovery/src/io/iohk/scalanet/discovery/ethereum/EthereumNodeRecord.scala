@@ -68,14 +68,14 @@ object EthereumNodeRecord {
       seq,
       SortedMap(
         Keys.id -> ByteVector("v4".getBytes(StandardCharsets.UTF_8)),
-        Keys.secp256k1 -> sigalg.toCompressedPublicKey(privateKey).toByteVector,
+        Keys.secp256k1 -> sigalg.compressPublicKey(sigalg.toPublicKey(privateKey)).toByteVector,
         ipKey -> ByteVector(node.address.ip.getAddress),
         tcpKey -> ByteVector.fromInt(node.address.tcpPort),
         udpKey -> ByteVector.fromInt(node.address.udpPort)
       )
     )
     codec.encode(content).map { data =>
-      val sig = sigalg.sign(privateKey, data)
+      val sig = sigalg.removeRecoveryId(sigalg.sign(privateKey, data))
       EthereumNodeRecord(sig, content)
     }
   }
