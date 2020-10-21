@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets
 import io.iohk.scalanet.discovery.crypto.{Signature, PrivateKey, SigAlg}
 import scodec.{Codec, Attempt}
 import io.iohk.scalanet.discovery.crypto.PublicKey
+import java.net.Inet6Address
 
 /** ENR corresponding to https://github.com/ethereum/devp2p/blob/master/enr.md */
 case class EthereumNodeRecord(
@@ -57,15 +58,20 @@ object EthereumNodeRecord {
       implicit sigalg: SigAlg,
       codec: Codec[Content]
   ): Attempt[EthereumNodeRecord] = {
+    val (ipKey, tcpKey, udpKey) =
+      if (node.address.ip.isInstanceOf[Inet6Address])
+        (Keys.ip6, Keys.tcp6, Keys.udp6)
+      else
+        (Keys.ip, Keys.tcp, Keys.udp)
+
     val content = Content(
       seq,
-      // TODO: Compressed public key.
-      // TODO: IPv6 or IPv4?
+      // TODO: Compressed public key. We should be able to get it from the private key, but it's optional.
       SortedMap(
         Keys.id -> ByteVector("v4".getBytes(StandardCharsets.UTF_8)),
-        Keys.ip -> ByteVector(node.address.ip.getAddress),
-        Keys.tcp -> ByteVector.fromInt(node.address.tcpPort),
-        Keys.udp -> ByteVector.fromInt(node.address.udpPort)
+        ipKey -> ByteVector(node.address.ip.getAddress),
+        tcpKey -> ByteVector.fromInt(node.address.tcpPort),
+        udpKey -> ByteVector.fromInt(node.address.udpPort)
       )
     )
     codec.encode(content).map { data =>
