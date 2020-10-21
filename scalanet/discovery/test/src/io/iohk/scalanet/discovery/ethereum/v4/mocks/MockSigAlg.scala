@@ -35,6 +35,9 @@ class MockSigAlg extends SigAlg {
     Attempt.successful(PublicKey(xor(signature, data).take(PublicKeyBytesSize * 8)))
   }
 
+  override def toCompressedPublicKey(privateKey: PrivateKey): PublicKey =
+    PublicKey(privateKey)
+
   // Using XOR twice recovers the original data.
   // Pad the data so we don't lose the key if the data is shorter.
   private def xor(key: BitVector, data: BitVector): BitVector = {

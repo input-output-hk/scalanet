@@ -66,9 +66,9 @@ object EthereumNodeRecord {
 
     val content = Content(
       seq,
-      // TODO: Compressed public key. We should be able to get it from the private key, but it's optional.
       SortedMap(
         Keys.id -> ByteVector("v4".getBytes(StandardCharsets.UTF_8)),
+        Keys.secp256k1 -> sigalg.toCompressedPublicKey(privateKey).toByteVector,
         ipKey -> ByteVector(node.address.ip.getAddress),
         tcpKey -> ByteVector.fromInt(node.address.tcpPort),
         udpKey -> ByteVector.fromInt(node.address.udpPort)

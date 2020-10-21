@@ -14,4 +14,5 @@ trait SigAlg {
   def sign(privateKey: PrivateKey, data: BitVector): Signature
   def verify(publicKey: PublicKey, signature: Signature, data: BitVector): Boolean
   def recoverPublicKey(signature: Signature, data: BitVector): Attempt[PublicKey]
+  def toCompressedPublicKey(privateKey: PrivateKey): PublicKey
 }
