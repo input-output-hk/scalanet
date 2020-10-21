@@ -12,6 +12,7 @@ import monix.eval.Task
 import scala.concurrent.duration._
 import scala.util.control.NonFatal
 import scodec.{Codec, Attempt}
+import scodec.bits.BitVector
 import com.typesafe.scalalogging.LazyLogging
 import scala.collection.immutable.SortedSet
 import io.iohk.scalanet.kademlia.XorOrdering
@@ -76,6 +77,8 @@ object DiscoveryService {
     Resource
       .make {
         for {
+          _ <- checkKeySize("private key", privateKey, sigalg.PrivateKeyBytesSize)
+          _ <- checkKeySize("node ID", node.id, sigalg.PublicKeyBytesSize)
           stateRef <- Ref[Task].of(State[A](node, enr))
           service <- Task(new ServiceImpl[A](privateKey, config, network, stateRef, toAddress))
           // Start handling requests, we need them during enrolling so the peers can ping and bond with us.
@@ -90,6 +93,15 @@ object DiscoveryService {
           cancelToken.cancel >> discoveryFiber.cancel
       }
       .map(_._1)
+
+  protected[v4] def checkKeySize(name: String, key: BitVector, expectedBytesSize: Int): Task[Unit] =
+    Task
+      .raiseError(
+        new IllegalArgumentException(
+          s"Expected the $name to be ${expectedBytesSize} bytes; got ${key.size / 8} bytes."
+        )
+      )
+      .whenA(key.size != expectedBytesSize * 8)
 
   protected[v4] case class BondingResults(
       // Completed if the remote poor responds with a Pong during the bonding process.
@@ -524,7 +536,8 @@ object DiscoveryService {
 
     /** Fetch a fresh ENR from the peer and store it.
       *
-      * Use delay=true if there's a high chance that the other side is still bonding with us.
+      * Use delay=true if there's a high chance that the other side is still bonding with us
+      * and hasn't received our Pong yet, in which case they'd ignore the ENRRequest.
       */
     protected[v4] def fetchEnr(
         peer: Peer[A],
@@ -681,6 +694,8 @@ object DiscoveryService {
       // We'll contact 'alpha' at a time but eventually try all of them
       // unless better candidates are found.
       val init = for {
+        _ <- checkKeySize("target public key", target, sigalg.PublicKeyBytesSize)
+
         state <- stateRef.get
 
         closestIds = state.kBuckets

@@ -11,10 +11,12 @@ class MockSigAlg extends SigAlg {
   // A Secp256k1 public key is 32 bytes compressed or 64 bytes uncompressed,
   // with a 1 byte prefix showing which version it is.
   // See https://davidederosa.com/basic-blockchain-programming/elliptic-curve-keys
-  override val PublicKeyBytesSize = 65
+  //
+  // However in the discovery v4 protocol the prefix is omitted.
+  override val PublicKeyBytesSize = 64
   // Normal Secp256k1 would be 32 bytes, but here we use the same value for
   // both public and private.
-  override val PrivateKeyBytesSize = 65
+  override val PrivateKeyBytesSize = 64
   // A normal Secp256k1 signature consists of 2 bigints followed by a recovery ID,
   // but it can be just 64 bytes if that's omitted, like in the ENR.
   override val SignatureBytesSize = 65
