@@ -39,7 +39,12 @@ object DiscoveryNetwork {
     * We have to use the pair for addressing a peer as well to set an expectation of the identity we
     * expect to talk to, i.e. who should sign the packets.
     */
-  case class Peer[A](id: PublicKey, address: A)
+  case class Peer[A](id: Node.Id, address: A) {
+    override def toString: String =
+      s"Peer(id = ${id.toHex}, address = $address)"
+
+    lazy val kademliaId: Hash = Node.kademliaId(id)
+  }
 
   // Errors that stop the processing of incoming messages on a channel.
   class PacketException(message: String) extends Exception(message) with NoStackTrace
@@ -47,6 +52,8 @@ object DiscoveryNetwork {
   def apply[A](
       peerGroup: PeerGroup[A, Packet],
       privateKey: PrivateKey,
+      // Sent in pings; some clients use the the TCP port in the `from` so it should be accurate.
+      localNodeAddress: Node.Address,
       toNodeAddress: A => Node.Address,
       config: DiscoveryConfig
   )(implicit codec: Codec[Payload], sigalg: SigAlg, clock: Clock[Task]): Task[DiscoveryNetwork[A]] = Task {
@@ -60,9 +67,6 @@ object DiscoveryNetwork {
       private val currentTimeMillis = clock.realTime(MILLISECONDS)
 
       private val maxNeighborsPerPacket = getMaxNeighborsPerPacket
-
-      // This is only sent in Ping packets and is basically ignored by nodes.
-      private val localNodeAddress = toNodeAddress(peerGroup.processAddress)
 
       /** Start a fiber that accepts incoming channels and starts a dedicated fiber
         * to handle every channel separtely, processing their messages one by one.
@@ -160,7 +164,7 @@ object DiscoveryNetwork {
               handler.findNode(caller)(target)
             } { nodes =>
               nodes
-                .take(config.kademliaBucketSize)
+                .take(config.kademliaBucketSize) // NOTE: Other nodes could use a different setting.
                 .grouped(maxNeighborsPerPacket)
                 .toList
                 .traverse { group =>
@@ -222,6 +226,7 @@ object DiscoveryNetwork {
       private def isExpired(payload: HasExpiration[_], now: Long): Boolean =
         payload.expiration < now - maxClockDriftMillis
 
+      /** Ping a peer. */
       override val ping = (peer: Peer[A]) =>
         (localEnrSeq: Option[ENRSeq]) =>
           peerGroup.client(peer.address).use { channel =>
@@ -237,6 +242,16 @@ object DiscoveryNetwork {
               }
           }
 
+      /** Ask a peer about neighbors of a target.
+        *
+        * NOTE: There can be many responses to a request due to the size limits of packets.
+        * The responses cannot be tied to the request, so if we do multiple requests concurrently
+        * we might end up mixing the results. One option to remedy would be to make sure we
+        * only send one request to a given node at any time, waiting with the next until all
+        * responses are collected, which can be 16 nodes or 7 seconds, whichever comes first.
+        * However that would serialize all requests, might result in some of them taking much
+        * longer than expected.
+        */
       override val findNode = (peer: Peer[A]) =>
         (target: PublicKey) =>
           peerGroup.client(peer.address).use { channel =>
@@ -250,6 +265,7 @@ object DiscoveryNetwork {
             }
           }
 
+      /** Fetch the ENR of a peer. */
       override val enrRequest = (peer: Peer[A]) =>
         (_: Unit) =>
           peerGroup.client(peer.address).use { channel =>
@@ -272,6 +288,10 @@ object DiscoveryNetwork {
           for {
             expiring <- setExpiration(payload)
             packet <- pack(expiring)
+            _ <- Task(
+              logger
+                .debug(s"Sending ${payload.getClass.getSimpleName} from ${peerGroup.processAddress} to ${channel.to}")
+            )
             _ <- channel.sendMessage(packet)
           } yield packet
         }
@@ -326,8 +346,9 @@ object DiscoveryNetwork {
           channel
             .collectResponses(publicKey: PublicKey, config.requestTimeout.fromNow)(pf)
             .headOptionL
-            .onErrorRecover {
-              case NonFatal(ex) => None
+            .onErrorRecoverWith {
+              case NonFatal(ex) =>
+                Task(logger.debug(s"Failed to collect response from ${channel.to}: ${ex.getMessage}")).as(None)
             }
 
         /** Collect responses that match the partial function and fold them while the folder function returns Left.  */
@@ -339,19 +360,19 @@ object DiscoveryNetwork {
           channel
             .collectResponses(publicKey, timeout.fromNow)(pf)
             .attempt
-            .foldWhileLeftL((seed -> 0).some) {
+            .foldWhileLeftEvalL(Task.pure((seed -> 0).some)) {
               case (Some((acc, count)), Left(ex: TimeoutException)) if count > 0 =>
                 // We have a timeout but we already accumulated some results, so return those.
-                Right(Some((acc, count)))
+                Task.pure(Right(Some((acc, count))))
 
-              case (_, Left(_)) =>
+              case (_, Left(ex)) =>
                 // Unexpected error, discard results, if any.
-                Right(None)
+                Task(logger.debug(s"Failed to fold responses from ${channel.to}: ${ex.getMessage}")).as(Right(None))
 
               case (Some((acc, count)), Right(response)) =>
                 // New response, fold it with the existing to decide if we need more.
                 val next = (acc: Z) => Some(acc -> (count + 1))
-                f(acc, response).bimap(next, next)
+                Task.pure(f(acc, response).bimap(next, next))
             }
             .map(_.map(_._1))
 

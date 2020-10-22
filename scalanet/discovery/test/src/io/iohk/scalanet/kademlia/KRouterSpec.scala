@@ -323,7 +323,7 @@ class KRouterSpec extends FreeSpec with Eventually {
           * will finish after receiving responses from k closest nodes
           */
         val initiator = aRandomNodeRecord()
-        val xorOrder = new XorNodeOrdering[String](initiator.id)
+        val xorOrder = XorNodeOrdering[String](initiator.id)
 
         // 30 notKnownNodes + 1 bootstrap + 3 bootstrap neighbours
         val allNodes = (0 until 34)
