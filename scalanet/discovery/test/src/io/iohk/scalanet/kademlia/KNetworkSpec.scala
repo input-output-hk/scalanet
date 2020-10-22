@@ -112,10 +112,11 @@ class KNetworkSpec extends FlatSpec {
       val channel2 = new MockChannel
 
       when(peerGroup.server).thenReturn(ConnectableSubject(Observable(channel1.created, channel2.created)))
-      when(channel1.channel.in).thenReturn(ConnectableSubject(Observable.never))
+      when(channel1.channel.in).thenReturn(ConnectableSubject(Observable.never)) // Should be closed after a timeout.
       when(channel2.channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(request))))
 
-      val actualRequest = requestExtractor(network).evaluated
+      // Process incoming channels and requests. Need to wait a little to allow channel1 to time out.
+      val actualRequest = requestExtractor(network).delayResult(requestTimeout).evaluated
 
       actualRequest shouldBe request
       channel1.closed.get shouldBe true
@@ -186,6 +187,8 @@ class KNetworkSpec extends FlatSpec {
 
 object KNetworkSpec {
 
+  val requestTimeout = 50.millis
+
   private val nodeRecord: NodeRecord[String] = Generators.aRandomNodeRecord()
   private val targetRecord: NodeRecord[String] = Generators.aRandomNodeRecord()
   private val uuid: UUID = UUID.randomUUID()
@@ -198,7 +201,7 @@ object KNetworkSpec {
   private def createKNetwork: (KNetwork[String], PeerGroup[String, KMessage[String]]) = {
     val peerGroup = mock[PeerGroup[String, KMessage[String]]]
     when(peerGroup.server).thenReturn(ConnectableSubject(Observable.empty))
-    (new KNetworkScalanetImpl(peerGroup, 50 millis), peerGroup)
+    (new KNetworkScalanetImpl(peerGroup, requestTimeout), peerGroup)
   }
 
   private def getActualRequest[Request <: KRequest[String]](rpc: KNetwork[String] => Observable[(Request, _)])(

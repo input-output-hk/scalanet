@@ -1,5 +1,6 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
+import io.iohk.scalanet.discovery.ethereum.Node
 import scala.concurrent.duration._
 
 case class DiscoveryConfig(
@@ -14,7 +15,15 @@ case class DiscoveryConfig(
     // Timeout for collecting multiple potential Neighbors responses.
     kademliaTimeout: FiniteDuration,
     // Max number of neighbours to expect.
-    kademliaBucketSize: Int
+    kademliaBucketSize: Int,
+    // Concurrencly parameter 'alpha' for recursive Kademlia lookups.
+    kademliaAlpha: Int,
+    // Maximum time we consider a peer bonded without receiving a Pong response to a Ping.
+    bondExpiration: FiniteDuration,
+    // How often to look for new peers.
+    discoveryPeriod: FiniteDuration,
+    // Bootstrap nodes.
+    knownPeers: Set[Node]
 )
 
 object DiscoveryConfig {
@@ -23,6 +32,10 @@ object DiscoveryConfig {
     maxClockDrift = Duration.Zero,
     requestTimeout = 3.seconds,
     kademliaTimeout = 7.seconds,
-    kademliaBucketSize = 16
+    kademliaBucketSize = 16,
+    kademliaAlpha = 3,
+    bondExpiration = 12.hours,
+    discoveryPeriod = 15.minutes,
+    knownPeers = Set.empty
   )
 }
