@@ -66,20 +66,23 @@ object DiscoveryService {
   def apply[A](
       privateKey: PrivateKey,
       node: Node,
-      enr: EthereumNodeRecord,
       config: DiscoveryConfig,
       network: DiscoveryNetwork[A],
       toAddress: Node.Address => A
   )(
       implicit sigalg: SigAlg,
       enrCodec: Codec[EthereumNodeRecord.Content],
-      addressable: Addressable[A]
+      addressable: Addressable[A],
+      clock: Clock[Task]
   ): Resource[Task, DiscoveryService] =
     Resource
       .make {
         for {
           _ <- checkKeySize("private key", privateKey, sigalg.PrivateKeyBytesSize)
           _ <- checkKeySize("node ID", node.id, sigalg.PublicKeyBytesSize)
+          // Use the current time to set the ENR sequence to something fresh.
+          now <- clock.monotonic(MILLISECONDS)
+          enr <- Task(EthereumNodeRecord.fromNode(node, privateKey, seq = now).require)
           stateRef <- Ref[Task].of(State[A](node, enr))
           service <- Task(new ServiceImpl[A](privateKey, config, network, stateRef, toAddress))
           // Start handling requests, we need them during enrolling so the peers can ping and bond with us.
