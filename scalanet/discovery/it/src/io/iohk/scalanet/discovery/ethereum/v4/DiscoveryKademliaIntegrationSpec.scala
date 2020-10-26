@@ -30,6 +30,8 @@ class DiscoveryKademliaIntegrationSpec extends KademliaIntegrationSpec("Discover
   // Using fake crypto and scodec encoding instead of RLP.
   implicit val sigalg: SigAlg = new MockSigAlg()
   import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs._
+  // Not dealing with non-conforming clients here.
+  implicit val packetCoded = Packet.packetCodec(allowDecodeOverMaxPacketSize = false)
 
   override def generatePeerRecordWithKey() = {
     val address = NetUtils.aRandomAddress
@@ -50,7 +52,8 @@ class DiscoveryKademliaIntegrationSpec extends KademliaIntegrationSpec("Discover
     for {
       peerGroup <- StaticUDPPeerGroup[Packet](
         StaticUDPPeerGroup.Config(
-          bindAddress = nodeAddressToInetMultiAddress(selfNode.address).inetSocketAddress
+          bindAddress = nodeAddressToInetMultiAddress(selfNode.address).inetSocketAddress,
+          receiveBufferSizeBytes = Packet.MaxPacketBitsSize / 8 * 2
         )
       )
       config = DiscoveryConfig.default.copy(

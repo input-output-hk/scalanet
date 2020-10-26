@@ -225,14 +225,26 @@ class StaticUDPPeerGroup[M] private (
         success
     }
 
+  private def bufferAllocator: RecvByteBufAllocator = {
+    // `NioDatagramChannel.doReadMessages` allocates a new buffer for each read and
+    // only reads one message at a time. UDP messages are independent, so if we know
+    // our packages have a limited size (lower than the maximum 64KiB supported by UDP)
+    // then we can save some resources by not over-allocating and also protecting
+    // ourselves from malicious clients sending more than we'd accept.
+    val maxBufferSize = 64 * 1024
+
+    val bufferSize =
+      if (config.receiveBufferSizeBytes <= 0) maxBufferSize
+      else math.min(config.receiveBufferSizeBytes, maxBufferSize)
+
+    new io.netty.channel.FixedRecvByteBufAllocator(bufferSize)
+  }
+
   private lazy val serverBinding =
     new Bootstrap()
       .group(workerGroup)
       .channel(classOf[NioDatagramChannel])
-      .option[RecvByteBufAllocator](
-        ChannelOption.RCVBUF_ALLOCATOR,
-        new io.netty.channel.DefaultMaxBytesRecvByteBufAllocator()
-      )
+      .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, bufferAllocator)
       .handler(new ChannelInitializer[NioDatagramChannel]() {
         override def initChannel(nettyChannel: NioDatagramChannel): Unit = {
           nettyChannel
@@ -301,11 +313,14 @@ object StaticUDPPeerGroup extends StrictLogging {
   case class Config(
       bindAddress: InetSocketAddress,
       processAddress: InetMultiAddress,
-      channelCapacity: Int
+      // Maximum number of messages in the queue associated with the channel; 0 means unlimited.
+      channelCapacity: Int,
+      // Maximum size of an incoming message; 0 means the maximum 64KiB is allocated for each message.
+      receiveBufferSizeBytes: Int
   )
   object Config {
-    def apply(bindAddress: InetSocketAddress, channelCapacity: Int = 0): Config =
-      Config(bindAddress, InetMultiAddress(bindAddress), channelCapacity)
+    def apply(bindAddress: InetSocketAddress, channelCapacity: Int = 0, receiveBufferSizeBytes: Int = 0): Config =
+      Config(bindAddress, InetMultiAddress(bindAddress), channelCapacity, receiveBufferSizeBytes)
   }
 
   private type ChannelAlloc[M] = (ChannelImpl[M], Release)
