@@ -14,6 +14,8 @@ class PacketSpec extends FlatSpec with Matchers {
   import DefaultCodecs._
   implicit val sigalg = new MockSigAlg()
 
+  implicit val packetCodec = Packet.packetCodec(allowDecodeOverMaxPacketSize = false)
+
   val MaxPacketBytesSize = Packet.MaxPacketBitsSize / 8
   val MacBytesSize = Packet.MacBitsSize / 8
   val SigBytesSize = Packet.SigBitsSize / 8
@@ -78,6 +80,12 @@ class PacketSpec extends FlatSpec with Matchers {
       Codec.decode[Packet](nBytesAsBits(MaxPacketBytesSize + 1))
     }
   }
+
+  it should "optionally allow the data to exceed the maximum size" in {
+    val permissiblePacketCodec: Codec[Packet] = Packet.packetCodec(allowDecodeOverMaxPacketSize = true)
+    Codec.decode[Packet](nBytesAsBits(MaxPacketBytesSize * 2))(permissiblePacketCodec).isSuccessful shouldBe true
+  }
+
   it should "fail if there's less data than the hash size" in {
     expectFailure(
       s"Hash: cannot acquire ${Packet.MacBitsSize} bits from a vector that contains ${Packet.MacBitsSize - 8} bits"
