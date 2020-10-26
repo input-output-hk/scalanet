@@ -3,7 +3,6 @@ package io.iohk.scalanet.discovery.ethereum.v4
 import cats.effect.Resource
 import io.iohk.scalanet.discovery.crypto.{PublicKey, PrivateKey}
 import io.iohk.scalanet.discovery.crypto.SigAlg
-import io.iohk.scalanet.discovery.ethereum.EthereumNodeRecord
 import io.iohk.scalanet.discovery.ethereum.Node
 import io.iohk.scalanet.discovery.ethereum.v4.mocks.MockSigAlg
 import io.iohk.scalanet.discovery.hash.Hash
@@ -74,11 +73,9 @@ class DiscoveryKademliaIntegrationSpec extends KademliaIntegrationSpec("Discover
           config = config
         )
       }
-      selfEnr = EthereumNodeRecord.fromNode(selfNode, privateKey, seq = System.currentTimeMillis).require
       service <- DiscoveryService[InetMultiAddress](
         privateKey,
         node = selfNode,
-        enr = selfEnr,
         config = config,
         network = network,
         toAddress = nodeAddressToInetMultiAddress

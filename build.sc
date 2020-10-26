@@ -88,6 +88,7 @@ object scalanet extends ScalanetModule with PublishModule {
     ivy"com.github.nscala-time::nscala-time:2.22.0",
     ivy"com.chuusai::shapeless:2.3.3",
     ivy"com.typesafe.scala-logging::scala-logging:3.9.2",
+    ivy"com.github.jgonian:commons-ip-math:1.32",
     ivy"org.slf4j:slf4j-api:1.7.25",
     ivy"io.netty:netty-all:4.1.51.Final",
     ivy"org.eclipse.californium:scandium:2.0.0-M15",
@@ -123,7 +124,6 @@ object scalanet extends ScalanetModule with PublishModule {
       ivy"org.mockito:mockito-core:2.21.0",
       ivy"com.github.pureconfig::pureconfig:0.11.1",
       ivy"com.github.scopt::scopt:3.7.1",
-      ivy"org.scodec::scodec-bits:1.1.6",
       ivy"io.monix::monix:3.2.2",
       ivy"org.scala-lang.modules::scala-parser-combinators:1.1.2"
     )
