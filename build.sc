@@ -38,7 +38,7 @@ trait ScalanetModule extends ScalaModule {
   // `extends Tests` uses the context of the module in which it's defined,
   // which is why the trait is defined here not within `scalanet`, otherwise
   // it wouldn't work for `kademlia` for example.
-  trait TestModule extends Tests with CoreDependency {
+  trait TestModule extends Tests {
     override def scalacOptions =
       commonScalacOptions
 
@@ -53,35 +53,40 @@ trait ScalanetModule extends ScalaModule {
       ivy"org.mockito:mockito-core:2.21.0"
     )
 
+    override def moduleDeps: Seq[JavaModule] =
+      Seq(scalanet)
+
     def single(args: String*) = T.command {
       super.runMain("org.scalatest.run", args: _*)
     }
   }
 }
 
-trait CoreDependency extends ScalaModule {
-  override def moduleDeps: Seq[JavaModule] =
-    super.moduleDeps ++ Seq(scalanet)
-}
-
-trait SubModule extends ScalanetModule with CoreDependency
-
-// ScoverageModule creates bug when using custom repositories:
-// https://github.com/lihaoyi/mill/issues/620
-//object scalanet extends ScalaModule with PublishModule with ScoverageModule {
-object scalanet extends ScalanetModule with PublishModule {
+// In objects inheriting this trait, use `override def moduleDeps: Seq[PublishModule]`
+// to point at other modules that also get published. In other cases such as tests
+// it can be `override def moduleDeps: Seq[JavaModule]`.
+trait ScalanetPublishModule extends PublishModule {
+  def description: String
 
   override def publishVersion = "0.4-SNAPSHOT"
 
   override def pomSettings = PomSettings(
-    description =
-      "Asynchronous, strongly typed, resource-managed networking library, written in Scala with support for a variety of network technologies",
+    description = description,
     organization = "io.iohk",
     url = "https://github.com/input-output-hk/scalanet",
     licenses = Seq(License.`Apache-2.0`),
     versionControl = VersionControl.github("input-output-hk", "scalanet"),
     developers = Seq()
   )
+}
+
+// ScoverageModule creates bug when using custom repositories:
+// https://github.com/lihaoyi/mill/issues/620
+//object scalanet extends ScalaModule with PublishModule with ScoverageModule {
+object scalanet extends ScalanetModule with ScalanetPublishModule {
+
+  override val description =
+    "Asynchronous, strongly typed, resource-managed networking library, written in Scala with support for a variety of network technologies"
 
   override def ivyDeps = Agg(
     ivy"io.monix::monix:3.2.2",
@@ -106,18 +111,26 @@ object scalanet extends ScalanetModule with PublishModule {
   // object test extends ScoverageTests {
   object test extends TestModule
 
-  object discovery extends SubModule {
+  object discovery extends ScalanetModule with ScalanetPublishModule {
+
+    override val description =
+      "Implementation of peer-to-peer discovery algorithms such as that of Ethereum."
+
+    override def moduleDeps: Seq[PublishModule] =
+      Seq(scalanet)
+
     object test extends TestModule {
       override def moduleDeps: Seq[JavaModule] =
-        super.moduleDeps ++ Seq(scalanet.test)
+        super.moduleDeps ++ Seq(scalanet.discovery, scalanet.test)
     }
+
     object it extends TestModule {
       override def moduleDeps: Seq[JavaModule] =
-        super.moduleDeps ++ Seq(scalanet.test, scalanet.discovery.test)
+        super.moduleDeps ++ Seq(scalanet.discovery.test)
     }
   }
 
-  object examples extends SubModule {
+  object examples extends ScalanetModule {
     override def ivyDeps = Agg(
       ivy"ch.qos.logback:logback-core:1.2.3",
       ivy"ch.qos.logback:logback-classic:1.2.3",
@@ -129,8 +142,11 @@ object scalanet extends ScalanetModule with PublishModule {
     )
 
     override def moduleDeps: Seq[JavaModule] =
-      super.moduleDeps ++ Seq(scalanet.discovery)
+      Seq(scalanet, scalanet.discovery)
 
-    object test extends TestModule
+    object test extends TestModule {
+      override def moduleDeps: Seq[JavaModule] =
+        super.moduleDeps ++ Seq(scalanet.examples)
+    }
   }
 }
