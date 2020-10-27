@@ -88,6 +88,12 @@ mill scalanet.test.single io.iohk.scalanet.crypto.SignatureVerificationSpec
 ### Publishing
 
 Have a look [here](http://www.lihaoyi.com/mill/page/common-project-layouts.html#publishing) for how to publish multiple modules.
+The latest build on the `develop` branch is always published to [Sonatype](https://oss.sonatype.org/) according to the [Circle CI config](./.circleci/config.yml).
+To use it in a downstream project add the snapshots to the resolvers, e.g. in `build.sbt`:
+
+```
+resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
+```
 
 ### Formatting the codebase
 In order to keep the code format consistent, we use scalafmt.
