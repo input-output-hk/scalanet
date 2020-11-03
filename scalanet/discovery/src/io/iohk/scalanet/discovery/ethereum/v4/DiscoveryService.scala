@@ -815,7 +815,7 @@ object DiscoveryService {
         val tryEnroll = for {
           nodeId <- stateRef.get.map(_.node.id)
           bootstrapPeers = config.knownPeers.toList.map(toPeer).filterNot(_.id == nodeId)
-          maybeBootstrapEnrs <- bootstrapPeers.traverse(fetchEnr(_, delay = true))
+          maybeBootstrapEnrs <- Task.parTraverseN(config.kademliaAlpha)(bootstrapPeers)(fetchEnr(_, delay = true))
           result <- if (maybeBootstrapEnrs.exists(_.isDefined)) {
             lookup(nodeId).as(true)
           } else {
