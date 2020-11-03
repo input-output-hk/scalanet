@@ -21,6 +21,7 @@ import scala.util.control.{NonFatal, NoStackTrace}
 import scodec.bits.BitVector
 import io.iohk.scalanet.discovery.ethereum.v4.Payload.Neighbors
 import java.net.InetSocketAddress
+import io.iohk.scalanet.discovery.hash.Keccak256
 
 /** Present a stateless facade implementing the RPC methods
   * that correspond to the discovery protocol messages on top
@@ -241,8 +242,14 @@ object DiscoveryNetwork {
                 Ping(version = 4, from = localNodeAddress, to = toNodeAddress(peer.address), 0, localEnrSeq)
               )
               .flatMap { packet =>
+                // Workaround for 1.10 Parity nodes that send back the hash of the Ping data
+                // rather than the hash of the whole packet (over signature + data).
+                // https://github.com/paritytech/parity/issues/8038
+                // https://github.com/ethereumproject/go-ethereum/issues/312
+                val dataHash = Keccak256(packet.data)
+
                 channel.collectFirstResponse(peer.id) {
-                  case Pong(_, pingHash, _, maybeRemoteEnrSeq) if pingHash == packet.hash =>
+                  case Pong(_, pingHash, _, maybeRemoteEnrSeq) if pingHash == packet.hash || pingHash == dataHash =>
                     maybeRemoteEnrSeq
                 }
               }
