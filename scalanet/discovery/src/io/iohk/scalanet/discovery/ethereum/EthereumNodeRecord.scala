@@ -22,6 +22,7 @@ object EthereumNodeRecord {
   case class Content(
       // Nodes should increment this number whenever their properties change, like their address, and re-publish.
       seq: Long,
+      // Normally clients treat the values as RLP, however we don't have access to the RLP types here, hence it's just bytes.
       attrs: SortedMap[ByteVector, ByteVector]
   )
 
@@ -52,6 +53,9 @@ object EthereumNodeRecord {
 
     /** IPv6-specific UDP port, big endian integer */
     val udp6 = key("udp6")
+
+    /** The keys above have pre-defined meaning, but there can be arbitrary entries in the map. */
+    val Predefined: Set[ByteVector] = Set(id, secp256k1, ip, tcp, udp, ip6, tcp6, udp6)
   }
 
   def apply(signature: Signature, seq: Long, attrs: (ByteVector, ByteVector)*): EthereumNodeRecord =
