@@ -42,7 +42,7 @@ object Node {
         tryParse[InetAddress](key)(bytes => InetAddress.getByAddress(bytes.toArray))
 
       def tryParsePort(key: ByteVector): Option[Int] =
-        tryParse[Int](key)(bytes => bytes.toInt())
+        tryParse[Int](key)(bytes => bytes.toInt(signed = false))
 
       for {
         ip <- tryParseIP(Keys.ip6) orElse tryParseIP(Keys.ip)
