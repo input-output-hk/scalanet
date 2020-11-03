@@ -54,6 +54,23 @@ object EthereumNodeRecord {
     val udp6 = key("udp6")
   }
 
+  def apply(signature: Signature, seq: Long, attrs: (ByteVector, ByteVector)*): EthereumNodeRecord =
+    EthereumNodeRecord(
+      signature,
+      EthereumNodeRecord.Content(seq, SortedMap(attrs: _*))
+    )
+
+  def apply(privateKey: PrivateKey, seq: Long, attrs: (ByteVector, ByteVector)*)(
+      implicit sigalg: SigAlg,
+      codec: Codec[Content]
+  ): Attempt[EthereumNodeRecord] = {
+    val content = EthereumNodeRecord.Content(seq, SortedMap(attrs: _*))
+    codec.encode(content).map { data =>
+      val sig = sigalg.removeRecoveryId(sigalg.sign(privateKey, data))
+      EthereumNodeRecord(sig, content)
+    }
+  }
+
   def fromNode(node: Node, privateKey: PrivateKey, seq: Long)(
       implicit sigalg: SigAlg,
       codec: Codec[Content]
@@ -64,20 +81,15 @@ object EthereumNodeRecord {
       else
         (Keys.ip, Keys.tcp, Keys.udp)
 
-    val content = Content(
-      seq,
-      SortedMap(
-        Keys.id -> ByteVector("v4".getBytes(StandardCharsets.UTF_8)),
-        Keys.secp256k1 -> sigalg.compressPublicKey(sigalg.toPublicKey(privateKey)).toByteVector,
-        ipKey -> ByteVector(node.address.ip.getAddress),
-        tcpKey -> ByteVector.fromInt(node.address.tcpPort),
-        udpKey -> ByteVector.fromInt(node.address.udpPort)
-      )
+    val attrs = List(
+      Keys.id -> ByteVector("v4".getBytes(StandardCharsets.UTF_8)),
+      Keys.secp256k1 -> sigalg.compressPublicKey(sigalg.toPublicKey(privateKey)).toByteVector,
+      ipKey -> ByteVector(node.address.ip.getAddress),
+      tcpKey -> ByteVector.fromInt(node.address.tcpPort),
+      udpKey -> ByteVector.fromInt(node.address.udpPort)
     )
-    codec.encode(content).map { data =>
-      val sig = sigalg.removeRecoveryId(sigalg.sign(privateKey, data))
-      EthereumNodeRecord(sig, content)
-    }
+
+    apply(privateKey, seq, attrs: _*)
   }
 
   def validateSignature(
