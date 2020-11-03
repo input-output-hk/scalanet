@@ -644,7 +644,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
           _ <- network.startHandling(handleWithSome)
           channel <- peerGroup.createServerChannel(from = remoteAddress)
           (request: Payload) = requestMap(rpc) match {
-            case p: Payload.HasExpiration[_] => p.withExpiration(System.currentTimeMillis - 5000)
+            case p: Payload.HasExpiration[_] => p.withExpiration(currentTimeSeconds - 5)
             case p => p
           }
           _ <- channel.sendPayloadToSUT(request, remotePrivateKey)
@@ -746,7 +746,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
     }
 
     def packetSizeOfNNeighbors(n: Int) = {
-      val neighbours = Neighbors(List.fill(n)(randomIPv6Node), System.currentTimeMillis)
+      val neighbours = Neighbors(List.fill(n)(randomIPv6Node), expiration = currentTimeSeconds)
       val (_, privateKey) = sigalg.newKeyPair
       val packet = Packet.pack(neighbours, privateKey).require
       val packetSize = packet.hash.size + packet.signature.size + packet.data.size
@@ -788,6 +788,8 @@ object DiscoveryNetworkSpec extends Matchers {
     kademliaBucketSize = 16,
     maxClockDrift = Duration.Zero
   )
+
+  def currentTimeSeconds = System.currentTimeMillis / 1000
 
   trait Fixture {
     // Implement `test` to assert something.
@@ -843,14 +845,14 @@ object DiscoveryNetworkSpec extends Matchers {
       ).runSyncUnsafe()
 
     def assertExpirationSet(expiration: Long) =
-      expiration shouldBe (System.currentTimeMillis + config.messageExpiration.toMillis) +- 3000
+      expiration shouldBe (currentTimeSeconds + config.messageExpiration.toSeconds) +- 3
 
     def validExpiration =
-      System.currentTimeMillis + config.messageExpiration.toMillis
+      currentTimeSeconds + config.messageExpiration.toSeconds
 
     // Anything in the past is invalid.
     def invalidExpiration =
-      System.currentTimeMillis - 1
+      currentTimeSeconds - 1
 
     implicit class ChannelOps(channel: MockChannel[InetSocketAddress, Packet]) {
       def sendPayloadToSUT(

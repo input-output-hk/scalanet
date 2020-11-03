@@ -18,7 +18,7 @@ object Payload {
   sealed trait Response extends Payload
 
   trait HasExpiration[T <: Payload] {
-    // Absolute UNIX timestamp.
+    // Absolute UNIX timestamp: seconds since epoch.
     def expiration: Long
     def withExpiration(at: Long): T
   }
@@ -28,7 +28,6 @@ object Payload {
       version: Int,
       from: Node.Address,
       to: Node.Address,
-      // Absolute UNIX timestamp.
       expiration: Long,
       // Current ENR sequence number of the sender.
       enrSeq: Option[Long]
