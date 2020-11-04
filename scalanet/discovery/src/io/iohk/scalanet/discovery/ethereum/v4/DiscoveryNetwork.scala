@@ -21,6 +21,7 @@ import scala.util.control.{NonFatal, NoStackTrace}
 import scodec.bits.BitVector
 import io.iohk.scalanet.discovery.ethereum.v4.Payload.Neighbors
 import java.net.InetSocketAddress
+import io.iohk.scalanet.discovery.hash.Keccak256
 
 /** Present a stateless facade implementing the RPC methods
   * that correspond to the discovery protocol messages on top
@@ -68,9 +69,9 @@ object DiscoveryNetwork {
       import DiscoveryRPC.ENRSeq
       import Payload._
 
-      private val expirationMillis = config.messageExpiration.toMillis
-      private val maxClockDriftMillis = config.maxClockDrift.toMillis
-      private val currentTimeMillis = clock.realTime(MILLISECONDS)
+      private val expirationSeconds = config.messageExpiration.toSeconds
+      private val maxClockDriftSeconds = config.maxClockDrift.toSeconds
+      private val currentTimeSeconds = clock.realTime(SECONDS)
 
       private val maxNeighborsPerPacket = getMaxNeighborsPerPacket
 
@@ -117,7 +118,7 @@ object DiscoveryNetwork {
           .toIterant
           .mapEval {
             case MessageReceived(packet) =>
-              currentTimeMillis.flatMap { timestamp =>
+              currentTimeSeconds.flatMap { timestamp =>
                 Packet.unpack(packet) match {
                   case Attempt.Successful((payload, remotePublicKey)) =>
                     payload match {
@@ -126,7 +127,7 @@ object DiscoveryNetwork {
                         Task.unit
 
                       case p: Payload.HasExpiration[_] if isExpired(p, timestamp) =>
-                        Task(logger.debug(s"Ignoring expired request from ${channel.to}"))
+                        Task(logger.debug(s"Ignoring expired request from ${channel.to}; ${p.expiration} < $timestamp"))
 
                       case p: Payload.Request =>
                         handleRequest(handler, channel, remotePublicKey, packet.hash, p)
@@ -214,7 +215,7 @@ object DiscoveryNetwork {
       private def setExpiration(payload: Payload): Task[Payload] = {
         payload match {
           case p: Payload.HasExpiration[_] =>
-            currentTimeMillis.map(t => p.withExpiration(t + expirationMillis))
+            currentTimeSeconds.map(t => p.withExpiration(t + expirationSeconds))
           case p =>
             Task.pure(p)
         }
@@ -230,7 +231,7 @@ object DiscoveryNetwork {
         * our expiration time to 1 hour wouldn't help in this case.
         */
       private def isExpired(payload: HasExpiration[_], now: Long): Boolean =
-        payload.expiration < now - maxClockDriftMillis
+        payload.expiration < now - maxClockDriftSeconds
 
       /** Ping a peer. */
       override val ping = (peer: Peer[A]) =>
@@ -241,8 +242,14 @@ object DiscoveryNetwork {
                 Ping(version = 4, from = localNodeAddress, to = toNodeAddress(peer.address), 0, localEnrSeq)
               )
               .flatMap { packet =>
+                // Workaround for 1.10 Parity nodes that send back the hash of the Ping data
+                // rather than the hash of the whole packet (over signature + data).
+                // https://github.com/paritytech/parity/issues/8038
+                // https://github.com/ethereumproject/go-ethereum/issues/312
+                val dataHash = Keccak256(packet.data)
+
                 channel.collectFirstResponse(peer.id) {
-                  case Pong(_, pingHash, _, maybeRemoteEnrSeq) if pingHash == packet.hash =>
+                  case Pong(_, pingHash, _, maybeRemoteEnrSeq) if pingHash == packet.hash || pingHash == dataHash =>
                     maybeRemoteEnrSeq
                 }
               }
@@ -317,7 +324,7 @@ object DiscoveryNetwork {
               case MessageReceived(packet) => packet
             }
             .mapEval { packet =>
-              currentTimeMillis.flatMap { timestamp =>
+              currentTimeSeconds.flatMap { timestamp =>
                 Packet.unpack(packet) match {
                   case Attempt.Successful((payload, remotePublicKey)) =>
                     payload match {
@@ -329,7 +336,9 @@ object DiscoveryNetwork {
                         Task.pure(None)
 
                       case p: Payload.HasExpiration[_] if isExpired(p, timestamp) =>
-                        Task(logger.debug(s"Ignoring expired response from ${channel.to}")).as(None)
+                        Task(
+                          logger.debug(s"Ignoring expired response from ${channel.to}; ${p.expiration} < $timestamp")
+                        ).as(None)
 
                       case p: Payload.Response =>
                         Task.pure(Some(p))
