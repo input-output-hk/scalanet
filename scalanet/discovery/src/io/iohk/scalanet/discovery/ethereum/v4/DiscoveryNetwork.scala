@@ -134,9 +134,8 @@ object DiscoveryNetwork {
                     }
 
                   case Attempt.Failure(err) =>
-                    Task.raiseError(
-                      new PacketException(s"Failed to unpack message: $err")
-                    )
+                    Task(logger.debug(s"Failed to unpack packet: $err; ${packet.show}")) >>
+                      Task.raiseError(new PacketException(s"Failed to unpack message: $err"))
                 }
               }
 
