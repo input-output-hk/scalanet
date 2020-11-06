@@ -798,7 +798,8 @@ object DiscoveryService {
 
     /** Look up a random node ID to discover new peers. */
     protected[v4] def lookupRandom(): Task[Unit] =
-      lookup(target = sigalg.newKeyPair._1).void
+      Task(logger.info("Looking up a random target...")) >>
+        lookup(target = sigalg.newKeyPair._1).void
 
     /** Look up self with the bootstrap nodes. First we have to fetch their ENR
       * records to verify they are reachable and so that they can participate
@@ -812,23 +813,26 @@ object DiscoveryService {
       if (config.knownPeers.isEmpty)
         Task.pure(false)
       else {
-        val tryEnroll = for {
+        for {
           nodeId <- stateRef.get.map(_.node.id)
           bootstrapPeers = config.knownPeers.toList.map(toPeer).filterNot(_.id == nodeId)
+          _ <- Task(logger.info(s"Enrolling with ${bootstrapPeers.size} bootstrap nodes."))
           maybeBootstrapEnrs <- Task.parTraverseN(config.kademliaAlpha)(bootstrapPeers)(fetchEnr(_, delay = true))
-          result <- if (maybeBootstrapEnrs.exists(_.isDefined)) {
-            lookup(nodeId).as(true)
+          enrolled = maybeBootstrapEnrs.count(_.isDefined)
+          succeeded = enrolled > 0
+          _ <- if (succeeded) {
+            for {
+              _ <- Task(
+                logger.info(s"Successfully enrolled with $enrolled bootstrap nodes. Performing initial lookup...")
+              )
+              _ <- lookup(nodeId)
+              nodeCount <- stateRef.get.map(_.nodeMap.size)
+              _ <- Task(logger.info(s"Discovered $nodeCount nodes by the end of the lookup."))
+            } yield ()
           } else {
-            Task.pure(false)
-          }
-        } yield result
-
-        tryEnroll.flatTap {
-          case true =>
-            Task(logger.info("Successfully enrolled with some of the bootstrap nodes."))
-          case false =>
             Task(logger.warn("Failed to enroll with any of the the bootstrap nodes."))
-        }
+          }
+        } yield succeeded
       }
   }
 }

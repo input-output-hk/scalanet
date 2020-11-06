@@ -25,6 +25,10 @@ object EthereumNodeRecord {
       // Normally clients treat the values as RLP, however we don't have access to the RLP types here, hence it's just bytes.
       attrs: SortedMap[ByteVector, ByteVector]
   )
+  object Content {
+    def apply(seq: Long, attrs: (ByteVector, ByteVector)*): Content =
+      Content(seq, SortedMap(attrs: _*))
+  }
 
   object Keys {
     private def key(k: String): ByteVector =
@@ -61,14 +65,14 @@ object EthereumNodeRecord {
   def apply(signature: Signature, seq: Long, attrs: (ByteVector, ByteVector)*): EthereumNodeRecord =
     EthereumNodeRecord(
       signature,
-      EthereumNodeRecord.Content(seq, SortedMap(attrs: _*))
+      EthereumNodeRecord.Content(seq, attrs: _*)
     )
 
   def apply(privateKey: PrivateKey, seq: Long, attrs: (ByteVector, ByteVector)*)(
       implicit sigalg: SigAlg,
       codec: Codec[Content]
   ): Attempt[EthereumNodeRecord] = {
-    val content = EthereumNodeRecord.Content(seq, SortedMap(attrs: _*))
+    val content = EthereumNodeRecord.Content(seq, attrs: _*)
     codec.encode(content).map { data =>
       val sig = sigalg.removeRecoveryId(sigalg.sign(privateKey, data))
       EthereumNodeRecord(sig, content)

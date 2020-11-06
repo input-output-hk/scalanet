@@ -1,5 +1,6 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
+import cats.Show
 import io.iohk.scalanet.discovery.hash.{Hash, Keccak256}
 import io.iohk.scalanet.discovery.crypto.{SigAlg, PrivateKey, PublicKey, Signature}
 import scodec.bits.BitVector
@@ -86,4 +87,8 @@ object Packet {
       publicKey <- sigalg.recoverPublicKey(packet.signature, packet.data)
       payload <- codec.decodeValue(packet.data)
     } yield (payload, publicKey)
+
+  implicit val show: Show[Packet] = Show.show[Packet] { p =>
+    s"""Packet(hash = hex"${p.hash.toHex}", signature = hex"${p.signature.toHex}", data = hex"${p.data.toHex}")"""
+  }
 }
