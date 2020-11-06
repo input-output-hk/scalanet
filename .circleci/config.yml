@@ -27,11 +27,11 @@ jobs:
       - run:
           name: test
           #command: mill scalanet.test && mill scalanet.scoverage.htmlReport
-          command: mill scalanet.test
+          command: mill __.test
 
       - run:
-          name: kadmelia integration test
-          command: mill scalanet.it
+          name: integration test
+          command: mill __.it
 
       - run:
           name: check that the code is formatted properly
