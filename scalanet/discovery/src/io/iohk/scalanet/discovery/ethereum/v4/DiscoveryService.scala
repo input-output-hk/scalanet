@@ -797,7 +797,7 @@ object DiscoveryService {
           ) >>
             Task
               .parTraverseUnordered(contacts)(fetchNeighbors)
-              .map(_.flatten.distinct)
+              .map(_.flatten.distinct.filterNot(neighbors))
               .flatMap(bondNeighbors)
               .flatMap { newNeighbors =>
                 val nextClosest = (closest ++ newNeighbors).take(config.kademliaBucketSize)
