@@ -407,7 +407,7 @@ object DiscoveryService {
         case false =>
           initBond(peer).flatMap {
             case Some(result) =>
-              result.pongReceived.get
+              result.pongReceived.get.timeoutTo(config.requestTimeout, Task.pure(false))
 
             case None =>
               Task(logger.debug(s"Trying to bond with $peer...")) >>
@@ -433,6 +433,7 @@ object DiscoveryService {
                         _ <- completePong(peer, responded = false)
                       } yield false
                   }
+                  .guarantee(stateRef.update(_.clearBondingResults(peer)))
           }
       }
 
@@ -563,7 +564,7 @@ object DiscoveryService {
 
       waitOrFetch.flatMap {
         case Left(wait) =>
-          wait.get
+          wait.get.timeoutTo(config.requestTimeout, Task.pure(None))
 
         case Right(fetch) =>
           val maybeEnr = bond(peer).flatMap {
@@ -729,44 +730,55 @@ object DiscoveryService {
           case true =>
             rpc
               .findNode(peer)(target)
-              .map(_.map(_.toList).getOrElse(Nil))
+              .flatMap {
+                case None =>
+                  Task(logger.debug(s"Received no response for neighbors for $target from ${peer.address}")).as(Nil)
+                case Some(neighbors) =>
+                  Task(logger.debug(s"Received ${neighbors.size} neighbors for $target from ${peer.address}"))
+                    .as(neighbors.toList)
+              }
               .flatMap { neighbors =>
                 neighbors.filterA { neighbor =>
                   if (neighbor.address.checkRelay(peer))
                     Task.pure(true)
                   else
-                    Task(logger.debug(s"Ignoring neighbor $neighbor from $peer because of invalid relay IP.")).as(false)
+                    Task(logger.debug(s"Ignoring neighbor $neighbor from ${peer.address} because of invalid relay IP."))
+                      .as(false)
                 }
               }
               .recoverWith {
                 case NonFatal(ex) =>
-                  Task(logger.debug(s"Failed to fetch neighbors of $target from $from: $ex")).as(Nil)
+                  Task(logger.debug(s"Failed to fetch neighbors of $target from ${peer.address}: $ex")).as(Nil)
               }
           case false =>
-            Task(logger.debug(s"Could not bond with $from to fetch neighbors of $target")).as(Nil)
+            Task(logger.debug(s"Could not bond with ${peer.address} to fetch neighbors of $target")).as(Nil)
         }
       }
 
       // Make sure these new nodes can be bonded with before we consider them,
       // otherwise they might appear to be be closer to the target but actually
       // be fakes with unreachable addresses that could knock out legit nodes.
-      def bondNeighbors(neighbors: Seq[Node]): Task[Seq[Node]] = {
-        Task
-          .parTraverseUnordered(neighbors) { neighbor =>
-            bond(toPeer(neighbor)).flatMap {
-              case true =>
-                Task.pure(Some(neighbor))
-              case false =>
-                Task(logger.debug(s"Could not bond with neighbor candidate $neighbor")).as(None)
+      def bondNeighbors(neighbors: Seq[Node]): Task[Seq[Node]] =
+        for {
+          _ <- Task(logger.debug(s"Bonding with ${neighbors.size} neighbors..."))
+          bonded <- Task
+            .parTraverseN(config.kademliaAlpha)(neighbors) { neighbor =>
+              bond(toPeer(neighbor)).flatMap {
+                case true =>
+                  Task.pure(Some(neighbor))
+                case false =>
+                  Task(logger.debug(s"Could not bond with neighbor candidate $neighbor")).as(None)
+              }
             }
-          }
-          .map(_.flatten)
-      }
+            .map(_.flatten)
+          _ <- Task(logger.debug(s"Bonded with ${bonded.size} neighbors out of ${neighbors.size}."))
+        } yield bonded
 
       def loop(
           local: Node,
           closest: SortedSet[Node],
-          asked: Set[Node]
+          asked: Set[Node],
+          neighbors: Set[Node]
       ): Task[SortedSet[Node]] = {
         // Contact the alpha closest nodes to the target that we haven't asked before.
         val contacts = closest
@@ -775,24 +787,32 @@ object DiscoveryService {
           .take(config.kademliaAlpha)
           .toList
 
-        if (contacts.isEmpty)
-          Task.pure(closest)
-        else {
-          Task
-            .parTraverseUnordered(contacts)(fetchNeighbors)
-            .map(_.flatten.distinct)
-            .flatMap(bondNeighbors)
-            .flatMap { newNeighbors =>
-              val newClosest = (closest ++ newNeighbors).take(config.kademliaBucketSize)
-              val newAsked = asked ++ contacts
-              loop(local, newClosest, newAsked)
-            }
+        if (contacts.isEmpty) {
+          Task(
+            logger.debug(s"Lookup for $target finished; asked ${asked.size} nodes, found ${neighbors.size} neighbors.")
+          ).as(closest)
+        } else {
+          Task(
+            logger.debug(s"Lookup for $target contacting ${contacts.size} new nodes; asked ${asked.size} nodes so far.")
+          ) >>
+            Task
+              .parTraverseUnordered(contacts)(fetchNeighbors)
+              .map(_.flatten.distinct.filterNot(neighbors))
+              .flatMap(bondNeighbors)
+              .flatMap { newNeighbors =>
+                val nextClosest = (closest ++ newNeighbors).take(config.kademliaBucketSize)
+                val nextAsked = asked ++ contacts
+                val nextNeighbors = neighbors ++ newNeighbors
+                val newClosest = nextClosest diff closest
+                Task(logger.debug(s"Lookup for $target found ${newClosest.size} neighbors closer than before.")) >>
+                  loop(local, nextClosest, nextAsked, nextNeighbors)
+              }
         }
       }
 
       init.flatMap {
         case (localNode, closestNodes) =>
-          loop(localNode, closest = SortedSet(closestNodes: _*), asked = Set(localNode))
+          loop(localNode, closest = SortedSet(closestNodes: _*), asked = Set(localNode), neighbors = closestNodes.toSet)
       }
     }
 
@@ -825,7 +845,9 @@ object DiscoveryService {
               _ <- Task(
                 logger.info(s"Successfully enrolled with $enrolled bootstrap nodes. Performing initial lookup...")
               )
-              _ <- lookup(nodeId)
+              _ <- lookup(nodeId).doOnFinish {
+                _.fold(Task.unit)(ex => Task(logger.error(s"Error during initial lookup", ex)))
+              }
               nodeCount <- stateRef.get.map(_.nodeMap.size)
               _ <- Task(logger.info(s"Discovered $nodeCount nodes by the end of the lookup."))
             } yield ()
