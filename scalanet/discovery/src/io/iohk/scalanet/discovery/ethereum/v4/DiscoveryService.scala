@@ -762,7 +762,7 @@ object DiscoveryService {
         for {
           _ <- Task(logger.debug(s"Bonding with ${neighbors.size} neighbors..."))
           bonded <- Task
-            .parTraverseN(config.kademliaAlpha)(neighbors) { neighbor =>
+            .parTraverseUnordered(neighbors) { neighbor =>
               bond(toPeer(neighbor)).flatMap {
                 case true =>
                   Task.pure(Some(neighbor))
@@ -837,7 +837,7 @@ object DiscoveryService {
           nodeId <- stateRef.get.map(_.node.id)
           bootstrapPeers = config.knownPeers.toList.map(toPeer).filterNot(_.id == nodeId)
           _ <- Task(logger.info(s"Enrolling with ${bootstrapPeers.size} bootstrap nodes."))
-          maybeBootstrapEnrs <- Task.parTraverseN(config.kademliaAlpha)(bootstrapPeers)(fetchEnr(_, delay = true))
+          maybeBootstrapEnrs <- Task.parTraverseUnordered(bootstrapPeers)(fetchEnr(_, delay = true))
           enrolled = maybeBootstrapEnrs.count(_.isDefined)
           succeeded = enrolled > 0
           _ <- if (succeeded) {
