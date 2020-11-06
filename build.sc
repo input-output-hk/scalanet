@@ -109,7 +109,7 @@ object scalanet extends ScalanetModule with ScalanetPublishModule {
 
   // Scoverage disabled
   // object test extends ScoverageTests {
-  object test extends TestModule
+  object ut extends TestModule
 
   object discovery extends ScalanetModule with ScalanetPublishModule {
 
@@ -119,14 +119,14 @@ object scalanet extends ScalanetModule with ScalanetPublishModule {
     override def moduleDeps: Seq[PublishModule] =
       Seq(scalanet)
 
-    object test extends TestModule {
+    object ut extends TestModule {
       override def moduleDeps: Seq[JavaModule] =
-        super.moduleDeps ++ Seq(scalanet.discovery, scalanet.test)
+        super.moduleDeps ++ Seq(scalanet.discovery, scalanet.ut)
     }
 
     object it extends TestModule {
       override def moduleDeps: Seq[JavaModule] =
-        super.moduleDeps ++ Seq(scalanet.discovery.test)
+        super.moduleDeps ++ Seq(scalanet.discovery.ut)
     }
   }
 
@@ -144,7 +144,7 @@ object scalanet extends ScalanetModule with ScalanetPublishModule {
     override def moduleDeps: Seq[JavaModule] =
       Seq(scalanet, scalanet.discovery)
 
-    object test extends TestModule {
+    object ut extends TestModule {
       override def moduleDeps: Seq[JavaModule] =
         super.moduleDeps ++ Seq(scalanet.examples)
     }

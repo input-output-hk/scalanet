@@ -25,12 +25,12 @@ jobs:
           command: sh -c '(echo "#!/usr/bin/env sh" && curl -L https://github.com/lihaoyi/mill/releases/download/0.4.1/0.4.1) > /usr/local/bin/mill && chmod +x /usr/local/bin/mill'
 
       - run:
-          name: test
+          name: unit tests
           #command: mill scalanet.test && mill scalanet.scoverage.htmlReport
-          command: mill __.test
+          command: mill __.ut
 
       - run:
-          name: integration test
+          name: integration tests
           command: mill __.it
 
       - run:
