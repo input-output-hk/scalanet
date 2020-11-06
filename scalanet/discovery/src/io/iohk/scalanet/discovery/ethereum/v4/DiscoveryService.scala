@@ -777,7 +777,8 @@ object DiscoveryService {
       def loop(
           local: Node,
           closest: SortedSet[Node],
-          asked: Set[Node]
+          asked: Set[Node],
+          neighbors: Set[Node]
       ): Task[SortedSet[Node]] = {
         // Contact the alpha closest nodes to the target that we haven't asked before.
         val contacts = closest
@@ -787,24 +788,31 @@ object DiscoveryService {
           .toList
 
         if (contacts.isEmpty) {
-          Task(logger.debug(s"Lookup finished for $target after asking ${asked.size} nodes.")).as(closest)
+          Task(
+            logger.debug(s"Lookup for $target finished; asked ${asked.size} nodes, found ${neighbors.size} neighbors.")
+          ).as(closest)
         } else {
-          Task(logger.debug(s"Lookup for $target contacting ${contacts.size} nodes.")) >>
+          Task(
+            logger.debug(s"Lookup for $target contacting ${contacts.size} new nodes; asked ${asked.size} nodes so far.")
+          ) >>
             Task
               .parTraverseUnordered(contacts)(fetchNeighbors)
               .map(_.flatten.distinct)
               .flatMap(bondNeighbors)
               .flatMap { newNeighbors =>
-                val newClosest = (closest ++ newNeighbors).take(config.kademliaBucketSize)
-                val newAsked = asked ++ contacts
-                loop(local, newClosest, newAsked)
+                val nextClosest = (closest ++ newNeighbors).take(config.kademliaBucketSize)
+                val nextAsked = asked ++ contacts
+                val nextNeighbors = neighbors ++ newNeighbors
+                val newClosest = nextClosest diff closest
+                Task(logger.debug(s"Lookup for $target found ${newClosest.size} neighbors closer than before.")) >>
+                  loop(local, nextClosest, nextAsked, nextNeighbors)
               }
         }
       }
 
       init.flatMap {
         case (localNode, closestNodes) =>
-          loop(localNode, closest = SortedSet(closestNodes: _*), asked = Set(localNode))
+          loop(localNode, closest = SortedSet(closestNodes: _*), asked = Set(localNode), neighbors = closestNodes.toSet)
       }
     }
 
