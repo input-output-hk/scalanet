@@ -133,7 +133,7 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
             received <- receivers.traverse(_.join)
           } yield {
             received(0) shouldBe List("Two to One")
-            received(1) shouldBe List("Three to One A", "Three to One B")
+            received(1) should contain theSameElementsAs List("Three to One A", "Three to One B")
             received(2) shouldBe received(1)
           }
       }
