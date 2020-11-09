@@ -9,9 +9,9 @@ echo $GPG_KEY | base64 --decode | gpg --batch --import
 gpg --passphrase $GPG_PASSPHRASE --batch --yes -a -b LICENSE
 
 mill mill.scalalib.PublishModule/publishAll \
+    __.publishArtifacts \
     "$OSS_USERNAME":"$OSS_PASSWORD" \
-    "$GPG_PASSPHRASE" \
-    __.publishArtifacts
+    --gpgArgs --passphrase="$GPG_PASSPHRASE",--batch,--yes,-a,-b
 
 else
 
