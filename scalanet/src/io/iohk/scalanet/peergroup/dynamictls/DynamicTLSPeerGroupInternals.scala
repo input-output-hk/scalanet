@@ -100,8 +100,6 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       extends Channel[PeerInfo, M]
       with StrictLogging {
 
-    protected override val s = scheduler
-
     val to: PeerInfo = peerInfo
 
     private val activation = Promise[io.netty.channel.Channel]()
@@ -277,8 +275,6 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
   )(implicit scheduler: Scheduler)
       extends Channel[PeerInfo, M]
       with StrictLogging {
-
-    protected override val s = scheduler
 
     logger.debug(
       s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"

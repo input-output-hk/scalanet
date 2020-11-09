@@ -48,8 +48,6 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
 ) extends TerminalPeerGroup[PeerInfo, M]
     with StrictLogging {
 
-  protected override val s = scheduler
-
   private val sslServerCtx: SslContext = DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForServer, config)
 
   private val serverQueue = CloseableQueue.unbounded[ServerEvent[PeerInfo, M]](ChannelType.SPMC).runSyncUnsafe()

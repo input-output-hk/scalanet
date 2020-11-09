@@ -66,8 +66,6 @@ class StaticUDPPeerGroup[M] private (
 
   import StaticUDPPeerGroup.{ChannelImpl, ChannelAlloc}
 
-  override protected val s = scheduler
-
   override val processAddress = config.processAddress
 
   private val localAddress = config.bindAddress
@@ -366,8 +364,6 @@ object StaticUDPPeerGroup extends StrictLogging {
   )(implicit codec: Codec[M], scheduler: Scheduler)
       extends Channel[InetMultiAddress, M]
       with StrictLogging {
-
-    protected override val s = scheduler
 
     override val to =
       InetMultiAddress(remoteAddress)

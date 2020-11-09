@@ -17,7 +17,7 @@ import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.PeerInfo
 import io.iohk.scalanet.peergroup.udp.DynamicUDPPeerGroup
 import monix.eval.Task
 import monix.execution.Scheduler
-import monix.reactive.observables.ConnectableObservable
+import monix.reactive.Observable
 import scodec.Codec
 
 import scala.concurrent.duration.{FiniteDuration, _}
@@ -44,6 +44,8 @@ class ReqResponseProtocol[A, M](
     fiberMapRef: Ref[Task, Map[ChannelId, Fiber[Task, Unit]]]
 )(implicit s: Scheduler, a: Addressable[A]) {
 
+  import io.iohk.scalanet.peergroup.implicits._
+
   private def getChan(
       to: A,
       channelId: ChannelId
@@ -64,12 +66,7 @@ class ReqResponseProtocol[A, M](
                   val cleanup = release >> channelMapRef.update(_ - channelId)
                   // Keep in mind that stream is back pressured for all subscribers so in case of many parallel requests to one client
                   // waiting for response on first request can influence result of second request
-                  for {
-                    _ <- channelMapRef.update(_.updated(channelId, channel -> cleanup))
-                    // start publishing incoming messages to any subscriber
-                    // in normal circumstances we should keep cancellation token to clear up resources
-                    _ = channel.in.connect()
-                  } yield channel
+                  channelMapRef.update(_.updated(channelId, channel -> cleanup)).as(channel)
               }
           }
         }
@@ -98,14 +95,14 @@ class ReqResponseProtocol[A, M](
       // sending and subsription are done in parallel to not miss response message by chance
       // alse in case of send failure, any resource will be cleaned
       result <- Task
-        .parMap2(c.sendMessage(messageToSend), subscribeForResponse(c.in, messageToSend.id))(
+        .parMap2(c.sendMessage(messageToSend), subscribeForResponse(c.nextMessage().toObservable, messageToSend.id))(
           (_, response) => response.m
         )
         .timeout(timeOutDuration)
     } yield result
 
   private def subscribeForResponse(
-      source: ConnectableObservable[ChannelEvent[MessageEnvelope[M]]],
+      source: Observable[ChannelEvent[MessageEnvelope[M]]],
       responseId: UUID
   ): Task[MessageEnvelope[M]] = {
     source.collect {
@@ -115,11 +112,16 @@ class ReqResponseProtocol[A, M](
 
   /** Start handling requests in the background. */
   def startHandling(requestHandler: M => M): Task[Unit] = {
-    group.server.refCount.collectChannelCreated
+    group
+      .nextServerEvent()
+      .toObservable
+      .collectChannelCreated
       .foreachL {
         case (channel, release) =>
           val channelId = (a.getAddress(processAddress), a.getAddress(channel.to))
-          channel.in.refCount
+          channel
+            .nextMessage()
+            .toObservable
             .collect {
               case MessageReceived(msg) => msg
             }

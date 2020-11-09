@@ -40,8 +40,6 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
 ) extends TerminalPeerGroup[InetMultiAddress, M]
     with StrictLogging {
 
-  override protected val s = scheduler
-
   import DynamicUDPPeerGroup.Internals.{UDPChannelId, ChannelType, ClientChannel, ServerChannel}
 
   val serverQueue = CloseableQueue.unbounded[ServerEvent[InetMultiAddress, M]](ChannelType.SPMC).runSyncUnsafe()
@@ -205,8 +203,6 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
       messageQueue: CloseableQueue[ChannelEvent[M]],
       channelType: ChannelType
   ) extends Channel[InetMultiAddress, M] {
-
-    protected override val s = scheduler
 
     val closePromise: Promise[ChannelImpl] = nettyChannel.eventLoop().newPromise[ChannelImpl]()
 
