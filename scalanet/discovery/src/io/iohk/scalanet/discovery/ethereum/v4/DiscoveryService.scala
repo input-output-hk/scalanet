@@ -68,7 +68,8 @@ object DiscoveryService {
       node: Node,
       config: DiscoveryConfig,
       network: DiscoveryNetwork[A],
-      toAddress: Node.Address => A
+      toAddress: Node.Address => A,
+      enrollInBackground: Boolean = false
   )(
       implicit sigalg: SigAlg,
       enrCodec: Codec[EthereumNodeRecord.Content],
@@ -88,9 +89,15 @@ object DiscoveryService {
           // Start handling requests, we need them during enrolling so the peers can ping and bond with us.
           cancelToken <- network.startHandling(service)
           // Contact the bootstrap nodes.
-          _ <- service.enroll()
+          enroll = service.enroll()
           // Periodically discover new nodes.
-          discoveryFiber <- service.lookupRandom().delayExecution(config.discoveryPeriod).loopForever.start
+          discover = service.lookupRandom().delayExecution(config.discoveryPeriod).loopForever
+          // Enrollment can be run in the background if it takes very long.
+          discoveryFiber <- if (enrollInBackground) {
+            (enroll >> discover).start
+          } else {
+            enroll >> discover.start
+          }
         } yield (service, cancelToken, discoveryFiber)
       } {
         case (_, cancelToken, discoveryFiber) =>
@@ -762,7 +769,7 @@ object DiscoveryService {
         for {
           _ <- Task(logger.debug(s"Bonding with ${neighbors.size} neighbors..."))
           bonded <- Task
-            .parTraverseN(config.kademliaAlpha)(neighbors) { neighbor =>
+            .parTraverseUnordered(neighbors) { neighbor =>
               bond(toPeer(neighbor)).flatMap {
                 case true =>
                   Task.pure(Some(neighbor))
@@ -837,7 +844,7 @@ object DiscoveryService {
           nodeId <- stateRef.get.map(_.node.id)
           bootstrapPeers = config.knownPeers.toList.map(toPeer).filterNot(_.id == nodeId)
           _ <- Task(logger.info(s"Enrolling with ${bootstrapPeers.size} bootstrap nodes."))
-          maybeBootstrapEnrs <- Task.parTraverseN(config.kademliaAlpha)(bootstrapPeers)(fetchEnr(_, delay = true))
+          maybeBootstrapEnrs <- Task.parTraverseUnordered(bootstrapPeers)(fetchEnr(_, delay = true))
           enrolled = maybeBootstrapEnrs.count(_.isDefined)
           succeeded = enrolled > 0
           _ <- if (succeeded) {

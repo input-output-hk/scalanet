@@ -22,16 +22,12 @@ jobs:
 
       - run:
           name: install mill
-          command: sh -c '(echo "#!/usr/bin/env sh" && curl -L https://github.com/lihaoyi/mill/releases/download/0.4.1/0.4.1) > /usr/local/bin/mill && chmod +x /usr/local/bin/mill'
+          command: sh -c '(echo "#!/usr/bin/env sh" && curl -L https://github.com/lihaoyi/mill/releases/download/0.8.0/0.8.0) > /usr/local/bin/mill && chmod +x /usr/local/bin/mill'
 
       - run:
-          name: test
+          name: unit and integration tests
           #command: mill scalanet.test && mill scalanet.scoverage.htmlReport
-          command: mill scalanet.test
-
-      - run:
-          name: kadmelia integration test
-          command: mill scalanet.it
+          command: mill __.test
 
       - run:
           name: check that the code is formatted properly
