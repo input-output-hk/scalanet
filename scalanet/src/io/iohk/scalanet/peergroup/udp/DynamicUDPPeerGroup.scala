@@ -35,16 +35,17 @@ import scala.util.control.NonFatal
   * @tparam M the message type.
   */
 class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
-    implicit codec: Codec[M],
-    scheduler: Scheduler
+    implicit codec: Codec[M]
 ) extends TerminalPeerGroup[InetMultiAddress, M]
     with StrictLogging {
 
   import DynamicUDPPeerGroup.Internals.{UDPChannelId, ChannelType, ClientChannel, ServerChannel}
 
-  val serverQueue = CloseableQueue.unbounded[ServerEvent[InetMultiAddress, M]](ChannelType.SPMC).runSyncUnsafe()
-
   private val workerGroup = new NioEventLoopGroup()
+
+  private implicit val s = Scheduler(workerGroup)
+
+  private val serverQueue = CloseableQueue.unbounded[ServerEvent[InetMultiAddress, M]](ChannelType.SPMC).runSyncUnsafe()
 
   // all channels in the map are open and active, as upon closing channels are removed from the map
   private[peergroup] val activeChannels = new ConcurrentHashMap[UDPChannelId, ChannelImpl]()
