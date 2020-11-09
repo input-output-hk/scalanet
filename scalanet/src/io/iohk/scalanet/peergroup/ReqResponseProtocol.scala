@@ -9,6 +9,7 @@ import cats.effect.{Fiber, Resource}
 import cats.effect.concurrent.{Ref, Semaphore}
 import io.iohk.scalanet.codec.FramingCodec
 import io.iohk.scalanet.crypto.CryptoUtils
+import io.iohk.scalanet.peergroup.implicits._
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, MessageReceived}
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.ChannelId
 import io.iohk.scalanet.peergroup.ReqResponseProtocol._
@@ -44,36 +45,35 @@ class ReqResponseProtocol[A, M](
     fiberMapRef: Ref[Task, Map[ChannelId, Fiber[Task, Unit]]]
 )(implicit s: Scheduler, a: Addressable[A]) {
 
-  import io.iohk.scalanet.peergroup.implicits._
-
   private def getChan(
       to: A,
       channelId: ChannelId
-  ): Task[Channel[A, MessageEnvelope[M]]] = {
+  ): Task[ReqResponseChannel[A, M]] = {
     channelMapRef.get.map(_.get(channelId)).flatMap {
-      case Some((channel, _)) =>
+      case Some(channel) =>
         Task.pure(channel)
 
       case None =>
         channelSemaphore.withPermit {
           channelMapRef.get.map(_.get(channelId)).flatMap {
-            case Some((channel, _)) =>
+            case Some(channel) =>
               Task.pure(channel)
 
             case None =>
               group.client(to).allocated.flatMap {
-                case (channel, release) =>
+                case (underlying, release) =>
                   val cleanup = release >> channelMapRef.update(_ - channelId)
                   // Keep in mind that stream is back pressured for all subscribers so in case of many parallel requests to one client
                   // waiting for response on first request can influence result of second request
-                  channelMapRef.update(_.updated(channelId, channel -> cleanup)).as(channel)
+                  val channel = new ReqResponseChannel(underlying, cleanup)
+                  channelMapRef.update(_.updated(channelId, channel)).as(channel)
               }
           }
         }
     }
   }
 
-  // It do not closes client channel after each message as, in case of tcp it would be really costly
+  // It do not close the client channel after each message as in case of tcp it would be really costly
   // to create new tcp connection for each message.
   // it probably should return Task[Either[E, M]]
   def send(m: M, to: A, requestDuration: FiniteDuration = 5.seconds): Task[M] = {
@@ -87,18 +87,15 @@ class ReqResponseProtocol[A, M](
   }
 
   private def sendMandAwaitForResponse(
-      c: Channel[A, MessageEnvelope[M]],
+      c: ReqResponseChannel[A, M],
       messageToSend: MessageEnvelope[M],
       timeOutDuration: FiniteDuration
   ): Task[M] =
     for {
-      // sending and subsription are done in parallel to not miss response message by chance
-      // alse in case of send failure, any resource will be cleaned
-      result <- Task
-        .parMap2(c.sendMessage(messageToSend), subscribeForResponse(c.nextMessage().toObservable, messageToSend.id))(
-          (_, response) => response.m
-        )
-        .timeout(timeOutDuration)
+      // Subscribe first so we don't miss the response.
+      subscription <- subscribeForResponse(c.sharedMessageObservable, messageToSend.id).start
+      _ <- c.sendMessage(messageToSend)
+      result <- subscription.join.map(_.m).timeout(timeOutDuration)
     } yield result
 
   private def subscribeForResponse(
@@ -121,7 +118,7 @@ class ReqResponseProtocol[A, M](
           val channelId = (a.getAddress(processAddress), a.getAddress(channel.to))
           channel
             .nextMessage()
-            .toObservable
+            .toIterant
             .collect {
               case MessageReceived(msg) => msg
             }
@@ -152,7 +149,7 @@ class ReqResponseProtocol[A, M](
   private def closeChannels(): Task[Unit] =
     channelMapRef.get.flatMap { channelMap =>
       channelMap.values.toList.traverse {
-        case (_, release) => release.attempt
+        _.release.attempt
       }.void
     }
 
@@ -160,8 +157,31 @@ class ReqResponseProtocol[A, M](
 }
 
 object ReqResponseProtocol {
-  // ChannelMap contains channels created with their release method.
-  type ChannelMap[A, M] = Map[ChannelId, (Channel[A, MessageEnvelope[M]], Release)]
+  class ReqResponseChannel[A, M](
+      channel: Channel[A, MessageEnvelope[M]],
+      val release: Release
+  )(implicit scheduler: Scheduler) {
+
+    // There will be one channel shared by all `send` methods which
+    // subscribe to their responses. To avoid message stealing, this
+    // observable replicates messages to each subscriber, however it
+    // also consumes messages if there are no subscribers at all.
+    val sharedMessageObservable: Observable[ChannelEvent[MessageEnvelope[M]]] =
+      channel.messageObservable.share
+
+    // This makes sure there's always at least one subscriber and
+    // messages aren't queueing up (if there aren't any subscribers
+    // then `.share` unsubscribes from the source).
+    // An alternative solution would be to use `channel.next().toIterant.toChannel`
+    // which creates a `monix.catnap.ConcurrentChannel` that broadcasts to everyone
+    // who called `consume` on it.
+    sharedMessageObservable.foreach(_ => ())
+
+    def sendMessage(message: MessageEnvelope[M]): Task[Unit] =
+      channel.sendMessage(message)
+  }
+
+  type ChannelMap[A, M] = Map[ChannelId, ReqResponseChannel[A, M]]
 
   final case class MessageEnvelope[M](id: UUID, m: M)
   object MessageEnvelope {

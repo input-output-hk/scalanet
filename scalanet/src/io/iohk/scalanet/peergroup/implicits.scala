@@ -4,10 +4,12 @@ import cats.effect.concurrent.Deferred
 import monix.eval.Task
 import monix.tail.Iterant
 import monix.reactive.Observable
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
+import io.iohk.scalanet.peergroup.Channel.ChannelEvent
 
 package object implicits {
   // Functions to be applied on the `.nextMessage()` or `.nextServerEvent()` results.
-  implicit class NextOps[A](next: Task[Option[A]]) {
+  implicit class NextOps[A](val next: Task[Option[A]]) extends AnyVal {
     def toIterant: Iterant[Task, A] =
       Iterant.repeatEvalF(next).takeWhile(_.isDefined).map(_.get)
 
@@ -19,5 +21,17 @@ package object implicits {
         case Left(()) => None
         case Right(x) => x
       }
+  }
+
+  implicit class PeerGroupOps[A, M](val group: PeerGroup[A, M]) extends AnyVal {
+    def serverEventObservable: Observable[ServerEvent[A, M]] =
+      group.nextServerEvent().toObservable
+  }
+
+  implicit class ChannelOps[A, M](val channel: Channel[A, M]) extends AnyVal {
+    // NB: Not making an equivalent version for Iterant because it doesn't support timeout
+    // directly; instead, use `next().timeout(5.second).toIterant`
+    def messageObservable: Observable[ChannelEvent[M]] =
+      channel.nextMessage().toObservable
   }
 }

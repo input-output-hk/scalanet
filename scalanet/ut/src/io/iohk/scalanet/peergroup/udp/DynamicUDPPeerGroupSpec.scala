@@ -14,7 +14,6 @@ class DynamicUDPPeerGroupSpec extends UDPPeerGroupSpec("DynamicUDPPPeerGroup") {
   )(implicit scheduler: Scheduler, codec: Codec[M]): Resource[Task, UDPPeerGroupSpec.TestGroup[M]] = {
     DynamicUDPPeerGroup[M](DynamicUDPPeerGroup.Config(address)).map { pg =>
       new PeerGroup[InetMultiAddress, M] {
-        override protected val s = scheduler
         override def processAddress = pg.processAddress
         override def nextServerEvent() = pg.nextServerEvent()
         override def client(to: InetMultiAddress) = pg.client(to)

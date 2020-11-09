@@ -1,6 +1,7 @@
 package io.iohk.scalanet.peergroup
 
 import cats.implicits._
+import io.iohk.scalanet.peergroup.implicits._
 import io.iohk.scalanet.peergroup.Channel.MessageReceived
 import io.iohk.scalanet.peergroup.PeerGroup.ChannelSetupException
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent._
@@ -21,10 +22,10 @@ object StandardTestPack {
     val bobsMessage = "Hi Alice!"
 
     (for {
-      bobReceiver <- bob.server.collectChannelCreated
+      bobReceiver <- bob.serverEventObservable.collectChannelCreated
         .mergeMap {
           case (channel, release) =>
-            channel.in
+            channel.messageObservable
               .collect {
                 case MessageReceived(m) => m
               }
@@ -39,7 +40,7 @@ object StandardTestPack {
 
       aliceClient <- alice.client(bob.processAddress).allocated
 
-      aliceReceiver <- aliceClient._1.in
+      aliceReceiver <- aliceClient._1.messageObservable
         .collect {
           case MessageReceived(m) => m
         }
@@ -47,14 +48,6 @@ object StandardTestPack {
         .start
 
       _ <- aliceClient._1.sendMessage(alicesMessage)
-
-      _ = aliceClient._1.in.connect()
-      _ = bob.server.collectChannelCreated.foreach {
-        case (channel, _) =>
-          channel.in.connect()
-          ()
-      }
-      _ = bob.server.connect()
 
       bobReceived <- bobReceiver.join
       aliceReceived <- aliceReceiver.join
@@ -112,26 +105,17 @@ object StandardTestPack {
     val bobsMessage = Random.alphanumeric.take(1024).mkString
 
     (for {
-      _ <- bob.server.collectChannelCreated.foreachL {
+      _ <- bob.serverEventObservable.collectChannelCreated.foreachL {
         case (channel, release) => channel.sendMessage(bobsMessage).guarantee(release).runAsyncAndForget
       }.startAndForget
 
       aliceClient1 <- alice.client(bob.processAddress).allocated
       aliceClient2 <- alice.client(bob.processAddress).allocated
 
-      aliceReceiver1 <- aliceClient1._1.in.collect { case MessageReceived(m) => m }.headL.start
-      aliceReceiver2 <- aliceClient2._1.in.collect { case MessageReceived(m) => m }.headL.start
+      aliceReceiver1 <- aliceClient1._1.messageObservable.collect { case MessageReceived(m) => m }.headL.start
+      aliceReceiver2 <- aliceClient2._1.messageObservable.collect { case MessageReceived(m) => m }.headL.start
       _ <- aliceClient1._1.sendMessage(alicesMessage)
       _ <- aliceClient2._1.sendMessage(alicesMessage)
-
-      _ = aliceClient1._1.in.connect()
-      _ = aliceClient2._1.in.connect()
-      _ = bob.server.collectChannelCreated.foreach {
-        case (channel, _) =>
-          channel.in.connect()
-          ()
-      }
-      _ = bob.server.connect()
 
       aliceReceived1 <- aliceReceiver1.join
       aliceReceived2 <- aliceReceiver2.join

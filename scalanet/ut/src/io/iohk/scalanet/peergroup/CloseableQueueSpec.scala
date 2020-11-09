@@ -3,8 +3,6 @@ package io.iohk.scalanet.peergroup
 import cats.implicits._
 import monix.execution.Scheduler
 import monix.eval.Task
-import monix.tail.Iterant
-import monix.reactive.Observable
 import org.scalatest.{FlatSpec, Matchers}
 import scala.concurrent.duration._
 import org.scalatest.compatible.Assertion
@@ -138,6 +136,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
   behavior of "toIterant"
 
   it should "not do internal buffering" in testQueue() { queue =>
+    import implicits.NextOps
     implicit val scheduler = Scheduler.fixedPool("test", 16)
     for {
       _ <- queue.offer("a")
@@ -147,7 +146,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
       //o = queue.toObservable.share
       // But these ones do:
       //o = queue.toObservable
-      o = queue.toIterant
+      o = queue.next().toIterant
       _ <- o.headOptionL
       b <- o.take(1).toListL.timeoutTo(10.millis, Task.now(Nil))
       _ <- queue.close(discard = false)
@@ -156,14 +155,5 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
       b shouldBe List("b")
       c shouldBe Some("c")
     }
-  }
-
-  implicit class ClosableQueueOps[A](queue: CloseableQueue[A]) {
-
-    def toIterant: Iterant[Task, A] =
-      Iterant.repeatEvalF(queue.next()).takeWhile(_.isDefined).map(_.get)
-
-    def toObservable: Observable[A] =
-      Observable.repeatEvalF(queue.next()).takeWhile(_.isDefined).map(_.get)
   }
 }
