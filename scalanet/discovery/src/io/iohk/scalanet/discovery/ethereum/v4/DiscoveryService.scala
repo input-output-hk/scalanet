@@ -68,7 +68,8 @@ object DiscoveryService {
       node: Node,
       config: DiscoveryConfig,
       network: DiscoveryNetwork[A],
-      toAddress: Node.Address => A
+      toAddress: Node.Address => A,
+      enrollInBackground: Boolean = false
   )(
       implicit sigalg: SigAlg,
       enrCodec: Codec[EthereumNodeRecord.Content],
@@ -88,9 +89,15 @@ object DiscoveryService {
           // Start handling requests, we need them during enrolling so the peers can ping and bond with us.
           cancelToken <- network.startHandling(service)
           // Contact the bootstrap nodes.
-          _ <- service.enroll()
+          enroll = service.enroll()
           // Periodically discover new nodes.
-          discoveryFiber <- service.lookupRandom().delayExecution(config.discoveryPeriod).loopForever.start
+          discover = service.lookupRandom().delayExecution(config.discoveryPeriod).loopForever
+          // Enrollment can be run in the background if it takes very long.
+          discoveryFiber <- if (enrollInBackground) {
+            (enroll >> discover).start
+          } else {
+            enroll >> discover.start
+          }
         } yield (service, cancelToken, discoveryFiber)
       } {
         case (_, cancelToken, discoveryFiber) =>
