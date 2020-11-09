@@ -31,7 +31,8 @@ jobs:
 
       - run:
           name: integration tests
-          command: mill __.it
+          #command: mill __.it
+          command: mill scalanet.discovery.it.test
 
       - run:
           name: check that the code is formatted properly
