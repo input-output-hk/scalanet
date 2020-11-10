@@ -18,10 +18,11 @@ import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.PeerInfo
 import io.iohk.scalanet.peergroup.udp.DynamicUDPPeerGroup
 import monix.eval.Task
 import monix.execution.Scheduler
-import monix.reactive.Observable
+import monix.tail.Iterant
 import scodec.Codec
 
 import scala.concurrent.duration.{FiniteDuration, _}
+import monix.catnap.ConcurrentChannel
 
 /**
   * Simple higher level protocol on top of generic peer group. User is shielded from differnt implementation details like:
@@ -65,8 +66,9 @@ class ReqResponseProtocol[A, M](
                   val cleanup = release >> channelMapRef.update(_ - channelId)
                   // Keep in mind that stream is back pressured for all subscribers so in case of many parallel requests to one client
                   // waiting for response on first request can influence result of second request
-                  val channel = new ReqResponseChannel(underlying, cleanup)
-                  channelMapRef.update(_.updated(channelId, channel)).as(channel)
+                  ReqResponseChannel(underlying, cleanup).flatMap { channel =>
+                    channelMapRef.update(_.updated(channelId, channel)).as(channel)
+                  }
               }
           }
         }
@@ -93,19 +95,10 @@ class ReqResponseProtocol[A, M](
   ): Task[M] =
     for {
       // Subscribe first so we don't miss the response.
-      subscription <- subscribeForResponse(c.sharedMessageObservable, messageToSend.id).start
-      _ <- c.sendMessage(messageToSend)
-      result <- subscription.join.map(_.m).timeout(timeOutDuration)
+      subscription <- c.subscribeForResponse(messageToSend.id, timeOutDuration).start
+      _ <- c.sendMessage(messageToSend).timeout(timeOutDuration)
+      result <- subscription.join.map(_.m)
     } yield result
-
-  private def subscribeForResponse(
-      source: Observable[ChannelEvent[MessageEnvelope[M]]],
-      responseId: UUID
-  ): Task[MessageEnvelope[M]] = {
-    source.collect {
-      case MessageReceived(response) if response.id == responseId => response
-    }.headL
-  }
 
   /** Start handling requests in the background. */
   def startHandling(requestHandler: M => M): Task[Unit] = {
@@ -159,26 +152,49 @@ class ReqResponseProtocol[A, M](
 object ReqResponseProtocol {
   class ReqResponseChannel[A, M](
       channel: Channel[A, MessageEnvelope[M]],
+      concurrentChannel: ReqResponseChannel.ConChan[M],
       val release: Release
-  )(implicit scheduler: Scheduler) {
-
-    // There will be one channel shared by all `send` methods which
-    // subscribe to their responses. To avoid message stealing, this
-    // observable replicates messages to each subscriber, however it
-    // also consumes messages if there are no subscribers at all.
-    val sharedMessageObservable: Observable[ChannelEvent[MessageEnvelope[M]]] =
-      channel.messageObservable.share
-
-    // This makes sure there's always at least one subscriber and
-    // messages aren't queueing up (if there aren't any subscribers
-    // then `.share` unsubscribes from the source).
-    // An alternative solution would be to use `channel.next().toIterant.toChannel`
-    // which creates a `monix.catnap.ConcurrentChannel` that broadcasts to everyone
-    // who called `consume` on it.
-    sharedMessageObservable.foreach(_ => ())
+  ) {
 
     def sendMessage(message: MessageEnvelope[M]): Task[Unit] =
       channel.sendMessage(message)
+
+    def subscribeForResponse(
+        responseId: UUID,
+        timeOutDuration: FiniteDuration
+    ): Task[MessageEnvelope[M]] = {
+      concurrentChannel.consume.use { consumer =>
+        Iterant
+          .repeatEvalF(consumer.pull)
+          .flatMap[ChannelEvent[MessageEnvelope[M]]] {
+            case Left(e) => Iterant.haltS(e)
+            case Right(e) => Iterant.pure(e)
+          }
+          .collect {
+            case MessageReceived(response) if response.id == responseId => response
+          }
+          .headOptionL
+          .flatMap {
+            case None =>
+              Task.raiseError(new RuntimeException(s"Didn't receive a response for request $responseId"))
+            case Some(response) =>
+              Task.pure(response)
+          }
+          .timeout(timeOutDuration)
+      }
+    }
+  }
+  object ReqResponseChannel {
+    // Sending a request subscribes to the common channel with a single underlying message queue,
+    // expecting to see the response with the specific ID. To avoid message stealing, broadcast
+    // messages to a concurrent channel, so every consumer gets every message.
+    type ConChan[M] = ConcurrentChannel[Task, Option[Throwable], ChannelEvent[MessageEnvelope[M]]]
+
+    def apply[A, M](channel: Channel[A, MessageEnvelope[M]], release: Task[Unit]): Task[ReqResponseChannel[A, M]] =
+      for {
+        concurrentChannel <- ConcurrentChannel.of[Task, Option[Throwable], ChannelEvent[MessageEnvelope[M]]]
+        producer <- channel.nextMessage().toIterant.pushToChannel(concurrentChannel).start
+      } yield new ReqResponseChannel(channel, concurrentChannel, producer.cancel >> release)
   }
 
   type ChannelMap[A, M] = Map[ChannelId, ReqResponseChannel[A, M]]
