@@ -45,7 +45,7 @@ trait Channel[A, M] {
     *
     * @return The next incoming message, or None if the channel was closed.
     */
-  def nextMessage(): Task[Option[ChannelEvent[M]]]
+  def nextChannelEvent(): Task[Option[ChannelEvent[M]]]
 }
 
 object Channel {

@@ -25,7 +25,7 @@ object StandardTestPack {
       bobReceiver <- bob.serverEventObservable.collectChannelCreated
         .mergeMap {
           case (channel, release) =>
-            channel.messageObservable
+            channel.channelEventObservable
               .collect {
                 case MessageReceived(m) => m
               }
@@ -40,7 +40,7 @@ object StandardTestPack {
 
       aliceClient <- alice.client(bob.processAddress).allocated
 
-      aliceReceiver <- aliceClient._1.messageObservable
+      aliceReceiver <- aliceClient._1.channelEventObservable
         .collect {
           case MessageReceived(m) => m
         }
@@ -68,7 +68,7 @@ object StandardTestPack {
     def sendAndReceive(msgOut: String, channel: Channel[A, String]): Task[String] = {
       channel.sendMessage(msgOut) >>
         channel
-          .nextMessage() // In this test we know there shouldn't be any other message arriving; in practice we'd use an Iterant.
+          .nextChannelEvent() // In this test we know there shouldn't be any other message arriving; in practice we'd use an Iterant.
           .flatMap {
             case Some(MessageReceived(msgIn)) => Task.pure(msgIn)
             case other => Task.raiseError(new RuntimeException(s"Unexpected channel event: $other"))
@@ -112,8 +112,8 @@ object StandardTestPack {
       aliceClient1 <- alice.client(bob.processAddress).allocated
       aliceClient2 <- alice.client(bob.processAddress).allocated
 
-      aliceReceiver1 <- aliceClient1._1.messageObservable.collect { case MessageReceived(m) => m }.headL.start
-      aliceReceiver2 <- aliceClient2._1.messageObservable.collect { case MessageReceived(m) => m }.headL.start
+      aliceReceiver1 <- aliceClient1._1.channelEventObservable.collect { case MessageReceived(m) => m }.headL.start
+      aliceReceiver2 <- aliceClient2._1.channelEventObservable.collect { case MessageReceived(m) => m }.headL.start
       _ <- aliceClient1._1.sendMessage(alicesMessage)
       _ <- aliceClient2._1.sendMessage(alicesMessage)
 

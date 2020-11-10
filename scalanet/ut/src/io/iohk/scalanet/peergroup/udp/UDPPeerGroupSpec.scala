@@ -267,7 +267,7 @@ abstract class UDPPeerGroupSpec[PG <: UDPPeerGroupSpec.TestGroup[_]](name: Strin
             result <- Task.parZip2(
               ch1.sendMessage("Helllo wrong server"),
               pg2.serverEventObservable.collectChannelCreated.mergeMap {
-                case (ch, release) => ch.messageObservable.guarantee(release)
+                case (ch, release) => ch.channelEventObservable.guarantee(release)
               }.headL
             )
             (_, receivedEvent) = result
@@ -305,7 +305,7 @@ object UDPPeerGroupSpec {
   ): Task[M] = {
     for {
       _ <- clientChannel.sendMessage(message).timeout(requestTimeout)
-      response <- clientChannel.messageObservable
+      response <- clientChannel.channelEventObservable
         .collect { case MessageReceived(m) => m }
         .headL
         .timeout(requestTimeout)
@@ -319,7 +319,7 @@ object UDPPeerGroupSpec {
     peerGroup.serverEventObservable.collectChannelCreated
       .mergeMap {
         case (channel, release) =>
-          channel.messageObservable
+          channel.channelEventObservable
             .collect {
               case MessageReceived(m) => m
             }

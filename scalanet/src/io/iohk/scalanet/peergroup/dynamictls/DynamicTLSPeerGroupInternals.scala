@@ -194,7 +194,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       }
     }
 
-    override def nextMessage() =
+    override def nextChannelEvent() =
       messageQueue.next()
 
     /**
@@ -291,7 +291,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       }
     }
 
-    override def nextMessage() = messageQueue.next()
+    override def nextChannelEvent() = messageQueue.next()
 
     /**
       * To be sure that `channelInactive` had run before returning from close, we are also waiting for nettyChannel.closeFuture() after

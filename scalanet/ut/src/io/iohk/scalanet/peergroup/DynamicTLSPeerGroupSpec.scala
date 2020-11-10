@@ -50,7 +50,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
         for {
           _ <- ch1.sendMessage("Hello enc server")
           rec <- server.serverEventObservable.collectChannelCreated.mergeMap {
-            case (ch, release) => ch.messageObservable.guarantee(release)
+            case (ch, release) => ch.channelEventObservable.guarantee(release)
           }.headL
         } yield {
           rec shouldEqual MessageReceived("Hello enc server")
@@ -68,7 +68,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
           d <- Deferred[Task, Boolean]
           clientChannel <- client.client(server.processAddress).allocated
           serverChannel <- server.serverEventObservable.collectChannelCreated.headL
-          _ <- serverChannel._1.messageObservable.guarantee(d.complete(true)).foreachL(_ => ()).startAndForget
+          _ <- serverChannel._1.channelEventObservable.guarantee(d.complete(true)).foreachL(_ => ()).startAndForget
           _ <- clientChannel._2
           closed <- d.get.timeout(timeOutConfig).onErrorHandle(_ => false)
           _ <- serverChannel._2
@@ -88,7 +88,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
           d <- Deferred[Task, Boolean]
           clientChannel <- client.client(server.processAddress).allocated
           serverChannel <- server.serverEventObservable.collectChannelCreated.headL
-          _ <- clientChannel._1.messageObservable.guarantee(d.complete(true)).foreachL(_ => ()).startAndForget
+          _ <- clientChannel._1.channelEventObservable.guarantee(d.complete(true)).foreachL(_ => ()).startAndForget
           _ <- serverChannel._2
           closed <- d.get.timeout(timeOutConfig).onErrorHandle(_ => false)
           _ <- clientChannel._2
@@ -110,7 +110,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
           (serverChannel, release) = serverChannelCreated
           messages = List.range(0, 100).map(_.toString)
           _ <- messages.traverse(clientChannel.sendMessage)
-          received <- serverChannel.messageObservable
+          received <- serverChannel.channelEventObservable
             .collect {
               case MessageReceived(msg) => msg
             }
@@ -220,7 +220,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
             ch1.sendMessage("Hello server, do not process this message"),
             server.serverEventObservable.collectChannelCreated.mergeMap {
               case (channel, release) =>
-                channel.messageObservable.guarantee(release)
+                channel.channelEventObservable.guarantee(release)
             }.headL
           )
           (_, eventReceived) = result

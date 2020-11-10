@@ -110,7 +110,7 @@ class ReqResponseProtocol[A, M](
         case (channel, release) =>
           val channelId = (a.getAddress(processAddress), a.getAddress(channel.to))
           channel
-            .nextMessage()
+            .nextChannelEvent()
             .toIterant
             .collect {
               case MessageReceived(msg) => msg
@@ -193,7 +193,7 @@ object ReqResponseProtocol {
     def apply[A, M](channel: Channel[A, MessageEnvelope[M]], release: Task[Unit]): Task[ReqResponseChannel[A, M]] =
       for {
         concurrentChannel <- ConcurrentChannel.of[Task, Option[Throwable], ChannelEvent[MessageEnvelope[M]]]
-        producer <- channel.nextMessage().toIterant.pushToChannel(concurrentChannel).start
+        producer <- channel.nextChannelEvent().toIterant.pushToChannel(concurrentChannel).start
       } yield new ReqResponseChannel(channel, concurrentChannel, producer.cancel >> release)
   }
 

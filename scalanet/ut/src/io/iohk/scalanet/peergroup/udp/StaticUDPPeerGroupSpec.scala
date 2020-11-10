@@ -36,7 +36,7 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
   }
 
   def startCollectingMessages(timespan: FiniteDuration)(channel: Channel[InetMultiAddress, String]) =
-    channel.messageObservable
+    channel.channelEventObservable
       .collect {
         case MessageReceived(msg) => msg
       }
@@ -81,7 +81,7 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
                       case (channel, release) =>
                         // Have to do it in the background otherwise it would block the processing of incoming UDP packets.
                         List
-                          .fill(2)(channel.nextMessage() >> Task(messageCounter.countDown()))
+                          .fill(2)(channel.nextChannelEvent() >> Task(messageCounter.countDown()))
                           .sequence
                           .guarantee(release)
                           .startAndForget

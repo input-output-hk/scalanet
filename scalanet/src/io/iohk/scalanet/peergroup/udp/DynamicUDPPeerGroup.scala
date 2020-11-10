@@ -232,7 +232,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
       }
     }
 
-    override def nextMessage() =
+    override def nextChannelEvent() =
       messageQueue.next()
 
     private def closeNettyChannel(channelType: ChannelType): Task[Unit] = {

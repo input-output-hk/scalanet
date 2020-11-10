@@ -214,7 +214,7 @@ object KNetworkSpec {
       channel: Channel[String, KMessage[String]],
       events: ChannelEvent[KMessage[String]]*
   ) =
-    when(channel.nextMessage()).thenReturn(nextTask(events, complete = false))
+    when(channel.nextChannelEvent()).thenReturn(nextTask(events, complete = false))
 
   private def nextTask[T](events: Seq[T], complete: Boolean): Task[Option[T]] = {
     val count = new AtomicInteger(0)

@@ -61,7 +61,7 @@ object KNetwork {
             // discards, `headL` would eventually time out but while we wait for
             // that the next incoming channel would not be picked up.
             Observable.fromTask {
-              channel.messageObservable
+              channel.channelEventObservable
                 .collect { case MessageReceived(req: KRequest[A]) => req }
                 .headL
                 .timeout(requestTimeout)
@@ -114,7 +114,7 @@ object KNetwork {
       for {
         _ <- clientChannel.sendMessage(message).timeout(requestTimeout)
         // This assumes that `requestTemplate` always opens a new channel.
-        response <- clientChannel.messageObservable
+        response <- clientChannel.channelEventObservable
           .collect {
             case MessageReceived(m) if pf.isDefinedAt(m) => pf(m)
           }

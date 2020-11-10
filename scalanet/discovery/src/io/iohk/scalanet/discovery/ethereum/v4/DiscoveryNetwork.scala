@@ -113,7 +113,7 @@ object DiscoveryNetwork {
           cancelToken: Deferred[Task, Unit]
       ): Task[Unit] = {
         channel
-          .nextMessage()
+          .nextChannelEvent()
           .withCancelToken(cancelToken)
           .timeout(config.messageExpiration) // Messages older than this would be ignored anyway.
           .toIterant
@@ -317,7 +317,7 @@ object DiscoveryNetwork {
             deadline: Deadline
         )(pf: PartialFunction[Payload.Response, T]): Iterant[Task, T] =
           channel
-            .nextMessage()
+            .nextChannelEvent()
             .timeoutL(Task(config.requestTimeout.min(deadline.timeLeft)))
             .toIterant
             .collect {

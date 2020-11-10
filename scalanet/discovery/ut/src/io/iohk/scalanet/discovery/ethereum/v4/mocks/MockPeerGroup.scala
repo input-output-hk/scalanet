@@ -69,7 +69,7 @@ class MockChannel[A, M](
     messagesFromSUT.offer(MessageReceived(message))
 
   // Messages consumed by the System Under Test.
-  override def nextMessage(): Task[Option[Channel.ChannelEvent[M]]] =
+  override def nextChannelEvent(): Task[Option[Channel.ChannelEvent[M]]] =
     messagesToSUT.poll.map(Some(_))
 
   // Send a message from the test.
