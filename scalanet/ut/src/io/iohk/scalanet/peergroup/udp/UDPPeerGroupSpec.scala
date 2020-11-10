@@ -92,14 +92,8 @@ abstract class UDPPeerGroupSpec[PG <: UDPPeerGroupSpec.TestGroup[_]](name: Strin
       }
     }
 
-  // ETCM-345: This sometimes fails for StaticUDPPeerGroupSpec and DynamicUDPPeerGroupsSpec, even with the timeout and cancel workaround.
-  // Since ETCM-199 will remove the ConnectableSubject the test uses we can disable it until that's done, or the error is reproduced locally.
   it should "send and receive a message" in withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
-    if (sys.env.get("CI").contains("true")) {
-      cancel("ETCM-345: Intermittent timeout on Circle CI.")
-    } else {
-      StandardTestPack.messagingTest(alice, bob)
-    }
+    StandardTestPack.messagingTest(alice, bob)
   }
 
   it should "send and receive a message with next* methods" in withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
