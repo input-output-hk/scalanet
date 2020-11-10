@@ -89,9 +89,9 @@ object DiscoveryService {
           // Start handling requests, we need them during enrolling so the peers can ping and bond with us.
           cancelToken <- network.startHandling(service)
           // Contact the bootstrap nodes.
-          enroll = service.enroll()
+          enroll = service.enroll
           // Periodically discover new nodes.
-          discover = service.lookupRandom().delayExecution(config.discoveryPeriod).loopForever
+          discover = service.lookupRandom.delayExecution(config.discoveryPeriod).loopForever
           // Enrollment can be run in the background if it takes very long.
           discoveryFiber <- if (enrollInBackground) {
             (enroll >> discover).start
@@ -824,7 +824,7 @@ object DiscoveryService {
     }
 
     /** Look up a random node ID to discover new peers. */
-    protected[v4] def lookupRandom(): Task[Unit] =
+    protected[v4] def lookupRandom: Task[Unit] =
       Task(logger.info("Looking up a random target...")) >>
         lookup(target = sigalg.newKeyPair._1).void
 
@@ -836,7 +836,7 @@ object DiscoveryService {
       * or `false` if none of them responded with a correct ENR,
       * which would mean we don't have anyone to do lookups with.
       */
-    protected[v4] def enroll(): Task[Boolean] =
+    protected[v4] def enroll: Task[Boolean] =
       if (config.knownPeers.isEmpty)
         Task.pure(false)
       else {

@@ -23,7 +23,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
     val msg = "Hello!"
     for {
       _ <- queue.tryOffer(msg)
-      maybeMessage <- queue.next()
+      maybeMessage <- queue.next
     } yield {
       maybeMessage shouldBe Some(msg)
     }
@@ -33,7 +33,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
     for {
       _ <- queue.close(discard = true)
       maybeOffered <- queue.tryOffer("Hung up?")
-      maybeMessage <- queue.next()
+      maybeMessage <- queue.next
     } yield {
       maybeOffered shouldBe Left(Closed)
       maybeMessage shouldBe None
@@ -45,9 +45,9 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
       _ <- queue.tryOffer("Foo")
       _ <- queue.tryOffer("Bar")
       _ <- queue.close(discard = false)
-      maybeFoo <- queue.next()
-      maybeBar <- queue.next()
-      maybeNext <- queue.next()
+      maybeFoo <- queue.next
+      maybeBar <- queue.next
+      maybeNext <- queue.next
     } yield {
       maybeFoo should not be empty
       maybeBar should not be empty
@@ -60,7 +60,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
       _ <- queue.tryOffer("Foo")
       _ <- queue.tryOffer("Bar")
       _ <- queue.close(discard = true)
-      maybeNext <- queue.next()
+      maybeNext <- queue.next
     } yield {
       maybeNext shouldBe empty
     }
@@ -71,7 +71,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
       _ <- queue.offer("Spam")
       _ <- queue.close(discard = false)
       _ <- queue.close(discard = true) // Does nothing.
-      m <- queue.next()
+      m <- queue.next
     } yield {
       m shouldBe Some("Spam")
     }
@@ -82,9 +82,9 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
   it should "discard the latest value if the capacity is reached" in testQueue(capacity = 2) { queue =>
     for {
       offered <- List.range(0, 5).traverse(i => queue.tryOffer(i.toString))
-      maybe0 <- queue.next()
-      maybe1 <- queue.next()
-      maybe3 <- queue.next().start // No more message so this would block.
+      maybe0 <- queue.next
+      maybe1 <- queue.next
+      maybe3 <- queue.next.start // No more message so this would block.
       _ <- queue.close(discard = false)
       maybe3 <- maybe3.join
     } yield {
@@ -104,7 +104,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
       _ <- queue.offer("b")
       attempt1 <- queue.tryOffer("c")
       offering <- queue.offer("c").start
-      _ <- queue.next()
+      _ <- queue.next
       attempt2 <- offering.join
     } yield {
       attempt1 shouldBe Right(false)
@@ -146,11 +146,11 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
       //o = queue.toObservable.share
       // But these ones do:
       //o = queue.toObservable
-      o = queue.next().toIterant
+      o = queue.next.toIterant
       _ <- o.headOptionL
       b <- o.take(1).toListL.timeoutTo(10.millis, Task.now(Nil))
       _ <- queue.close(discard = false)
-      c <- queue.next()
+      c <- queue.next
     } yield {
       b shouldBe List("b")
       c shouldBe Some("c")

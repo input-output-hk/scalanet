@@ -200,7 +200,7 @@ object KNetworkSpec {
 
   private def createKNetwork: (KNetwork[String], PeerGroup[String, KMessage[String]]) = {
     val peerGroup = mock[PeerGroup[String, KMessage[String]]]
-    when(peerGroup.nextServerEvent()).thenReturn(Task.pure(None))
+    when(peerGroup.nextServerEvent).thenReturn(Task.pure(None))
     (new KNetworkScalanetImpl(peerGroup, requestTimeout), peerGroup)
   }
 
@@ -208,13 +208,13 @@ object KNetworkSpec {
       peerGroup: PeerGroup[String, KMessage[String]],
       events: ServerEvent[String, KMessage[String]]*
   ) =
-    when(peerGroup.nextServerEvent()).thenReturn(nextTask(events, complete = true))
+    when(peerGroup.nextServerEvent).thenReturn(nextTask(events, complete = true))
 
   private def mockChannelEvents(
       channel: Channel[String, KMessage[String]],
       events: ChannelEvent[KMessage[String]]*
   ) =
-    when(channel.nextChannelEvent()).thenReturn(nextTask(events, complete = false))
+    when(channel.nextChannelEvent).thenReturn(nextTask(events, complete = false))
 
   private def nextTask[T](events: Seq[T], complete: Boolean): Task[Option[T]] = {
     val count = new AtomicInteger(0)

@@ -67,8 +67,8 @@ object StandardTestPack {
 
     def sendAndReceive(msgOut: String, channel: Channel[A, String]): Task[String] = {
       channel.sendMessage(msgOut) >>
-        channel
-          .nextChannelEvent() // In this test we know there shouldn't be any other message arriving; in practice we'd use an Iterant.
+        // In this test we know there shouldn't be any other message arriving; in practice we'd use an Iterant.
+        channel.nextChannelEvent
           .flatMap {
             case Some(MessageReceived(msgIn)) => Task.pure(msgIn)
             case other => Task.raiseError(new RuntimeException(s"Unexpected channel event: $other"))
@@ -76,15 +76,13 @@ object StandardTestPack {
     }
 
     (for {
-      bobReceiver <- bob
-        .nextServerEvent() // In this test we know there won't be any other incoming connection; in practice we'd spawn a Fiber.
-        .flatMap {
-          case Some(ChannelCreated(channel, release)) =>
-            sendAndReceive(bobsMessage, channel).guarantee(release)
-          case other =>
-            Task.raiseError(new RuntimeException(s"Unexpected server event: $other"))
-        }
-        .start
+      // In this test we know there won't be any other incoming connection; in practice we'd spawn a Fiber.
+      bobReceiver <- bob.nextServerEvent.flatMap {
+        case Some(ChannelCreated(channel, release)) =>
+          sendAndReceive(bobsMessage, channel).guarantee(release)
+        case other =>
+          Task.raiseError(new RuntimeException(s"Unexpected server event: $other"))
+      }.start
 
       aliceReceived <- alice.client(bob.processAddress).use { channel =>
         sendAndReceive(alicesMessage, channel)

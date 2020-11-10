@@ -28,7 +28,7 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
     StaticUDPPeerGroup[M](StaticUDPPeerGroup.Config(address)).map { pg =>
       new PeerGroup[InetMultiAddress, M] {
         override def processAddress = pg.processAddress
-        override def nextServerEvent() = pg.nextServerEvent()
+        override def nextServerEvent = pg.nextServerEvent
         override def client(to: InetMultiAddress) = pg.client(to)
         def channelCount: Int = pg.channelCount.runSyncUnsafe()
       }
@@ -81,7 +81,7 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
                       case (channel, release) =>
                         // Have to do it in the background otherwise it would block the processing of incoming UDP packets.
                         List
-                          .fill(2)(channel.nextChannelEvent() >> Task(messageCounter.countDown()))
+                          .fill(2)(channel.nextChannelEvent >> Task(messageCounter.countDown()))
                           .sequence
                           .guarantee(release)
                           .startAndForget

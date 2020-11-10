@@ -22,7 +22,7 @@ class MockPeerGroup[A, M](
   private val serverEvents = ConcurrentQueue[Task].unsafe[ServerEvent[A, M]](BufferCapacity.Unbounded())
 
   // Intended for the System Under Test to read incoming channels.
-  override def nextServerEvent(): Task[Option[PeerGroup.ServerEvent[A, M]]] =
+  override def nextServerEvent: Task[Option[PeerGroup.ServerEvent[A, M]]] =
     serverEvents.poll.map(Some(_))
 
   // Intended for the System Under Test to open outgoing channels.
@@ -69,7 +69,7 @@ class MockChannel[A, M](
     messagesFromSUT.offer(MessageReceived(message))
 
   // Messages consumed by the System Under Test.
-  override def nextChannelEvent(): Task[Option[Channel.ChannelEvent[M]]] =
+  override def nextChannelEvent: Task[Option[Channel.ChannelEvent[M]]] =
     messagesToSUT.poll.map(Some(_))
 
   // Send a message from the test.

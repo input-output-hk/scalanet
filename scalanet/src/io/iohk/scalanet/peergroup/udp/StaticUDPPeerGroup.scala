@@ -70,8 +70,8 @@ class StaticUDPPeerGroup[M] private (
 
   private val localAddress = config.bindAddress
 
-  override def nextServerEvent() =
-    serverQueue.next()
+  override def nextServerEvent =
+    serverQueue.next
 
   def channelCount: Task[Int] =
     for {
@@ -281,7 +281,7 @@ class StaticUDPPeerGroup[M] private (
       .bind(localAddress)
 
   // Wait until the server is bound.
-  private def initialize(): Task[Unit] =
+  private def initialize: Task[Unit] =
     for {
       _ <- raiseIfShutdown
       _ <- toTask(serverBinding).onErrorRecoverWith {
@@ -291,7 +291,7 @@ class StaticUDPPeerGroup[M] private (
       _ <- Task(logger.info(s"Server bound to address ${config.bindAddress}"))
     } yield ()
 
-  private def shutdown(): Task[Unit] = {
+  private def shutdown: Task[Unit] = {
     for {
       _ <- Task(logger.info(s"Shutting down UDP peer group for peer ${config.processAddress}"))
       // Mark the group as shutting down to stop accepting incoming connections.
@@ -342,9 +342,9 @@ object StaticUDPPeerGroup extends StrictLogging {
             serverChannelsRef,
             clientChannelsRef
           )
-          _ <- peerGroup.initialize()
+          _ <- peerGroup.initialize
         } yield peerGroup
-      }(_.shutdown())
+      }(_.shutdown)
     }
 
   // Separate resource so if the server initialization fails, this still gets shut down.
@@ -370,7 +370,7 @@ object StaticUDPPeerGroup extends StrictLogging {
       InetMultiAddress(remoteAddress)
 
     override def nextChannelEvent() =
-      messageQueue.next()
+      messageQueue.next
 
     private val raiseIfClosed =
       isClosedRef.get.ifM(

@@ -15,7 +15,7 @@ class DynamicUDPPeerGroupSpec extends UDPPeerGroupSpec("DynamicUDPPPeerGroup") {
     DynamicUDPPeerGroup[M](DynamicUDPPeerGroup.Config(address)).map { pg =>
       new PeerGroup[InetMultiAddress, M] {
         override def processAddress = pg.processAddress
-        override def nextServerEvent() = pg.nextServerEvent()
+        override def nextServerEvent = pg.nextServerEvent
         override def client(to: InetMultiAddress) = pg.client(to)
         def channelCount: Int = pg.activeChannels.size
       }

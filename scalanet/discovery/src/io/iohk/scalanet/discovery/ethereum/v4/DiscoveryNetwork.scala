@@ -84,8 +84,7 @@ object DiscoveryNetwork {
       override def startHandling(handler: DiscoveryRPC[Peer[A]]): Task[CancelableF[Task]] =
         for {
           cancelToken <- Deferred[Task, Unit]
-          _ <- peerGroup
-            .nextServerEvent()
+          _ <- peerGroup.nextServerEvent
             .withCancelToken(cancelToken)
             .toIterant
             .mapEval {
@@ -112,8 +111,7 @@ object DiscoveryNetwork {
           channel: Channel[A, Packet],
           cancelToken: Deferred[Task, Unit]
       ): Task[Unit] = {
-        channel
-          .nextChannelEvent()
+        channel.nextChannelEvent
           .withCancelToken(cancelToken)
           .timeout(config.messageExpiration) // Messages older than this would be ignored anyway.
           .toIterant
@@ -316,8 +314,7 @@ object DiscoveryNetwork {
             // The absolute end we are willing to wait for the correct message to arrive.
             deadline: Deadline
         )(pf: PartialFunction[Payload.Response, T]): Iterant[Task, T] =
-          channel
-            .nextChannelEvent()
+          channel.nextChannelEvent
             .timeoutL(Task(config.requestTimeout.min(deadline.timeLeft)))
             .toIterant
             .collect {

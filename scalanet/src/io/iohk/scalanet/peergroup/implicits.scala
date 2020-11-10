@@ -25,13 +25,13 @@ package object implicits {
 
   implicit class PeerGroupOps[A, M](val group: PeerGroup[A, M]) extends AnyVal {
     def serverEventObservable: Observable[ServerEvent[A, M]] =
-      group.nextServerEvent().toObservable
+      group.nextServerEvent.toObservable
   }
 
   implicit class ChannelOps[A, M](val channel: Channel[A, M]) extends AnyVal {
     // NB: Not making an equivalent version for Iterant because it doesn't support timeout
     // directly; instead, use `next().timeout(5.second).toIterant`
     def channelEventObservable: Observable[ChannelEvent[M]] =
-      channel.nextChannelEvent().toObservable
+      channel.nextChannelEvent.toObservable
   }
 }

@@ -45,7 +45,7 @@ trait Channel[A, M] {
     *
     * @return The next incoming message, or None if the channel was closed.
     */
-  def nextChannelEvent(): Task[Option[ChannelEvent[M]]]
+  def nextChannelEvent: Task[Option[ChannelEvent[M]]]
 }
 
 object Channel {
@@ -100,7 +100,7 @@ trait PeerGroup[A, M] {
     *
     * @return the next ServerEvent.
     */
-  def nextServerEvent(): Task[Option[ServerEvent[A, M]]]
+  def nextServerEvent: Task[Option[ServerEvent[A, M]]]
 }
 
 object PeerGroup {
