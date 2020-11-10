@@ -7,6 +7,7 @@ import com.typesafe.scalalogging.LazyLogging
 import io.iohk.scalanet.discovery.crypto.{PrivateKey, PublicKey, SigAlg}
 import io.iohk.scalanet.discovery.ethereum.Node
 import io.iohk.scalanet.discovery.hash.Hash
+import io.iohk.scalanet.peergroup.implicits.NextOps
 import io.iohk.scalanet.peergroup.{Addressable, Channel, PeerGroup}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.Channel.{MessageReceived, DecodingError, UnexpectedError}
@@ -392,18 +393,6 @@ object DiscoveryNetwork {
 
       }
     }
-  }
-
-  // Functions to be applied on the `.nextMessage()` or `.nextServerEvent()` results.
-  private implicit class NextOps[A](next: Task[Option[A]]) {
-    def toIterant: Iterant[Task, A] =
-      Iterant.repeatEvalF(next).takeWhile(_.isDefined).map(_.get)
-
-    def withCancelToken(token: Deferred[Task, Unit]): Task[Option[A]] =
-      Task.race(token.get, next).map {
-        case Left(()) => None
-        case Right(x) => x
-      }
   }
 
   /** Estimate how many neihbors we can fit in the maximum protol message size. */
