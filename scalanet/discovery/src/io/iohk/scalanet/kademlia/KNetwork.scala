@@ -5,6 +5,7 @@ import io.iohk.scalanet.kademlia.KMessage.{KRequest, KResponse}
 import io.iohk.scalanet.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.kademlia.KMessage.KResponse.{Nodes, Pong}
 import io.iohk.scalanet.kademlia.KRouter.NodeRecord
+import io.iohk.scalanet.peergroup.implicits._
 import io.iohk.scalanet.peergroup.{Channel, PeerGroup}
 import io.iohk.scalanet.peergroup.Channel.MessageReceived
 import monix.eval.Task
@@ -51,7 +52,7 @@ object KNetwork {
   ) extends KNetwork[A] {
 
     override lazy val kRequests: Observable[(KRequest[A], Option[KResponse[A]] => Task[Unit])] = {
-      peerGroup.server.refCount.collectChannelCreated
+      peerGroup.serverEventObservable.collectChannelCreated
         .mergeMap {
           case (channel: Channel[A, KMessage[A]], release: Task[Unit]) =>
             // NOTE: We cannot use mapEval with a Task here, because that would hold up
@@ -60,7 +61,7 @@ object KNetwork {
             // discards, `headL` would eventually time out but while we wait for
             // that the next incoming channel would not be picked up.
             Observable.fromTask {
-              channel.in.refCount
+              channel.messageObservable
                 .collect { case MessageReceived(req: KRequest[A]) => req }
                 .headL
                 .timeout(requestTimeout)
@@ -112,7 +113,8 @@ object KNetwork {
     ): Task[Response] = {
       for {
         _ <- clientChannel.sendMessage(message).timeout(requestTimeout)
-        response <- clientChannel.in.refCount
+        // This assumes that `requestTemplate` always opens a new channel.
+        response <- clientChannel.messageObservable
           .collect {
             case MessageReceived(m) if pf.isDefinedAt(m) => pf(m)
           }

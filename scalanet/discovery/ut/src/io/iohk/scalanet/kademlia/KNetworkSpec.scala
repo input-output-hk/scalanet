@@ -22,11 +22,13 @@ import monix.execution.Scheduler.Implicits.global
 import org.scalatest.concurrent.ScalaFutures._
 import io.iohk.scalanet.TaskValues._
 import KNetworkSpec._
-import io.iohk.scalanet.monix_subject.ConnectableSubject
 import io.iohk.scalanet.peergroup.Channel.MessageReceived
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.kademlia.KMessage.KRequest
 import org.scalatest.prop.TableDrivenPropertyChecks._
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
+import io.iohk.scalanet.peergroup.Channel.ChannelEvent
+import java.util.concurrent.atomic.AtomicInteger
 
 class KNetworkSpec extends FlatSpec {
   import KNetworkRequestProcessing._
@@ -65,9 +67,8 @@ class KNetworkSpec extends FlatSpec {
 
   forAll(rpcs) { (label, request, response, requestExtractor, clientRpc) =>
     s"Server $label" should "not close server channels while yielding requests (it is the responsibility of the response handler)" in new Fixture {
-      when(peerGroup.server)
-        .thenReturn(ConnectableSubject(Observable.eval(channelCreated)))
-      when(channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(request))))
+      mockServerEvents(peerGroup, channelCreated)
+      mockChannelEvents(channel, MessageReceived(request))
 
       val actualRequest = requestExtractor(network).evaluated
 
@@ -76,20 +77,21 @@ class KNetworkSpec extends FlatSpec {
     }
 
     s"Server $label" should "close server channels when a request does not arrive before a timeout" in new Fixture {
-      when(peerGroup.server)
-        .thenReturn(ConnectableSubject(Observable.eval(channelCreated)))
-      when(channel.in).thenReturn(ConnectableSubject(Observable.never))
+      mockServerEvents(peerGroup, channelCreated)
+      mockChannelEvents(channel)
 
       val t = requestExtractor(network).runToFuture.failed.futureValue
 
+      // The timeout on the channel doesn't cause this exception, but rather the fact
+      // that there's no subsequent server event and the server observable
+      // gets closed, so `getActualRequest` fails because it uses `.headL`.
       t shouldBe a[NoSuchElementException]
       channelClosed.get shouldBe true
     }
 
     s"Server $label" should "close server channel in the response task" in new Fixture {
-      when(peerGroup.server)
-        .thenReturn(ConnectableSubject(Observable.eval(channelCreated)))
-      when(channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(request))))
+      mockServerEvents(peerGroup, channelCreated)
+      mockChannelEvents(channel, MessageReceived(request))
       when(channel.sendMessage(response)).thenReturn(Task.unit)
 
       sendResponse(network, response).evaluated
@@ -98,9 +100,8 @@ class KNetworkSpec extends FlatSpec {
     }
 
     s"Server $label" should "close server channel in timed out response task" in new Fixture {
-      when(peerGroup.server)
-        .thenReturn(ConnectableSubject(Observable.eval(channelCreated)))
-      when(channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(request))))
+      mockServerEvents(peerGroup, channelCreated)
+      mockChannelEvents(channel, MessageReceived(request))
       when(channel.sendMessage(response)).thenReturn(Task.never)
 
       sendResponse(network, response).evaluatedFailure shouldBe a[TimeoutException]
@@ -111,9 +112,9 @@ class KNetworkSpec extends FlatSpec {
       val channel1 = new MockChannel
       val channel2 = new MockChannel
 
-      when(peerGroup.server).thenReturn(ConnectableSubject(Observable(channel1.created, channel2.created)))
-      when(channel1.channel.in).thenReturn(ConnectableSubject(Observable.never)) // Should be closed after a timeout.
-      when(channel2.channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(request))))
+      mockServerEvents(peerGroup, channel1.created, channel2.created)
+      mockChannelEvents(channel1.channel)
+      mockChannelEvents(channel2.channel, MessageReceived(request))
 
       // Process incoming channels and requests. Need to wait a little to allow channel1 to time out.
       val actualRequest = requestExtractor(network).delayResult(requestTimeout).evaluated
@@ -126,7 +127,7 @@ class KNetworkSpec extends FlatSpec {
     s"Client $label" should "close client channels when requests are successful" in new Fixture {
       when(peerGroup.client(targetRecord.routingAddress)).thenReturn(channelResource)
       when(channel.sendMessage(request)).thenReturn(Task.unit)
-      when(channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(response))))
+      mockChannelEvents(channel, MessageReceived(response))
 
       val actualResponse = clientRpc(network).evaluated
 
@@ -155,7 +156,7 @@ class KNetworkSpec extends FlatSpec {
     s"Client $label" should "close client channels when response fails to arrive" in new Fixture {
       when(peerGroup.client(targetRecord.routingAddress)).thenReturn(channelResource)
       when(channel.sendMessage(request)).thenReturn(Task.unit)
-      when(channel.in).thenReturn(ConnectableSubject(Observable.fromTask(Task.never)))
+      mockChannelEvents(channel)
 
       clientRpc(network).evaluatedFailure shouldBe a[TimeoutException]
       channelClosed.get shouldBe true
@@ -165,11 +166,10 @@ class KNetworkSpec extends FlatSpec {
   s"In consuming only PING" should "channels should be closed for unhandled FIND_NODES requests" in new Fixture {
     val channel1 = new MockChannel
     val channel2 = new MockChannel
-    when(peerGroup.server)
-      .thenReturn(ConnectableSubject(Observable(channel1.created, channel2.created)))
+    mockServerEvents(peerGroup, channel1.created, channel2.created)
 
-    when(channel1.channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(findNodes))))
-    when(channel2.channel.in).thenReturn(ConnectableSubject(Observable.eval(MessageReceived(ping))))
+    mockChannelEvents(channel1.channel, MessageReceived(findNodes))
+    mockChannelEvents(channel2.channel, MessageReceived(ping))
 
     when(channel2.channel.sendMessage(pong)).thenReturn(Task.unit)
 
@@ -200,8 +200,29 @@ object KNetworkSpec {
 
   private def createKNetwork: (KNetwork[String], PeerGroup[String, KMessage[String]]) = {
     val peerGroup = mock[PeerGroup[String, KMessage[String]]]
-    when(peerGroup.server).thenReturn(ConnectableSubject(Observable.empty))
+    when(peerGroup.nextServerEvent()).thenReturn(Task.pure(None))
     (new KNetworkScalanetImpl(peerGroup, requestTimeout), peerGroup)
+  }
+
+  private def mockServerEvents(
+      peerGroup: PeerGroup[String, KMessage[String]],
+      events: ServerEvent[String, KMessage[String]]*
+  ) =
+    when(peerGroup.nextServerEvent()).thenReturn(nextTask(events, complete = true))
+
+  private def mockChannelEvents(
+      channel: Channel[String, KMessage[String]],
+      events: ChannelEvent[KMessage[String]]*
+  ) =
+    when(channel.nextMessage()).thenReturn(nextTask(events, complete = false))
+
+  private def nextTask[T](events: Seq[T], complete: Boolean): Task[Option[T]] = {
+    val count = new AtomicInteger(0)
+    Task(count.getAndIncrement()).flatMap {
+      case i if i < events.size => Task(Some(events(i)))
+      case _ if complete => Task(None)
+      case _ => Task.never
+    }
   }
 
   private def getActualRequest[Request <: KRequest[String]](rpc: KNetwork[String] => Observable[(Request, _)])(
