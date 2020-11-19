@@ -777,7 +777,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
       override val test = for {
         _ <- addRemotePeer
-        _ <- service.lookupRandom()
+        _ <- service.lookupRandom
         state <- stateRef.get
       } yield {
         // We should bond with nodes along the way, so in the end there should

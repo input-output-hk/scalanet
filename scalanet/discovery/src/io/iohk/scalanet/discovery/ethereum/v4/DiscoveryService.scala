@@ -42,6 +42,12 @@ trait DiscoveryService {
 
   /** The local node representation. */
   def getLocalNode: Task[Node]
+
+  /** Lookup the nodes closest to a given target. */
+  def lookup(target: Node.Id): Task[SortedSet[Node]]
+
+  /** Lookup a random target, to discovery new nodes along the way. */
+  def lookupRandom: Task[Set[Node]]
 }
 
 object DiscoveryService {
@@ -91,7 +97,7 @@ object DiscoveryService {
           // Contact the bootstrap nodes.
           enroll = service.enroll()
           // Periodically discover new nodes.
-          discover = service.lookupRandom().delayExecution(config.discoveryPeriod).loopForever
+          discover = service.lookupRandom.delayExecution(config.discoveryPeriod).loopForever
           // Enrollment can be run in the background if it takes very long.
           discoveryFiber <- if (enrollInBackground) {
             (enroll >> discover).start
@@ -695,13 +701,13 @@ object DiscoveryService {
     /** Locate the k closest nodes to a node ID.
       *
       * Note that it keeps going even if we know the target or find it along the way.
-      * Due to the way it allows by default 7 seconds for the k closest neihbors to
+      * Due to the way it allows by default 7 seconds for the k closest neighbors to
       * arrive from each peer we ask (or if they return k quicker then it returns earlier)
       * it could be quite slow if it was used for routing.
       *
       * https://github.com/ethereum/devp2p/blob/master/discv4.md#recursive-lookup
       */
-    protected[v4] def lookup(target: Node.Id): Task[SortedSet[Node]] = {
+    override def lookup(target: Node.Id): Task[SortedSet[Node]] = {
       val targetId = Node.kademliaId(target)
 
       implicit val nodeOrdering: Ordering[Node] =
@@ -824,9 +830,9 @@ object DiscoveryService {
     }
 
     /** Look up a random node ID to discover new peers. */
-    protected[v4] def lookupRandom(): Task[Unit] =
+    override def lookupRandom: Task[Set[Node]] =
       Task(logger.info("Looking up a random target...")) >>
-        lookup(target = sigalg.newKeyPair._1).void
+        lookup(target = sigalg.newKeyPair._1)
 
     /** Look up self with the bootstrap nodes. First we have to fetch their ENR
       * records to verify they are reachable and so that they can participate
