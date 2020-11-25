@@ -194,6 +194,9 @@ object DiscoveryService {
     def clearBondingResults(peer: Peer[A]): State[A] =
       copy(bondingResultsMap = bondingResultsMap - peer)
 
+    def clearLastPongTimestamp(peer: Peer[A]): State[A] =
+      copy(lastPongTimestampMap = lastPongTimestampMap - peer)
+
     def withEnrFetch(peer: Peer[A], result: FetchEnrResult): State[A] =
       copy(fetchEnrMap = fetchEnrMap.updated(peer, result))
 
@@ -757,7 +760,11 @@ object DiscoveryService {
               .findNode(peer)(target)
               .flatMap {
                 case None =>
-                  Task(logger.debug(s"Received no response for neighbors for $target from ${peer.address}")).as(Nil)
+                  for {
+                    _ <- Task(logger.debug(s"Received no response for neighbors for $target from ${peer.address}"))
+                    // The other node has possibly unbonded from us, or it was still enrolling when we bonded. Try bonding next time.
+                    _ <- stateRef.update(_.clearLastPongTimestamp(peer))
+                  } yield Nil
                 case Some(neighbors) =>
                   Task(logger.debug(s"Received ${neighbors.size} neighbors for $target from ${peer.address}"))
                     .as(neighbors.toList)
