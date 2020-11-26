@@ -240,7 +240,7 @@ object DiscoveryService {
     }
   }
   protected[v4] object State {
-    def apply[A](
+    def apply[A: Addressable](
         node: Node,
         enr: EthereumNodeRecord,
         subnetLimits: SubnetLimits
