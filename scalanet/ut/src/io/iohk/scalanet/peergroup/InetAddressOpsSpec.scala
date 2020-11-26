@@ -45,4 +45,11 @@ class InetAddressOpsSpec extends FlatSpec with Matchers with Inspectors {
         }
     }
   }
+
+  behavior of "truncate"
+
+  it should "truncate the first N bits" in {
+    val ip = InetAddress.getByName("192.175.48.127")
+    ip.truncate(24) shouldBe InetAddress.getByName("192.175.48.0")
+  }
 }
