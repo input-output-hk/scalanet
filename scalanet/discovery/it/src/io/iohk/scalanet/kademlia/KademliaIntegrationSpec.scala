@@ -188,11 +188,16 @@ abstract class KademliaIntegrationSpec(name: String)
     val lowRefConfig = defaultConfig.copy(refreshRate = 1.seconds)
     val randomNode = generatePeerRecordWithKey
     (for {
+      // Start a node which would bootstrap from a peer that's not running yet.
       node1 <- startNode(initialNodes = Set(randomNode._1), testConfig = lowRefConfig)
+      // Start a standalone node.
       node2 <- startNode(initialNodes = Set(), testConfig = lowRefConfig)
+      // A chain of nodes bootstrapping from each other
       node3 <- startNode(initialNodes = Set(node2.self), testConfig = lowRefConfig)
       node4 <- startNode(initialNodes = Set(node3.self), testConfig = lowRefConfig)
       _ <- Resource.liftF(Task.sleep(10.seconds))
+      // Now start a node that node1 wanted to bootstrap from, and join all the other nodes.
+      // When node1 refreshes it will try to connect to node5 again and discover the others.
       node5 <- startNode(
         selfRecordWithKey = randomNode,
         initialNodes = Set(node2.self, node3.self, node4.self),
