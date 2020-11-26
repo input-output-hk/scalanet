@@ -1025,7 +1025,8 @@ object DiscoveryServiceSpec {
   val unimplementedRPC = StubDiscoveryRPC()
 
   val defaultConfig = DiscoveryConfig.default.copy(
-    requestTimeout = 50.millis
+    requestTimeout = 100.millis,
+    subnetLimitPrefixLength = 0
   )
 
   trait Fixture {
@@ -1050,9 +1051,7 @@ object DiscoveryServiceSpec {
       DiscoveryService.State[InetSocketAddress](localNode, localENR, SubnetLimits.fromConfig(config))
     )
 
-    lazy val config: DiscoveryConfig = defaultConfig.copy(
-      requestTimeout = 100.millis
-    )
+    lazy val config: DiscoveryConfig = defaultConfig
 
     lazy val rpc = unimplementedRPC
 
