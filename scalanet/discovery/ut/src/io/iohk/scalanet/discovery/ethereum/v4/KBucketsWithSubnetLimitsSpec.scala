@@ -26,12 +26,12 @@ class KBucketsWithSubnetLimitsSpec extends FlatSpec with Matchers with Inspector
 
   val localNode = makeNode(new InetSocketAddress("127.0.0.1", 30303))
   val defaultLimits = SubnetLimits(prefixLength = 24, forBucket = 2, forTable = 10)
-  val defaultKBuckets = KBucketsWithSubnetLimits(localNode, limits = defaultLimits)
 
   trait Fixture {
+    lazy val limits = defaultLimits
     lazy val ips: Vector[String] = Vector.empty
     lazy val peers = ips.map(ip => makePeer(makeIp(ip)))
-    lazy val kBuckets = peers.foldLeft(defaultKBuckets)(_.add(_))
+    lazy val kBuckets = peers.foldLeft(KBucketsWithSubnetLimits(localNode, limits = limits))(_.add(_))
   }
 
   behavior of "KBucketsWithSubnetLimits"
@@ -73,9 +73,7 @@ class KBucketsWithSubnetLimitsSpec extends FlatSpec with Matchers with Inspector
   }
 
   it should "not add IP if it violates the limits" in new Fixture {
-    override lazy val ips = Vector.range(0, defaultLimits.forTable + 1).map { i =>
-      s"192.168.1.$i"
-    }
+    override lazy val ips = Vector.range(0, defaultLimits.forTable + 1).map(i => s"192.168.1.$i")
 
     forAll(peers.take(defaultLimits.forBucket)) { peer =>
       kBuckets.contains(peer) shouldBe true
@@ -100,9 +98,7 @@ class KBucketsWithSubnetLimitsSpec extends FlatSpec with Matchers with Inspector
   }
 
   it should "add peers after removing previous ones" in new Fixture {
-    override lazy val ips = Vector.range(0, 255).map { i =>
-      s"192.168.1.$i"
-    }
+    override lazy val ips = Vector.range(0, 255).map(i => s"192.168.1.$i")
 
     kBuckets.tableLevelCounts.values.toList shouldBe List(defaultLimits.forTable)
 
@@ -110,5 +106,34 @@ class KBucketsWithSubnetLimitsSpec extends FlatSpec with Matchers with Inspector
     kBuckets.add(peer).contains(peer) shouldBe false
     kBuckets.remove(peer).add(peer).contains(peer) shouldBe false
     kBuckets.remove(peers.head).add(peer).contains(peer) shouldBe true
+  }
+
+  it should "not use limits if the prefix is 0" in new Fixture {
+    override lazy val limits = defaultLimits.copy(prefixLength = 0)
+    override lazy val ips = Vector.range(0, 256).map(i => s"192.168.1.$i")
+
+    kBuckets.tableLevelCounts.values.toList shouldBe List(256)
+  }
+
+  it should "not use limits if the table level limit is 0, but still apply the bucket limit" in new Fixture {
+    override lazy val limits = defaultLimits.copy(forTable = 0)
+    override lazy val ips = Vector.range(0, 256).map(i => s"192.168.1.$i")
+
+    kBuckets.tableLevelCounts.values.toList.head shouldBe >(defaultLimits.forTable)
+    forAll(peers) { peer =>
+      val (i, _) = kBuckets.getBucket(peer)
+      kBuckets.bucketLevelCounts(i).values.head shouldBe <=(defaultLimits.forBucket)
+    }
+  }
+
+  it should "not limit buckets if the bucket level limit is 0" in new Fixture {
+    override lazy val limits = defaultLimits.copy(forBucket = 0)
+    override lazy val ips = Vector.range(0, 256).map(i => s"192.168.1.$i")
+
+    kBuckets.tableLevelCounts.values.toList shouldBe List(limits.forTable)
+    forAtLeast(1, peers) { peer =>
+      val (i, _) = kBuckets.getBucket(peer)
+      kBuckets.bucketLevelCounts(i).values.head shouldBe >(defaultLimits.forBucket)
+    }
   }
 }
