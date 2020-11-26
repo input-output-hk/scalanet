@@ -82,7 +82,7 @@ mill __.test
 
 A single test suite can be executed with the `single` helper command, for example:
 ```bash
-mill scalanet.test.single io.iohk.scalanet.crypto.SignatureVerificationSpec
+mill scalanet.ut.single io.iohk.scalanet.crypto.SignatureVerificationSpec
 ```
 
 ### Publishing
