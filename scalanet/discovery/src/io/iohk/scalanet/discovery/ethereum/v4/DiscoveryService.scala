@@ -95,7 +95,8 @@ object DiscoveryService {
           // Start handling requests, we need them during enrolling so the peers can ping and bond with us.
           cancelToken <- network.startHandling(service)
           // Contact the bootstrap nodes.
-          enroll = service.enroll()
+          // Setting the enrolled status here because we could potentially repeat enrollment until it succeeds.
+          enroll = service.enroll().guarantee(stateRef.update(_.setEnrolled))
           // Periodically discover new nodes.
           discover = service.lookupRandom.delayExecution(config.discoveryPeriod).loopForever
           // Enrollment can be run in the background if it takes very long.
@@ -152,7 +153,9 @@ object DiscoveryService {
       // Deferred results so we can ensure there's only one concurrent Ping to a given peer.
       bondingResultsMap: Map[Peer[A], BondingResults],
       // Deferred ENR fetches so we only do one at a time to a given peer.
-      fetchEnrMap: Map[Peer[A], FetchEnrResult]
+      fetchEnrMap: Map[Peer[A], FetchEnrResult],
+      // Indicate whether enrollment hash finished.
+      hasEnrolled: Boolean
   ) {
     def isSelf(peer: Peer[A]): Boolean =
       peer.id == node.id
@@ -190,6 +193,9 @@ object DiscoveryService {
 
     def clearBondingResults(peer: Peer[A]): State[A] =
       copy(bondingResultsMap = bondingResultsMap - peer)
+
+    def clearLastPongTimestamp(peer: Peer[A]): State[A] =
+      copy(lastPongTimestampMap = lastPongTimestampMap - peer)
 
     def withEnrFetch(peer: Peer[A], result: FetchEnrResult): State[A] =
       copy(fetchEnrMap = fetchEnrMap.updated(peer, result))
@@ -230,6 +236,9 @@ object DiscoveryService {
         kBuckets = kBuckets.remove(Node.kademliaId(peerId)),
         kademliaIdToNodeId = kademliaIdToNodeId - Node.kademliaId(peerId)
       )
+
+    def setEnrolled: State[A] =
+      copy(hasEnrolled = true)
   }
   protected[v4] object State {
     def apply[A](
@@ -245,7 +254,8 @@ object DiscoveryService {
       enrMap = Map(node.id -> enr),
       lastPongTimestampMap = Map.empty[Peer[A], Timestamp],
       bondingResultsMap = Map.empty[Peer[A], BondingResults],
-      fetchEnrMap = Map.empty[Peer[A], FetchEnrResult]
+      fetchEnrMap = Map.empty[Peer[A], FetchEnrResult],
+      hasEnrolled = false
     )
   }
 
@@ -328,6 +338,10 @@ object DiscoveryService {
           for {
             // Complete any deferred waiting for a ping from this peer, if we initiated the bonding.
             _ <- completePing(caller)
+            // To protect against an eclipse attack filling up the k-table after a reboot,
+            // only try to bond with an incoming Ping's peer after the initial enrollment
+            // hash finished.
+            hasEnrolled <- stateRef.get.map(_.hasEnrolled)
             _ <- isBonded(caller)
               .ifM(
                 // We may already be bonded but the remote node could have changed its address.
@@ -338,6 +352,7 @@ object DiscoveryService {
                 bond(caller)
               )
               .startAndForget
+              .whenA(hasEnrolled)
             // Return the latet local ENR sequence.
             enrSeq <- localEnrSeq
           } yield Some(Some(enrSeq))
@@ -745,7 +760,11 @@ object DiscoveryService {
               .findNode(peer)(target)
               .flatMap {
                 case None =>
-                  Task(logger.debug(s"Received no response for neighbors for $target from ${peer.address}")).as(Nil)
+                  for {
+                    _ <- Task(logger.debug(s"Received no response for neighbors for $target from ${peer.address}"))
+                    // The other node has possibly unbonded from us, or it was still enrolling when we bonded. Try bonding next time.
+                    _ <- stateRef.update(_.clearLastPongTimestamp(peer))
+                  } yield Nil
                 case Some(neighbors) =>
                   Task(logger.debug(s"Received ${neighbors.size} neighbors for $target from ${peer.address}"))
                     .as(neighbors.toList)
