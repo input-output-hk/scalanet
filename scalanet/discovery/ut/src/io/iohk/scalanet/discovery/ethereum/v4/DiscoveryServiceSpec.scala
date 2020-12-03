@@ -512,14 +512,34 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   behavior of "ping"
 
-  it should "respond with the ENR sequence and bond with the caller" in test {
+  it should "respond with the ENR sequence but not bond with the caller before enrollment" in test {
+    new Fixture {
+      override val test = for {
+        hasEnrolled <- stateRef.get.map(_.hasEnrolled)
+        maybeEnrSeq <- service.ping(remotePeer)(None)
+        // Shouldn't start bonding, but in case it does, wait until it finishes.
+        _ <- stateRef.get.flatMap(_.bondingResultsMap.get(remotePeer).fold(Task.unit)(_.pongReceived.get.void))
+        state <- stateRef.get
+      } yield {
+        hasEnrolled shouldBe false
+        maybeEnrSeq shouldBe Some(Some(localENR.content.seq))
+        state.nodeMap should not contain key(remotePeer.id)
+        state.enrMap should not contain key(remotePeer.id)
+        state.lastPongTimestampMap should not contain key(remotePeer)
+      }
+    }
+  }
+
+  it should "respond with the ENR sequence and bond with the caller after enrollment" in test {
     new Fixture {
       override lazy val rpc = unimplementedRPC.copy(
         ping = _ => _ => Task(Some(None)),
         enrRequest = _ => _ => Task(Some(remoteENR))
       )
       override val test = for {
+        _ <- stateRef.update(_.setEnrolled)
         maybeEnrSeq <- service.ping(remotePeer)(None)
+        // Wait for any ongoing bonding and ENR fetching to finish.
         _ <- stateRef.get.flatMap(_.bondingResultsMap.get(remotePeer).fold(Task.unit)(_.pongReceived.get.void))
         _ <- stateRef.get.flatMap(_.fetchEnrMap.get(remotePeer).fold(Task.unit)(_.get.void))
         state <- stateRef.get
