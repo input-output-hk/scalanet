@@ -983,6 +983,30 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       }
     }
   }
+
+  behavior of "withTouch"
+
+  it should "not touch a peer not already in the k-table" in test {
+    new Fixture {
+      override val test = for {
+        state0 <- stateRef.get
+        state1 = state0.withTouch(remotePeer)
+        state2 = state1.withEnrAndAddress(remotePeer, remoteENR, remoteNode.address)
+        _ <- Task.sleep(1.milli) // If we're too quick then TimeSet will assign the same timestamp.
+        state3 = state2.withTouch(remotePeer)
+      } yield {
+        val peerId = remotePeer.kademliaId
+
+        state0.kBuckets.contains(peerId) shouldBe false
+        state1.kBuckets.contains(peerId) shouldBe false
+        state2.kBuckets.contains(peerId) shouldBe true
+
+        val (_, bucket2) = state2.kBuckets.getBucket(peerId)
+        val (_, bucket3) = state3.kBuckets.getBucket(peerId)
+        bucket2.timestamps should not equal bucket3.timestamps
+      }
+    }
+  }
 }
 
 object DiscoveryServiceSpec {

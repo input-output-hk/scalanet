@@ -68,7 +68,7 @@ trait ScalanetModule extends ScalaModule {
 trait ScalanetPublishModule extends PublishModule {
   def description: String
 
-  override def publishVersion = "0.4.3-SNAPSHOT"
+  override def publishVersion = "0.4.4-SNAPSHOT"
 
   override def pomSettings = PomSettings(
     description = description,
