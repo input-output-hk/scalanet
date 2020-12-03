@@ -36,6 +36,10 @@ class KBucketsSpec extends FlatSpec {
     kb.add(v).contains(v) shouldBe true
   }
 
+  they should "retrieve any node added via touch" in forAll(genBitVector()) { v =>
+    kb.touch(v).contains(v) shouldBe true
+  }
+
   they should "not retrieve any node removed via remove" in forAll(genBitVector()) { v =>
     kb.add(v).remove(v).contains(v) shouldBe false
   }

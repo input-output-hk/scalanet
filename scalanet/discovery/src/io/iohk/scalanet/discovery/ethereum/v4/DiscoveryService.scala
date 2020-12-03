@@ -188,8 +188,13 @@ object DiscoveryService {
       )
     }
 
+    /** Update the timestamp of the peer in the K-table, if it's still part of it. */
     def withTouch(peer: Peer[A]): State[A] =
-      copy(kBuckets = kBuckets.touch(peer.kademliaId))
+      if (kBuckets.contains(peer.kademliaId))
+        copy(kBuckets = kBuckets.touch(peer.kademliaId))
+      else
+        // Not adding because `kademliaIdToNodeId` and `nodeMap` may no longer have this peer.
+        this
 
     def clearBondingResults(peer: Peer[A]): State[A] =
       copy(bondingResultsMap = bondingResultsMap - peer)
