@@ -231,21 +231,18 @@ object DiscoveryService {
 
     def removePeer(peerId: Node.Id, toAddress: Node.Address => A): State[A] = {
       // Find any Peer records that correspond to this ID.
-      val peers =
+      val peers: Set[Peer[A]] = (
         nodeMap.get(peerId).map(node => Peer(node.id, toAddress(node.address))).toSeq ++
           lastPongTimestampMap.keys.filter(_.id == peerId).toSeq ++
           bondingResultsMap.keys.filter(_.id == peerId).toSeq
+      ).toSet
 
       copy(
         nodeMap = nodeMap - peerId,
         enrMap = enrMap - peerId,
-        lastPongTimestampMap = lastPongTimestampMap.filterNot {
-          case (peer, _) => peer.id == peerId
-        },
-        bondingResultsMap = bondingResultsMap.filterNot {
-          case (peer, _) => peer.id == peerId
-        },
-        kBuckets = peers.foldLeft(kBuckets)(_.remove(_)),
+        lastPongTimestampMap = lastPongTimestampMap -- peers,
+        bondingResultsMap = bondingResultsMap -- peers,
+        kBuckets = peers.foldLeft(kBuckets)(_ remove _),
         kademliaIdToNodeId = kademliaIdToNodeId - Node.kademliaId(peerId)
       )
     }
