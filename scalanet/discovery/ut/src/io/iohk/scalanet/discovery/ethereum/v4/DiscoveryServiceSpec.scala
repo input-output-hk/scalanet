@@ -17,6 +17,7 @@ import org.scalatest._
 import scala.concurrent.duration._
 import scala.util.Random
 import java.net.InetAddress
+import io.iohk.scalanet.discovery.ethereum.v4.KBucketsWithSubnetLimits.SubnetLimits
 
 class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   import DiscoveryService.{State, BondingResults}
@@ -411,7 +412,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         state.fetchEnrMap should not contain key(remotePeer)
         state.nodeMap should contain key (remotePeer.id)
         state.enrMap(remotePeer.id) shouldBe remoteENR
-        state.kBuckets.contains(remotePeer.kademliaId) shouldBe true
+        state.kBuckets.contains(remotePeer) shouldBe true
       }
     }
   }
@@ -488,13 +489,13 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       // If the existing peer didn't respond, forget them completely.
       state.nodeMap.contains(peer1._1.id) shouldBe responds
       state.enrMap.contains(peer1._1.id) shouldBe responds
-      state.kBuckets.contains(peer1._1.kademliaId) shouldBe responds
+      state.kBuckets.contains(peer1._1) shouldBe responds
 
       // Add the new ENR of the peer regardless of the existing.
       state.nodeMap.contains(peer2._1.id) shouldBe true
       state.enrMap.contains(peer2._1.id) shouldBe true
       // Only use them for routing if the existing got evicted.
-      state.kBuckets.contains(peer2._1.kademliaId) shouldBe !responds
+      state.kBuckets.contains(peer2._1) shouldBe !responds
     }
   }
 
@@ -936,7 +937,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         state.enrMap should not contain key(remotePublicKey)
         state.nodeMap should not contain key(remotePublicKey)
         state.lastPongTimestampMap should not contain key(remotePeer)
-        state.kBuckets.contains(remoteNode.kademliaId) shouldBe false
+        state.kBuckets.contains(remotePeer) shouldBe false
       }
     }
   }
@@ -949,7 +950,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       } yield {
         state.enrMap should contain key (localPublicKey)
         state.nodeMap should contain key (localPublicKey)
-        state.kBuckets.contains(localNode.kademliaId) shouldBe true
+        state.kBuckets.contains(localPeer) shouldBe true
       }
     }
   }
@@ -1015,14 +1016,12 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         _ <- Task.sleep(1.milli) // If we're too quick then TimeSet will assign the same timestamp.
         state3 = state2.withTouch(remotePeer)
       } yield {
-        val peerId = remotePeer.kademliaId
+        state0.kBuckets.contains(remotePeer) shouldBe false
+        state1.kBuckets.contains(remotePeer) shouldBe false
+        state2.kBuckets.contains(remotePeer) shouldBe true
 
-        state0.kBuckets.contains(peerId) shouldBe false
-        state1.kBuckets.contains(peerId) shouldBe false
-        state2.kBuckets.contains(peerId) shouldBe true
-
-        val (_, bucket2) = state2.kBuckets.getBucket(peerId)
-        val (_, bucket3) = state3.kBuckets.getBucket(peerId)
+        val (_, bucket2) = state2.kBuckets.getBucket(remotePeer)
+        val (_, bucket3) = state3.kBuckets.getBucket(remotePeer)
         bucket2.timestamps should not equal bucket3.timestamps
       }
     }
@@ -1048,7 +1047,8 @@ object DiscoveryServiceSpec {
   val unimplementedRPC = StubDiscoveryRPC()
 
   val defaultConfig = DiscoveryConfig.default.copy(
-    requestTimeout = 50.millis
+    requestTimeout = 100.millis,
+    subnetLimitPrefixLength = 0
   )
 
   trait Fixture {
@@ -1070,12 +1070,10 @@ object DiscoveryServiceSpec {
     lazy val remoteENR = EthereumNodeRecord.fromNode(remoteNode, remotePrivateKey, seq = 1).require
 
     lazy val stateRef = Ref.unsafe[Task, DiscoveryService.State[InetSocketAddress]](
-      DiscoveryService.State[InetSocketAddress](localNode, localENR)
+      DiscoveryService.State[InetSocketAddress](localNode, localENR, SubnetLimits.fromConfig(config))
     )
 
-    lazy val config: DiscoveryConfig = defaultConfig.copy(
-      requestTimeout = 100.millis
-    )
+    lazy val config: DiscoveryConfig = defaultConfig
 
     lazy val rpc = unimplementedRPC
 

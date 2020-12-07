@@ -3,6 +3,7 @@ package io.iohk.scalanet.peergroup
 import com.github.jgonian.ipmath.{Ipv6Range, Ipv4Range, Ipv4, Ipv6}
 import java.net.{InetAddress, Inet4Address, Inet6Address}
 import scala.language.implicitConversions
+import com.github.jgonian.ipmath.AbstractIp
 
 class InetAddressOps(val address: InetAddress) extends AnyVal {
   import InetAddressOps._
@@ -23,14 +24,30 @@ class InetAddressOps(val address: InetAddress) extends AnyVal {
     address == unspecified4 || address == unspecified6
 
   private def isInRange4(infos: List[Ipv4Range]): Boolean = {
-    val ip = Ipv4.of(address.getHostAddress)
+    val ip = toIpv4
     infos.exists(_.contains(ip))
   }
 
   private def isInRange6(infos: List[Ipv6Range]): Boolean = {
-    val ip = Ipv6.of(address.getHostAddress)
+    val ip = toIpv6
     infos.exists(_.contains(ip))
   }
+
+  private def toIpv4 =
+    Ipv4.of(address.getHostAddress)
+
+  private def toIpv6 =
+    Ipv6.of(address.getHostAddress)
+
+  private def toAbstractIp: AbstractIp[_, _] =
+    if (isIPv4) toIpv4 else toIpv6
+
+  private def toInetAddress(ip: AbstractIp[_, _]) =
+    InetAddress.getByName(ip.toString)
+
+  /** Truncate the IP address to the first `prefixLength` bits. */
+  def truncate(prefixLength: Int): InetAddress =
+    toInetAddress(toAbstractIp.lowerBoundForPrefix(prefixLength))
 }
 
 object InetAddressOps {

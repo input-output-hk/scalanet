@@ -23,7 +23,13 @@ case class DiscoveryConfig(
     // How often to look for new peers.
     discoveryPeriod: FiniteDuration,
     // Bootstrap nodes.
-    knownPeers: Set[Node]
+    knownPeers: Set[Node],
+    // Limit the number of IPs from the same subnet, given by its prefix length, e.g. /24; 0 means no limit.
+    subnetLimitPrefixLength: Int,
+    // Limit the number of IPs from the same subnet in any given bucket; 0 means no limit.
+    subnetLimitForBucket: Int,
+    // Limit the number of IPs from the same subnet in the whole k-table; 0 means no limit.
+    subnetLimitForTable: Int
 )
 
 object DiscoveryConfig {
@@ -36,6 +42,9 @@ object DiscoveryConfig {
     kademliaAlpha = 3,
     bondExpiration = 12.hours,
     discoveryPeriod = 15.minutes,
-    knownPeers = Set.empty
+    knownPeers = Set.empty,
+    subnetLimitPrefixLength = 24,
+    subnetLimitForBucket = 2,
+    subnetLimitForTable = 10
   )
 }

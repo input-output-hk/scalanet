@@ -6,7 +6,7 @@ import cats.implicits._
 import io.iohk.scalanet.discovery.crypto.{PrivateKey, SigAlg}
 import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord}
 import io.iohk.scalanet.discovery.hash.Hash
-import io.iohk.scalanet.kademlia.{KBuckets, XorOrdering}
+import io.iohk.scalanet.kademlia.XorOrdering
 import io.iohk.scalanet.peergroup.Addressable
 import java.net.InetAddress
 import monix.eval.Task
@@ -53,6 +53,7 @@ trait DiscoveryService {
 object DiscoveryService {
   import DiscoveryRPC.{Call, Proc}
   import DiscoveryNetwork.Peer
+  import KBucketsWithSubnetLimits.SubnetLimits
 
   type ENRSeq = Long
   type Timestamp = Long
@@ -90,7 +91,7 @@ object DiscoveryService {
           // Use the current time to set the ENR sequence to something fresh.
           now <- clock.monotonic(MILLISECONDS)
           enr <- Task(EthereumNodeRecord.fromNode(node, privateKey, seq = now).require)
-          stateRef <- Ref[Task].of(State[A](node, enr))
+          stateRef <- Ref[Task].of(State[A](node, enr, SubnetLimits.fromConfig(config)))
           service <- Task(new ServiceImpl[A](privateKey, config, network, stateRef, toAddress))
           // Start handling requests, we need them during enrolling so the peers can ping and bond with us.
           cancelToken <- network.startHandling(service)
@@ -144,7 +145,7 @@ object DiscoveryService {
       node: Node,
       enr: EthereumNodeRecord,
       // Kademlia buckets with hashes of the nodes' IDs in them.
-      kBuckets: KBuckets[Hash],
+      kBuckets: KBucketsWithSubnetLimits[A],
       kademliaIdToNodeId: Map[Hash, Node.Id],
       nodeMap: Map[Node.Id, Node],
       enrMap: Map[Node.Id, EthereumNodeRecord],
@@ -178,10 +179,10 @@ object DiscoveryService {
         kBuckets =
           if (isSelf(peer))
             kBuckets
-          else if (kBuckets.getBucket(peer.kademliaId)._2.contains(peer.kademliaId))
-            kBuckets.touch(peer.kademliaId)
+          else if (kBuckets.contains(peer))
+            kBuckets.touch(peer)
           else if (addToBucket)
-            kBuckets.add(peer.kademliaId)
+            kBuckets.add(peer)
           else
             kBuckets,
         kademliaIdToNodeId = kademliaIdToNodeId.updated(peer.kademliaId, peer.id)
@@ -190,8 +191,8 @@ object DiscoveryService {
 
     /** Update the timestamp of the peer in the K-table, if it's still part of it. */
     def withTouch(peer: Peer[A]): State[A] =
-      if (kBuckets.contains(peer.kademliaId))
-        copy(kBuckets = kBuckets.touch(peer.kademliaId))
+      if (kBuckets.contains(peer))
+        copy(kBuckets = kBuckets.touch(peer))
       else
         // Not adding because `kademliaIdToNodeId` and `nodeMap` may no longer have this peer.
         this
@@ -217,7 +218,7 @@ object DiscoveryService {
           copy(
             nodeMap = nodeMap - peer.id,
             enrMap = enrMap - peer.id,
-            kBuckets = kBuckets.remove(peer.kademliaId),
+            kBuckets = kBuckets.remove(peer),
             kademliaIdToNodeId = kademliaIdToNodeId - peer.kademliaId
           )
         case _ => this
@@ -228,32 +229,36 @@ object DiscoveryService {
       )
     }
 
-    def removePeer(peerId: Node.Id): State[A] =
+    def removePeer(peerId: Node.Id, toAddress: Node.Address => A): State[A] = {
+      // Find any Peer records that correspond to this ID.
+      val peers: Set[Peer[A]] = (
+        nodeMap.get(peerId).map(node => Peer(node.id, toAddress(node.address))).toSeq ++
+          lastPongTimestampMap.keys.filter(_.id == peerId).toSeq ++
+          bondingResultsMap.keys.filter(_.id == peerId).toSeq
+      ).toSet
+
       copy(
         nodeMap = nodeMap - peerId,
         enrMap = enrMap - peerId,
-        lastPongTimestampMap = lastPongTimestampMap.filterNot {
-          case (peer, _) => peer.id == peerId
-        },
-        bondingResultsMap = bondingResultsMap.filterNot {
-          case (peer, _) => peer.id == peerId
-        },
-        kBuckets = kBuckets.remove(Node.kademliaId(peerId)),
+        lastPongTimestampMap = lastPongTimestampMap -- peers,
+        bondingResultsMap = bondingResultsMap -- peers,
+        kBuckets = peers.foldLeft(kBuckets)(_ remove _),
         kademliaIdToNodeId = kademliaIdToNodeId - Node.kademliaId(peerId)
       )
+    }
 
     def setEnrolled: State[A] =
       copy(hasEnrolled = true)
   }
   protected[v4] object State {
-    def apply[A](
+    def apply[A: Addressable](
         node: Node,
         enr: EthereumNodeRecord,
-        clock: java.time.Clock = java.time.Clock.systemUTC()
+        subnetLimits: SubnetLimits
     ): State[A] = State[A](
       node = node,
       enr = enr,
-      kBuckets = new KBuckets[Hash](node.kademliaId, clock),
+      kBuckets = KBucketsWithSubnetLimits[A](node, subnetLimits),
       kademliaIdToNodeId = Map(node.kademliaId -> node.id),
       nodeMap = Map(node.id -> node),
       enrMap = Map(node.id -> enr),
@@ -306,7 +311,7 @@ object DiscoveryService {
 
     override def removeNode(nodeId: Node.Id): Task[Unit] =
       stateRef.update { state =>
-        if (state.node.id == nodeId) state else state.removePeer(nodeId)
+        if (state.node.id == nodeId) state else state.removePeer(nodeId, toAddress)
       }
 
     /** Update the node and ENR of the local peer with the new address and ping peers with the new ENR seq. */
@@ -673,7 +678,7 @@ object DiscoveryService {
           if (state.isSelf(peer))
             state -> None
           else {
-            val (_, bucket) = state.kBuckets.getBucket(peer.kademliaId)
+            val (_, bucket) = state.kBuckets.getBucket(peer)
             val (addToBucket, maybeEvict) =
               if (bucket.contains(peer.kademliaId) || bucket.size < config.kademliaBucketSize) {
                 // We can just update the records, the bucket either has room or won't need to grow.
