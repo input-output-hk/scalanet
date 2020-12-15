@@ -62,7 +62,8 @@ class DiscoveryKademliaIntegrationSpec extends KademliaIntegrationSpec("Discover
         kademliaAlpha = testConfig.alpha,
         kademliaBucketSize = testConfig.k,
         discoveryPeriod = testConfig.refreshRate,
-        knownPeers = initialNodes
+        knownPeers = initialNodes,
+        subnetLimitPrefixLength = 0
       )
       network <- Resource.liftF {
         DiscoveryNetwork[InetMultiAddress](
