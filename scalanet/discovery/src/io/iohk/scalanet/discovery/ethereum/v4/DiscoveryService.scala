@@ -97,7 +97,7 @@ object DiscoveryService {
           cancelToken <- network.startHandling(service)
           // Contact the bootstrap nodes.
           // Setting the enrolled status here because we could potentially repeat enrollment until it succeeds.
-          enroll = service.enroll().guarantee(stateRef.update(_.setEnrolled))
+          enroll = service.enroll.guarantee(stateRef.update(_.setEnrolled))
           // Periodically discover new nodes.
           discover = service.lookupRandom.delayExecution(config.discoveryPeriod).loopForever
           // Enrollment can be run in the background if it takes very long.
@@ -871,7 +871,7 @@ object DiscoveryService {
       * or `false` if none of them responded with a correct ENR,
       * which would mean we don't have anyone to do lookups with.
       */
-    protected[v4] def enroll(): Task[Boolean] =
+    protected[v4] def enroll: Task[Boolean] =
       if (config.knownPeers.isEmpty)
         Task.pure(false)
       else {

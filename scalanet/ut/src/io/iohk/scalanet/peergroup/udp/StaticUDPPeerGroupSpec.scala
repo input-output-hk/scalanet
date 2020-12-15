@@ -18,6 +18,7 @@ import io.iohk.scalanet.peergroup.Channel
 
 class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with Matchers {
   import UDPPeerGroupSpec.runEchoServer
+  import io.iohk.scalanet.peergroup.implicits._
 
   val timeout = 15.seconds
 
@@ -26,9 +27,8 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
   )(implicit scheduler: Scheduler, codec: Codec[M]): Resource[Task, UDPPeerGroupSpec.TestGroup[M]] = {
     StaticUDPPeerGroup[M](StaticUDPPeerGroup.Config(address)).map { pg =>
       new PeerGroup[InetMultiAddress, M] {
-        override val s = scheduler
         override def processAddress = pg.processAddress
-        override def nextServerEvent() = pg.nextServerEvent()
+        override def nextServerEvent = pg.nextServerEvent
         override def client(to: InetMultiAddress) = pg.client(to)
         def channelCount: Int = pg.channelCount.runSyncUnsafe()
       }
@@ -36,7 +36,7 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
   }
 
   def startCollectingMessages(timespan: FiniteDuration)(channel: Channel[InetMultiAddress, String]) =
-    channel.in.refCount
+    channel.channelEventObservable
       .collect {
         case MessageReceived(msg) => msg
       }
@@ -54,7 +54,7 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
         case (pg1, pg2, client12) =>
           for {
             _ <- client12.sendMessage("Hola!")
-            event <- pg2.server.refCount.collectChannelCreated.headL
+            event <- pg2.serverEventObservable.collectChannelCreated.headL
           } yield {
             event._1.to shouldBe pg1.processAddress
           }
@@ -76,12 +76,12 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
                 for {
                   // Close incoming channel after two messages and collect which ports they came from.
                   // Further messages should result in another incoming channel being created.
-                  listener <- pg2.server.refCount.collectChannelCreated
+                  listener <- pg2.serverEventObservable.collectChannelCreated
                     .mapEval {
                       case (channel, release) =>
                         // Have to do it in the background otherwise it would block the processing of incoming UDP packets.
                         List
-                          .fill(2)(channel.nextMessage() >> Task(messageCounter.countDown()))
+                          .fill(2)(channel.nextChannelEvent >> Task(messageCounter.countDown()))
                           .sequence
                           .guarantee(release)
                           .startAndForget
@@ -154,7 +154,7 @@ class StaticUDPPeerGroupSpec extends UDPPeerGroupSpec("StaticUDPPeerGroup") with
             message = "Requests and responses look the same."
             _ <- client21.sendMessage(message)
 
-            server21 <- pg2.server.refCount.collectChannelCreated.map {
+            server21 <- pg2.serverEventObservable.collectChannelCreated.map {
               case (channel, _) => channel
             }.headL
 

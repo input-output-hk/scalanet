@@ -48,11 +48,11 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
 ) extends TerminalPeerGroup[PeerInfo, M]
     with StrictLogging {
 
-  protected override val s = scheduler
-
   private val sslServerCtx: SslContext = DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForServer, config)
 
-  private val serverQueue = CloseableQueue.unbounded[ServerEvent[PeerInfo, M]](ChannelType.SPMC).runSyncUnsafe()
+  // Using MPMC because the channel creation event is only pushed after the SSL handshake,
+  // which should take place on the channel thread, not the boss thread.
+  private val serverQueue = CloseableQueue.unbounded[ServerEvent[PeerInfo, M]](ChannelType.MPMC).runSyncUnsafe()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -79,7 +79,7 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
 
   private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
 
-  private def initialize(): Task[Unit] =
+  private def initialize: Task[Unit] =
     toTask(serverBind).onErrorRecoverWith {
       case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
     } *> Task(logger.info(s"Server bound to address ${config.bindAddress}"))
@@ -103,10 +103,10 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
     )(_.close())
   }
 
-  override def nextServerEvent() =
-    serverQueue.next()
+  override def nextServerEvent =
+    serverQueue.next
 
-  private def shutdown(): Task[Unit] = {
+  private def shutdown: Task[Unit] = {
     for {
       _ <- Task(logger.debug("Start shutdown of tls peer group for peer {}", processAddress))
       _ <- serverQueue.close(discard = true)
@@ -166,14 +166,14 @@ object DynamicTLSPeerGroup {
   def apply[M: StreamCodec](config: Config)(implicit scheduler: Scheduler): Resource[Task, DynamicTLSPeerGroup[M]] =
     Resource.make {
       for {
-        // NOTE: The DynamicTLSPeerGroup creates Netty workgroups in its constructor, so calling `shutdown()` is a must.
+        // NOTE: The DynamicTLSPeerGroup creates Netty workgroups in its constructor, so calling `shutdown` is a must.
         pg <- Task(new DynamicTLSPeerGroup[M](config))
         // NOTE: In theory we wouldn't have to initialize a peer group (i.e. start listening to incoming events)
-        // if all we wanted was to connect to remote clients, however to clean up we must call `shutdown()` at which point
+        // if all we wanted was to connect to remote clients, however to clean up we must call `shutdown` at which point
         // it will start and stop the server anyway, and the interface itself suggests that one can always start concuming
         // server events, so this is cleaner semantics.
-        _ <- pg.initialize()
+        _ <- pg.initialize
       } yield pg
-    }(_.shutdown())
+    }(_.shutdown)
 
 }

@@ -60,20 +60,18 @@ class StaticUDPPeerGroup[M] private (
     serverChannelSemaphore: Semaphore[Task],
     serverChannelsRef: Ref[Task, Map[InetSocketAddress, StaticUDPPeerGroup.ChannelAlloc[M]]],
     clientChannelsRef: Ref[Task, Map[InetSocketAddress, Set[StaticUDPPeerGroup.ChannelAlloc[M]]]]
-)(implicit scheduler: Scheduler, codec: Codec[M])
+)(implicit codec: Codec[M])
     extends TerminalPeerGroup[InetMultiAddress, M]
     with StrictLogging {
 
   import StaticUDPPeerGroup.{ChannelImpl, ChannelAlloc}
 
-  override protected val s = scheduler
-
   override val processAddress = config.processAddress
 
   private val localAddress = config.bindAddress
 
-  override def nextServerEvent() =
-    serverQueue.next()
+  override def nextServerEvent =
+    serverQueue.next
 
   def channelCount: Task[Int] =
     for {
@@ -194,25 +192,25 @@ class StaticUDPPeerGroup[M] private (
   ): Task[Unit] =
     for {
       channels <- getChannels(remoteAddress)
-      _ <- Task.parTraverseUnordered(channels)(f).executeOn(scheduler)
+      _ <- Task.parTraverseUnordered(channels)(f)
     } yield ()
 
   /** Replicate the incoming message to the server channel and all client channels connected to the remote address. */
   private def handleMessage(
       remoteAddress: InetSocketAddress,
       maybeMessage: Attempt[M]
-  ): Unit =
+  )(implicit s: Scheduler): Unit =
     executeAsync {
       replicateToChannels(remoteAddress)(_.handleMessage(maybeMessage))
     }
 
-  private def handleError(remoteAddress: InetSocketAddress, error: Throwable): Unit =
+  private def handleError(remoteAddress: InetSocketAddress, error: Throwable)(implicit s: Scheduler): Unit =
     executeAsync {
       replicateToChannels(remoteAddress)(_.handleError(error))
     }
 
   // Execute the task asynchronously. Has to be thread safe.
-  private def executeAsync(task: Task[Unit]): Unit = {
+  private def executeAsync(task: Task[Unit])(implicit s: Scheduler): Unit = {
     task.runAsyncAndForget
   }
 
@@ -247,6 +245,7 @@ class StaticUDPPeerGroup[M] private (
       .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, bufferAllocator)
       .handler(new ChannelInitializer[NioDatagramChannel]() {
         override def initChannel(nettyChannel: NioDatagramChannel): Unit = {
+          implicit val scheduler = Scheduler(nettyChannel.eventLoop)
           nettyChannel
             .pipeline()
             .addLast(new ChannelInboundHandlerAdapter() {
@@ -282,7 +281,7 @@ class StaticUDPPeerGroup[M] private (
       .bind(localAddress)
 
   // Wait until the server is bound.
-  private def initialize(): Task[Unit] =
+  private def initialize: Task[Unit] =
     for {
       _ <- raiseIfShutdown
       _ <- toTask(serverBinding).onErrorRecoverWith {
@@ -292,7 +291,7 @@ class StaticUDPPeerGroup[M] private (
       _ <- Task(logger.info(s"Server bound to address ${config.bindAddress}"))
     } yield ()
 
-  private def shutdown(): Task[Unit] = {
+  private def shutdown: Task[Unit] = {
     for {
       _ <- Task(logger.info(s"Shutting down UDP peer group for peer ${config.processAddress}"))
       // Mark the group as shutting down to stop accepting incoming connections.
@@ -343,9 +342,9 @@ object StaticUDPPeerGroup extends StrictLogging {
             serverChannelsRef,
             clientChannelsRef
           )
-          _ <- peerGroup.initialize()
+          _ <- peerGroup.initialize
         } yield peerGroup
-      }(_.shutdown())
+      }(_.shutdown)
     }
 
   // Separate resource so if the server initialization fails, this still gets shut down.
@@ -363,17 +362,15 @@ object StaticUDPPeerGroup extends StrictLogging {
       messageQueue: CloseableQueue[ChannelEvent[M]],
       isClosedRef: Ref[Task, Boolean],
       role: ChannelImpl.Role
-  )(implicit codec: Codec[M], scheduler: Scheduler)
+  )(implicit codec: Codec[M])
       extends Channel[InetMultiAddress, M]
       with StrictLogging {
-
-    protected override val s = scheduler
 
     override val to =
       InetMultiAddress(remoteAddress)
 
-    override def nextMessage() =
-      messageQueue.next()
+    override def nextChannelEvent() =
+      messageQueue.next
 
     private val raiseIfClosed =
       isClosedRef.get.ifM(
@@ -444,7 +441,7 @@ object StaticUDPPeerGroup extends StrictLogging {
         remoteAddress: InetSocketAddress,
         role: Role,
         capacity: Int
-    )(implicit scheduler: Scheduler): Resource[Task, ChannelImpl[M]] =
+    ): Resource[Task, ChannelImpl[M]] =
       Resource.make {
         for {
           isClosedRef <- Ref[Task].of(false)

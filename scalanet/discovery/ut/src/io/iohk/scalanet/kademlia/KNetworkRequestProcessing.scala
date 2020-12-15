@@ -39,7 +39,6 @@ object KNetworkRequestProcessing {
             Some((p, h))
           case (_, h) =>
             ignore(h)
-            None
         }
         .collect { case Some(v) => v }
 

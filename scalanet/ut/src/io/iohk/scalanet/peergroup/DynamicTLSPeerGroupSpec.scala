@@ -8,6 +8,7 @@ import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.codec.FramingCodec
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
+import io.iohk.scalanet.peergroup.implicits._
 import io.iohk.scalanet.peergroup.Channel.{DecodingError, MessageReceived}
 import io.iohk.scalanet.peergroup.DynamicTLSPeerGroupSpec._
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, HandshakeException}
@@ -31,6 +32,7 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
+
   val timeOutConfig = 5.seconds
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5.seconds)
   implicit val codec = new FramingCodec(Codec[String])
@@ -47,8 +49,8 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       case (server, ch1) =>
         for {
           _ <- ch1.sendMessage("Hello enc server")
-          rec <- server.server.refCount.collectChannelCreated.mergeMap {
-            case (ch, release) => ch.in.refCount.guarantee(release)
+          rec <- server.serverEventObservable.collectChannelCreated.mergeMap {
+            case (ch, release) => ch.channelEventObservable.guarantee(release)
           }.headL
         } yield {
           rec shouldEqual MessageReceived("Hello enc server")
@@ -65,8 +67,8 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
         for {
           d <- Deferred[Task, Boolean]
           clientChannel <- client.client(server.processAddress).allocated
-          serverChannel <- server.server.refCount.collectChannelCreated.headL
-          _ <- serverChannel._1.in.refCount.guarantee(d.complete(true)).foreachL(_ => ()).startAndForget
+          serverChannel <- server.serverEventObservable.collectChannelCreated.headL
+          _ <- serverChannel._1.channelEventObservable.guarantee(d.complete(true)).foreachL(_ => ()).startAndForget
           _ <- clientChannel._2
           closed <- d.get.timeout(timeOutConfig).onErrorHandle(_ => false)
           _ <- serverChannel._2
@@ -85,8 +87,8 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
         for {
           d <- Deferred[Task, Boolean]
           clientChannel <- client.client(server.processAddress).allocated
-          serverChannel <- server.server.refCount.collectChannelCreated.headL
-          _ <- clientChannel._1.in.refCount.guarantee(d.complete(true)).foreachL(_ => ()).startAndForget
+          serverChannel <- server.serverEventObservable.collectChannelCreated.headL
+          _ <- clientChannel._1.channelEventObservable.guarantee(d.complete(true)).foreachL(_ => ()).startAndForget
           _ <- serverChannel._2
           closed <- d.get.timeout(timeOutConfig).onErrorHandle(_ => false)
           _ <- clientChannel._2
@@ -104,11 +106,11 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
     } yield (server, channel)).use {
       case (server, clientChannel) =>
         for {
-          serverChannelCreated <- server.server.refCount.collectChannelCreated.headL
+          serverChannelCreated <- server.serverEventObservable.collectChannelCreated.headL
           (serverChannel, release) = serverChannelCreated
           messages = List.range(0, 100).map(_.toString)
           _ <- messages.traverse(clientChannel.sendMessage)
-          received <- serverChannel.in.refCount
+          received <- serverChannel.channelEventObservable
             .collect {
               case MessageReceived(msg) => msg
             }
@@ -179,7 +181,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       case (client, server) =>
         for {
           ch1 <- client.client(server.processAddress).use(_ => Task.unit).attempt
-          serverHandshake <- server.server.refCount.collectHandshakeFailure.headL
+          serverHandshake <- server.serverEventObservable.collectHandshakeFailure.headL
         } yield {
           ch1.isLeft shouldEqual true
           ch1.left.get shouldBe a[HandshakeException[_]]
@@ -196,7 +198,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       case (client, server) =>
         for {
           ch1 <- client.client(server.processAddress).use(_ => Task.unit).attempt
-          serverHandshake <- server.server.refCount.collectHandshakeFailure.headL
+          serverHandshake <- server.serverEventObservable.collectHandshakeFailure.headL
         } yield {
           ch1.isLeft shouldEqual true
           ch1.left.get shouldBe a[HandshakeException[_]]
@@ -216,9 +218,9 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
         for {
           result <- Task.parZip2(
             ch1.sendMessage("Hello server, do not process this message"),
-            server.server.refCount.collectChannelCreated.mergeMap {
+            server.serverEventObservable.collectChannelCreated.mergeMap {
               case (channel, release) =>
-                channel.in.refCount.guarantee(release)
+                channel.channelEventObservable.guarantee(release)
             }.headL
           )
           (_, eventReceived) = result

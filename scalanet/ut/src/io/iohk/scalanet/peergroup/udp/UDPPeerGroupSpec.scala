@@ -4,6 +4,7 @@ import cats.implicits._
 import cats.effect.Resource
 import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.NetUtils._
+import io.iohk.scalanet.peergroup.implicits._
 import io.iohk.scalanet.peergroup.Channel.{DecodingError, MessageReceived}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelAlreadyClosedException, MessageMTUException}
@@ -91,14 +92,8 @@ abstract class UDPPeerGroupSpec[PG <: UDPPeerGroupSpec.TestGroup[_]](name: Strin
       }
     }
 
-  // ETCM-345: This sometimes fails for StaticUDPPeerGroupSpec and DynamicUDPPeerGroupsSpec, even with the timeout and cancel workaround.
-  // Since ETCM-199 will remove the ConnectableSubject the test uses we can disable it until that's done, or the error is reproduced locally.
   it should "send and receive a message" in withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
-    if (sys.env.get("CI").contains("true")) {
-      cancel("ETCM-345: Intermittent timeout on Circle CI.")
-    } else {
-      StandardTestPack.messagingTest(alice, bob)
-    }
+    StandardTestPack.messagingTest(alice, bob)
   }
 
   it should "send and receive a message with next* methods" in withTwoRandomUDPPeerGroups[String] { (alice, bob) =>
@@ -271,8 +266,8 @@ abstract class UDPPeerGroupSpec[PG <: UDPPeerGroupSpec.TestGroup[_]](name: Strin
           for {
             result <- Task.parZip2(
               ch1.sendMessage("Helllo wrong server"),
-              pg2.server.refCount.collectChannelCreated.mergeMap {
-                case (ch, release) => ch.in.refCount.guarantee(release)
+              pg2.serverEventObservable.collectChannelCreated.mergeMap {
+                case (ch, release) => ch.channelEventObservable.guarantee(release)
               }.headL
             )
             (_, receivedEvent) = result
@@ -310,7 +305,7 @@ object UDPPeerGroupSpec {
   ): Task[M] = {
     for {
       _ <- clientChannel.sendMessage(message).timeout(requestTimeout)
-      response <- clientChannel.in.refCount
+      response <- clientChannel.channelEventObservable
         .collect { case MessageReceived(m) => m }
         .headL
         .timeout(requestTimeout)
@@ -321,10 +316,10 @@ object UDPPeerGroupSpec {
   def runEchoServer[M](peerGroup: PeerGroup[InetMultiAddress, M], doRelease: Boolean = true)(
       implicit s: Scheduler
   ): Task[Unit] = {
-    peerGroup.server.refCount.collectChannelCreated
+    peerGroup.serverEventObservable.collectChannelCreated
       .mergeMap {
         case (channel, release) =>
-          channel.in.refCount
+          channel.channelEventObservable
             .collect {
               case MessageReceived(m) => m
             }
@@ -340,7 +335,7 @@ object UDPPeerGroupSpec {
   // This is necessary for the StaticUDPPeerGroup because it creates a server channel
   // for responses, which would stay open unless consumed.
   def runDiscardServer[M](peerGroup: PeerGroup[InetMultiAddress, M])(implicit s: Scheduler): Task[Unit] = {
-    peerGroup.server.refCount.collectChannelCreated
+    peerGroup.serverEventObservable.collectChannelCreated
       .mapEval {
         case (_, release) => release
       }

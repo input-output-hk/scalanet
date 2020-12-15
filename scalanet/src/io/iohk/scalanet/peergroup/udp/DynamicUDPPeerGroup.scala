@@ -40,13 +40,11 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
 ) extends TerminalPeerGroup[InetMultiAddress, M]
     with StrictLogging {
 
-  override protected val s = scheduler
-
   import DynamicUDPPeerGroup.Internals.{UDPChannelId, ChannelType, ClientChannel, ServerChannel}
 
-  val serverQueue = CloseableQueue.unbounded[ServerEvent[InetMultiAddress, M]](ChannelType.SPMC).runSyncUnsafe()
-
   private val workerGroup = new NioEventLoopGroup()
+
+  private val serverQueue = CloseableQueue.unbounded[ServerEvent[InetMultiAddress, M]](ChannelType.SPMC).runSyncUnsafe()
 
   // all channels in the map are open and active, as upon closing channels are removed from the map
   private[peergroup] val activeChannels = new ConcurrentHashMap[UDPChannelId, ChannelImpl]()
@@ -172,7 +170,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
                     )
                     potentialNewChannel.closePromise.addListener(closeChannelListener)
                     serverQueue
-                      .offer(ChannelCreated(potentialNewChannel, potentialNewChannel.close()))
+                      .offer(ChannelCreated(potentialNewChannel, potentialNewChannel.close))
                       .runSyncUnsafe()
                     handleIncomingMessage(potentialNewChannel, datagram)
                 }
@@ -206,8 +204,6 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
       channelType: ChannelType
   ) extends Channel[InetMultiAddress, M] {
 
-    protected override val s = scheduler
-
     val closePromise: Promise[ChannelImpl] = nettyChannel.eventLoop().newPromise[ChannelImpl]()
 
     val channelId = UDPChannelId(nettyChannel.id(), remoteAddress, localAddress)
@@ -236,8 +232,8 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
       }
     }
 
-    override def nextMessage() =
-      messageQueue.next()
+    override def nextChannelEvent =
+      messageQueue.next
 
     private def closeNettyChannel(channelType: ChannelType): Task[Unit] = {
       channelType match {
@@ -251,7 +247,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
       }
     }
 
-    private def closeChannel(): Task[Unit] = {
+    private def closeChannel: Task[Unit] = {
       for {
         _ <- Task(logger.debug(s"Closing channel from ${localAddress} to ${remoteAddress}"))
         _ <- closeNettyChannel(channelType)
@@ -260,11 +256,11 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
       } yield ()
     }
 
-    private[udp] def close(): Task[Unit] = {
+    private[udp] def close: Task[Unit] = {
       if (closePromise.isDone) {
         Task.now(())
       } else {
-        closeChannel().guarantee(Task(closePromise.trySuccess(this)).void)
+        closeChannel.guarantee(Task(closePromise.trySuccess(this)).void)
       }
     }
 
@@ -293,7 +289,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
 
   private lazy val serverBind: ChannelFuture = serverBootstrap.bind(config.bindAddress)
 
-  private def initialize(): Task[Unit] =
+  private def initialize: Task[Unit] =
     toTask(serverBind).onErrorRecoverWith {
       case NonFatal(e) => Task.raiseError(InitializationError(e.getMessage, e.getCause))
     } *> Task(logger.info(s"Server bound to address ${config.bindAddress}"))
@@ -327,13 +323,13 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
               Task(logger.debug(s"UDP channel setup failed due to ${ex}", ex)) *>
                 Task.raiseError(new ChannelSetupException[InetMultiAddress](to, ex))
           }
-      })(_.close())
+      })(_.close)
   }
 
-  override def nextServerEvent() =
-    serverQueue.next()
+  override def nextServerEvent =
+    serverQueue.next
 
-  private def shutdown(): Task[Unit] = {
+  private def shutdown: Task[Unit] = {
     for {
       _ <- serverQueue.close(discard = true)
       _ <- toTask(serverBind.channel().close())
@@ -373,15 +369,13 @@ object DynamicUDPPeerGroup {
   def apply[M: Codec](config: Config)(implicit scheduler: Scheduler): Resource[Task, DynamicUDPPeerGroup[M]] =
     Resource.make {
       for {
-        // NOTE: The DynamicUDPPeerGroup creates Netty workgroups in its constructor, so calling `shutdown()` is a must.
+        // NOTE: The DynamicUDPPeerGroup creates Netty workgroups in its constructor, so calling `shutdown` is a must.
         pg <- Task(new DynamicUDPPeerGroup[M](config))
         // NOTE: In theory we wouldn't have to initialize a peer group (i.e. start listening to incoming events)
-        // if all we wanted was to connect to remote clients, however to clean up we must call `shutdown()` at which point
+        // if all we wanted was to connect to remote clients, however to clean up we must call `shutdown` at which point
         // it will start and stop the server anyway, and the interface itself suggests that one can always start concuming
         // server events, so this is cleaner semantics.
-        _ <- pg.initialize()
+        _ <- pg.initialize
       } yield pg
-    } { pg =>
-      pg.shutdown()
-    }
+    }(_.shutdown)
 }

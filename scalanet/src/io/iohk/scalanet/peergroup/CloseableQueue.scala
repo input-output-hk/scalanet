@@ -25,7 +25,7 @@ class CloseableQueue[A](
   /** Fetch the next item from the queue, or None if the production has finished
     * and the queue has been emptied.
     */
-  def next(): Task[Option[A]] =
+  def next: Task[Option[A]] =
     closed.tryGet.flatMap {
       case Some(true) =>
         // `clear` must be called by the consumer side.
@@ -37,7 +37,7 @@ class CloseableQueue[A](
       case None =>
         Task.race(closed.get, queue.poll).flatMap {
           case Left(_) =>
-            next()
+            next
           case Right(item) =>
             Task.pure(Some(item))
         }
@@ -51,10 +51,10 @@ class CloseableQueue[A](
     closed.complete(discard).attempt.void
 
   /** Close the queue and discard any remaining items in it. */
-  def closeAndDiscard(): Task[Unit] = close(discard = true)
+  def closeAndDiscard: Task[Unit] = close(discard = true)
 
   /** Close the queue but allow the consumer to pull the remaining items from it. */
-  def closeAndKeep(): Task[Unit] = close(discard = false)
+  def closeAndKeep: Task[Unit] = close(discard = false)
 
   /** Try to put a new item in the queue, unless the capactiy has been reached or the queue has been closed. */
   def tryOffer(item: A): Task[Either[Closed, Boolean]] =

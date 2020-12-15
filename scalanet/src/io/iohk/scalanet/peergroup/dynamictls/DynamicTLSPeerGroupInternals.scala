@@ -100,8 +100,6 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       extends Channel[PeerInfo, M]
       with StrictLogging {
 
-    protected override val s = scheduler
-
     val to: PeerInfo = peerInfo
 
     private val activation = Promise[io.netty.channel.Channel]()
@@ -196,8 +194,8 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       }
     }
 
-    override def nextMessage() =
-      messageQueue.next()
+    override def nextChannelEvent =
+      messageQueue.next
 
     /**
       * To be sure that `channelInactive` had run before returning from close, we are also waiting for ctx.closeFuture() after
@@ -278,8 +276,6 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       extends Channel[PeerInfo, M]
       with StrictLogging {
 
-    protected override val s = scheduler
-
     logger.debug(
       s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
     )
@@ -295,7 +291,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       }
     }
 
-    override def nextMessage() = messageQueue.next()
+    override def nextChannelEvent = messageQueue.next
 
     /**
       * To be sure that `channelInactive` had run before returning from close, we are also waiting for nettyChannel.closeFuture() after

@@ -819,7 +819,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       )
 
       override val test = for {
-        enrolled <- service.enroll()
+        enrolled <- service.enroll
         state <- stateRef.get
       } yield {
         enrolled shouldBe true
@@ -840,7 +840,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       )
 
       override val test = for {
-        enrolled <- service.enroll()
+        enrolled <- service.enroll
         state <- stateRef.get
       } yield {
         enrolled shouldBe false
