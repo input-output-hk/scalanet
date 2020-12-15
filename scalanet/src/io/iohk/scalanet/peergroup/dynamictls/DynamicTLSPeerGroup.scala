@@ -50,7 +50,9 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
 
   private val sslServerCtx: SslContext = DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForServer, config)
 
-  private val serverQueue = CloseableQueue.unbounded[ServerEvent[PeerInfo, M]](ChannelType.SPMC).runSyncUnsafe()
+  // Using MPMC because the channel creation event is only pushed after the SSL handshake,
+  // which should take place on the channel thread, not the boss thread.
+  private val serverQueue = CloseableQueue.unbounded[ServerEvent[PeerInfo, M]](ChannelType.MPMC).runSyncUnsafe()
 
   private val workerGroup = new NioEventLoopGroup()
 
