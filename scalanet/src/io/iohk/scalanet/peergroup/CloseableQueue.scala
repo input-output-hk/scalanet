@@ -85,7 +85,7 @@ object CloseableQueue {
   type Closed = Closed.type
 
   /** Create a queue with a given capacity; 0 or negative means unbounded. */
-  def apply[A](capacity: Int, channelType: ChannelType = ChannelType.MPMC) = {
+  def apply[A](capacity: Int, channelType: ChannelType) = {
     val buffer = capacity match {
       case i if i <= 0 => BufferCapacity.Unbounded()
       // Capacity is approximate and a power of 2, min value 2.
@@ -98,5 +98,5 @@ object CloseableQueue {
   }
 
   def unbounded[A](channelType: ChannelType = ChannelType.MPMC) =
-    apply[A](capacity = 0)
+    apply[A](capacity = 0, channelType)
 }

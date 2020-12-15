@@ -1,9 +1,10 @@
 package io.iohk.scalanet.peergroup
 
 import cats.implicits._
-import monix.execution.Scheduler
+import monix.execution.{ChannelType, Scheduler}
 import monix.eval.Task
 import org.scalatest.{FlatSpec, Matchers}
+
 import scala.concurrent.duration._
 import org.scalatest.compatible.Assertion
 
@@ -14,7 +15,7 @@ class CloseableQueueSpec extends FlatSpec with Matchers {
   def testQueue(
       capacity: Int = 0
   )(f: CloseableQueue[String] => Task[Assertion]): Unit = {
-    CloseableQueue[String](capacity).flatMap(f).void.runSyncUnsafe(5.seconds)
+    CloseableQueue[String](capacity, ChannelType.MPMC).flatMap(f).void.runSyncUnsafe(5.seconds)
   }
 
   behavior of "ClosableQueue"
