@@ -113,7 +113,7 @@ class KRouter[A](
 
       case Right(nodes) =>
         Task {
-          val nodeIds = nodes.map(_.id)
+          val nodeIds = nodes.toSeq.map(_.id)
           val bootIds = config.knownPeers.map(_.id)
           val countSelf = nodeIds.count(myself)
           val countBoot = nodeIds.count(bootIds)

@@ -13,6 +13,7 @@ import scala.collection.SortedMap
 import java.net.InetAddress
 
 object DefaultCodecs {
+
   implicit val publicKeyCodec: Codec[PublicKey] =
     implicitly[Codec[BitVector]].xmap(PublicKey(_), identity)
 
@@ -38,6 +39,21 @@ object DefaultCodecs {
       (sm: SortedMap[K, V]) => sm.toList
     )
 
+  class ByteIterableOrdering extends Ordering[Iterable[Byte]] {
+    import scala.math.Ordering._
+    final def compare(as: Iterable[Byte], bs: Iterable[Byte]) = {
+      val ai = as.iterator
+      val bi = bs.iterator
+      var result: Option[Int] = None
+      while (ai.hasNext && bi.hasNext && result.isEmpty) { 
+        val res = Byte.compare(ai.next(), bi.next())
+        if (res != 0) result = Some(res)
+      }
+      result.getOrElse( Boolean.compare(ai.hasNext, bi.hasNext) )
+    }
+  }
+
+  implicit val byteIterableOrdering = new ByteIterableOrdering
   implicit val byteVectorOrdering: Ordering[ByteVector] =
     Ordering.by[ByteVector, Iterable[Byte]](_.toIterable)
 

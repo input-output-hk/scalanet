@@ -9,6 +9,7 @@ import scodec.bits.BitVector
 import scala.concurrent.{Await, Promise}
 import scala.util.parsing.combinator._
 import scala.concurrent.duration._
+import scala.language.postfixOps
 
 trait CommandParser extends RegexParsers {
 

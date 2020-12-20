@@ -1,6 +1,5 @@
 package io.iohk.scalanet.kademlia
 
-import cats.implicits._
 import io.iohk.scalanet.kademlia.KMessage.{KRequest, KResponse}
 import io.iohk.scalanet.kademlia.KMessage.KRequest.{FindNodes, Ping}
 import io.iohk.scalanet.kademlia.KMessage.KResponse.{Nodes, Pong}
