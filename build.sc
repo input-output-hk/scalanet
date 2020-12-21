@@ -9,9 +9,27 @@ import mill.scalalib.publish.{Developer, License, PomSettings, VersionControl}
 object csm extends Cross[ScalanetModule]("2.12.10", "2.13.4")
 
 class ScalanetModule(crossVersion: String) extends Module {
+
+  // A cross build is now a `root` of the module:
+  // > mill show csm[2.13.4].scalanet.sources
+  // [1/1] show 
+  // [1/1] show > [1/1] csm[2.13.4].scalanet.sources 
+  // [
+  //     "ref:c984eca8: ../csm/2.13.4/scalanet/src"
+  // ]
+  // As soon as there is no such folder as /csm/2.13.4/
+  // We have to navigate up two times on the module tree.
+  //
+  // > mill show csm[2.13.4].scalanet.sources
+  //            // some output omitted //
+  //     "ref:c984eca8: ../scalanet/src"
   override def millSourcePath = super.millSourcePath / os.up / os.up
 
-  private val pointTwelveOptions: Seq[String] = Seq(
+
+  // scala 2.12 - only options
+  // it causes errors when built against 2.13 (and vice-versa):
+  // [error] bad option: '-Ywarn-unused-import'
+  private val `scala 2.12 options`: Seq[String] = Seq(
     "-Xlint:unsound-match",
     "-Ywarn-inaccessible",
     "-Ywarn-unused-import",
@@ -19,7 +37,9 @@ class ScalanetModule(crossVersion: String) extends Module {
     "-Ywarn-value-discard"
   )
 
-  private val pointThirteenOptions: Seq[String] = Nil
+
+  // scala 2.13 might have another set of options
+  private val `scala 2.13 options`: Seq[String] = Nil
 
   trait ScalanetModule extends ScalaModule { 
     override def scalaVersion = crossVersion
@@ -44,8 +64,8 @@ class ScalanetModule(crossVersion: String) extends Module {
     )
 
     private val versionOptions = crossVersion.take(4) match { 
-      case "2.12" => pointTwelveOptions
-      case "2.13" => pointThirteenOptions
+      case "2.12" => `scala 2.12 options`
+      case "2.13" => `scala 2.13 options`
     }
 
     override def scalacOptions = commonScalacOptions ++ versionOptions
@@ -83,7 +103,7 @@ class ScalanetModule(crossVersion: String) extends Module {
   trait ScalanetPublishModule extends PublishModule {
     def description: String
 
-    override def publishVersion = "0.5.0-SNAPSHOT"
+    override def publishVersion = "0.5.1-SNAPSHOT"
 
     override def pomSettings = PomSettings(
       description = description,

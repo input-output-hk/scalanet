@@ -14,7 +14,7 @@ import java.util.Arrays
 
 private[scalanet] object DynamicTLSPeerGroupUtils {
   // supporting only ciphers which are used in TLS 1.3
-  val supportedCipherSuites: java.lang.Iterable[String] = Arrays.asList(
+  private val supportedCipherSuites: java.lang.Iterable[String] = Arrays.asList(
     "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
     "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
   )
