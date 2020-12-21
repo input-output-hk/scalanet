@@ -125,7 +125,7 @@ abstract class UDPPeerGroupSpec[PG <: UDPPeerGroupSpec.TestGroup[_]](name: Strin
       .use { _ =>
         initUdpPeerGroup[String](address).allocated.attempt.map { result =>
           assert(result.isLeft)
-          result.left.get shouldBe a[InitializationError]
+          result.swap.toOption.get shouldBe a[InitializationError]
         }
       }
       .runSyncUnsafe()
@@ -230,6 +230,7 @@ abstract class UDPPeerGroupSpec[PG <: UDPPeerGroupSpec.TestGroup[_]](name: Strin
             }
 
           }
+        case _ => fail()
       }
       .runSyncUnsafe()
   }

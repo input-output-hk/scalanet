@@ -54,14 +54,13 @@ class ScalanetModule(crossVersion: String) extends Module {
     // which is why the trait is defined here not within `scalanet`, otherwise
     // it wouldn't work for `kademlia` for example.
     trait TestModule extends Tests {
-      override def scalacOptions = Nil
-        //commonScalacOptions
+      override def scalacOptions = ScalanetModule.this.scalacOptions
 
       override def testFrameworks =
         Seq("org.scalatest.tools.Framework")
 
       override def ivyDeps = Agg(
-        ivy"org.scalatest::scalatest:3.0.5",
+        ivy"org.scalatest::scalatest:3.0.9",
         ivy"org.scalacheck::scalacheck:1.14.0",
         ivy"ch.qos.logback:logback-core:1.2.3",
         ivy"ch.qos.logback:logback-classic:1.2.3",

@@ -6,15 +6,22 @@ import java.security.KeyStore
 import java.security.cert.Certificate
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils
 
-import scala.collection.JavaConverters._
 import scala.util.Random
+import scala.collection.mutable.ArrayBuffer
 
 object NetUtils {
 
   val keyStore: KeyStore = loadKeyStore("keystore.p12", "password")
   val trustStore: KeyStore = loadKeyStore("truststore.p12", "password")
-  val trustedCerts: Array[Certificate] =
-    trustStore.aliases().asScala.toArray.map(alias => trustStore.getCertificate(alias))
+  val trustedCerts: Array[Certificate] = { 
+    val aliases = trustStore.aliases()
+    val buffer = ArrayBuffer[Certificate]()
+    while(aliases.hasMoreElements()) {
+      val alias = aliases.nextElement()
+      buffer.append(trustStore.getCertificate(alias))
+    }
+    buffer.toArray
+  }
 
   def loadKeyStore(keystoreLocation: String, keystorePassword: String): KeyStore = {
     val keystore = KeyStore.getInstance("PKCS12")

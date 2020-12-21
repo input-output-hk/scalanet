@@ -12,7 +12,7 @@ import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.{
 import io.iohk.scalanet.peergroup.dynamictls.Secp256k1
 import io.iohk.scalanet.testutils.GeneratorUtils
 import org.scalatest.{FlatSpec, Matchers}
-import org.scalatest.prop.GeneratorDrivenPropertyChecks._
+import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks._
 
 class SignedKeyExtensionSpec extends FlatSpec with Matchers {
   val rnd = new SecureRandom()

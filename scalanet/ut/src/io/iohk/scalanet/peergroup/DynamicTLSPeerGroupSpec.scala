@@ -143,6 +143,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
           resp1b shouldEqual randomString2
           resp1c shouldEqual randomString3
         }
+      case _ => fail()
     }
   }
 
@@ -151,7 +152,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
     DynamicTLSPeerGroup[String](getCorrectConfig()).use { client =>
       client.client(serverConfig.peerInfo).use(_ => Task.unit).attempt.map { result =>
         result.isLeft shouldEqual true
-        result.left.get shouldBe a[ChannelSetupException[_]]
+        result.swap.toOption.get shouldBe a[ChannelSetupException[_]]
       }
     }
   }
@@ -166,7 +167,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
               result <- ch1.sendMessage("wow").attempt
             } yield {
               result.isLeft shouldEqual true
-              result.left.get shouldBe a[ChannelBrokenException[_]]
+              result.swap.toOption.get shouldBe a[ChannelBrokenException[_]]
             }
           }
       }
@@ -184,7 +185,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
           serverHandshake <- server.serverEventObservable.collectHandshakeFailure.headL
         } yield {
           ch1.isLeft shouldEqual true
-          ch1.left.get shouldBe a[HandshakeException[_]]
+          ch1.swap.toOption.get shouldBe a[HandshakeException[_]]
           serverHandshake shouldBe a[HandshakeException[_]]
         }
     }
@@ -201,7 +202,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
           serverHandshake <- server.serverEventObservable.collectHandshakeFailure.headL
         } yield {
           ch1.isLeft shouldEqual true
-          ch1.left.get shouldBe a[HandshakeException[_]]
+          ch1.swap.toOption.get shouldBe a[HandshakeException[_]]
           serverHandshake shouldBe a[HandshakeException[_]]
         }
     }
