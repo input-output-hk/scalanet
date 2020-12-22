@@ -30,7 +30,9 @@ import scodec.codecs.implicits._
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Random
+import scala.annotation.nowarn
 
+@nowarn
 class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
 
   val timeOutConfig = 5.seconds
@@ -152,7 +154,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
     DynamicTLSPeerGroup[String](getCorrectConfig()).use { client =>
       client.client(serverConfig.peerInfo).use(_ => Task.unit).attempt.map { result =>
         result.isLeft shouldEqual true
-        result.swap.toOption.get shouldBe a[ChannelSetupException[_]]
+        result.left.get shouldBe a[ChannelSetupException[_]]
       }
     }
   }
@@ -167,7 +169,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
               result <- ch1.sendMessage("wow").attempt
             } yield {
               result.isLeft shouldEqual true
-              result.swap.toOption.get shouldBe a[ChannelBrokenException[_]]
+              result.left.get shouldBe a[ChannelBrokenException[_]]
             }
           }
       }
@@ -185,7 +187,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
           serverHandshake <- server.serverEventObservable.collectHandshakeFailure.headL
         } yield {
           ch1.isLeft shouldEqual true
-          ch1.swap.toOption.get shouldBe a[HandshakeException[_]]
+          ch1.left.get shouldBe a[HandshakeException[_]]
           serverHandshake shouldBe a[HandshakeException[_]]
         }
     }
@@ -202,7 +204,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
           serverHandshake <- server.serverEventObservable.collectHandshakeFailure.headL
         } yield {
           ch1.isLeft shouldEqual true
-          ch1.swap.toOption.get shouldBe a[HandshakeException[_]]
+          ch1.left.get shouldBe a[HandshakeException[_]]
           serverHandshake shouldBe a[HandshakeException[_]]
         }
     }

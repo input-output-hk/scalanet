@@ -22,7 +22,9 @@ import scala.concurrent.duration._
 import scodec.bits.ByteVector
 import scodec.Codec
 import scodec.codecs.implicits._
+import scala.annotation.nowarn
 
+@nowarn
 abstract class UDPPeerGroupSpec[PG <: UDPPeerGroupSpec.TestGroup[_]](name: String)
     extends FlatSpec
     with EitherValues
@@ -125,7 +127,7 @@ abstract class UDPPeerGroupSpec[PG <: UDPPeerGroupSpec.TestGroup[_]](name: Strin
       .use { _ =>
         initUdpPeerGroup[String](address).allocated.attempt.map { result =>
           assert(result.isLeft)
-          result.swap.toOption.get shouldBe a[InitializationError]
+          result.left.get shouldBe a[InitializationError]
         }
       }
       .runSyncUnsafe()

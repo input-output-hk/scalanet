@@ -2,9 +2,9 @@ package io.iohk.scalanet.discovery.ethereum
 
 import scodec.bits.ByteVector
 import scala.collection.SortedMap
+import scala.math.Ordering.Implicits._
 import java.nio.charset.StandardCharsets
 import io.iohk.scalanet.discovery.crypto.{Signature, PrivateKey, SigAlg}
-import io.iohk.scalanet.discovery.util.byteVectorOrdering
 import scodec.{Codec, Attempt}
 import io.iohk.scalanet.discovery.crypto.PublicKey
 import java.net.Inet6Address
@@ -18,7 +18,8 @@ case class EthereumNodeRecord(
 
 object EthereumNodeRecord {
 
-  implicit val byteOrdering: Ordering[ByteVector] = byteVectorOrdering
+  implicit val byteVectorOrdering: Ordering[ByteVector] =
+    Ordering.by[ByteVector, Iterable[Byte]](_.toIterable)
 
   case class Content(
       // Nodes should increment this number whenever their properties change, like their address, and re-publish.

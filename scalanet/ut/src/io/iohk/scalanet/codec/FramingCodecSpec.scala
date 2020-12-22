@@ -13,7 +13,9 @@ import scala.util.Random
 import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks._
 import FramingCodecSpec._
 import scodec.codecs.Discriminated
+import scala.annotation.nowarn
 
+@nowarn
 class FramingCodecSpec extends FlatSpec with EitherValues {
 
   behavior of "FramingCodec"
@@ -23,7 +25,7 @@ class FramingCodecSpec extends FlatSpec with EitherValues {
 
     forAll(genString()) { listOfString =>
       val enc = listOfString.map(encoder.encode(_).require).foldLeft(BitVector.empty)((acc, bit) => acc ++ bit)
-      val decoded = encoder.streamDecode(enc).toOption.get
+      val decoded = encoder.streamDecode(enc).right.value
       decoded.toList shouldEqual listOfString
     }
   }
@@ -35,7 +37,7 @@ class FramingCodecSpec extends FlatSpec with EitherValues {
       val enc = listOfString.map(encoder.encode(_).require).foldLeft(BitVector.empty)((acc, bit) => acc ++ bit)
       val encPacketed = enc.grouped(packetSize).toList
       val decoded =
-        encPacketed.foldLeft(List(): List[String])((acc, vec) => acc ++ encoder.streamDecode(vec).toOption.get)
+        encPacketed.foldLeft(List(): List[String])((acc, vec) => acc ++ encoder.streamDecode(vec).right.value)
       decoded shouldEqual listOfString
     }
   }
@@ -48,7 +50,7 @@ class FramingCodecSpec extends FlatSpec with EitherValues {
         val enc = listOfMessages.map(encoder.encode(_).require).foldLeft(BitVector.empty)((acc, bit) => acc ++ bit)
         val encPacketed = enc.grouped(packetSize).toList
         val decoded =
-          encPacketed.foldLeft(List(): List[RandomMessage])((acc, vec) => acc ++ encoder.streamDecode(vec).toOption.get)
+          encPacketed.foldLeft(List(): List[RandomMessage])((acc, vec) => acc ++ encoder.streamDecode(vec).right.value)
         decoded shouldEqual listOfMessages
     }
   }

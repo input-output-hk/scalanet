@@ -1,7 +1,6 @@
 package io.iohk.scalanet.discovery.ethereum.codecs
 
 import io.iohk.scalanet.discovery.hash.Hash
-import io.iohk.scalanet.discovery.util
 import io.iohk.scalanet.discovery.crypto.{PublicKey, Signature}
 import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord}
 import io.iohk.scalanet.discovery.ethereum.v4.Payload
@@ -11,7 +10,9 @@ import scodec.codecs.{Discriminated, Discriminator, uint4}
 import scodec.codecs.implicits._
 import scodec.bits.{BitVector, ByteVector}
 import scala.collection.SortedMap
+import scala.math.Ordering.Implicits._
 import java.net.InetAddress
+
 
 object DefaultCodecs {
 
@@ -40,7 +41,8 @@ object DefaultCodecs {
       (sm: SortedMap[K, V]) => sm.toList
     )
 
-  implicit val byteVectorOrdering: Ordering[ByteVector] = util.byteVectorOrdering
+  implicit val byteVectorOrdering: Ordering[ByteVector] =
+    Ordering.by[ByteVector, Iterable[Byte]](_.toIterable)
 
   implicit val attrCodec: Codec[SortedMap[ByteVector, ByteVector]] =
     sortedMapCodec[ByteVector, ByteVector]

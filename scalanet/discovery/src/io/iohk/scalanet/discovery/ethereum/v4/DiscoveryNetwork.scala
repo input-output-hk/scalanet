@@ -382,7 +382,7 @@ object DiscoveryNetwork {
                 val next = (acc: Z) => Some(acc -> (count + 1))
                 Task.pure(f(acc, response).bimap(next, next))
 
-              case _ => 
+              case (None, _) => 
                 // Invalid state - this cannot happen
                 Task.raiseError(new IllegalStateException(s"Unexpected state while collecting responses from ${channel.to}"))
             }
