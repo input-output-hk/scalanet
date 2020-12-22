@@ -19,7 +19,7 @@ case class EthereumNodeRecord(
 object EthereumNodeRecord {
 
   implicit val byteVectorOrdering: Ordering[ByteVector] =
-    Ordering.by[ByteVector, Iterable[Byte]](_.toIterable)
+    Ordering.by[ByteVector, Seq[Byte]](_.toSeq)
 
   case class Content(
       // Nodes should increment this number whenever their properties change, like their address, and re-publish.

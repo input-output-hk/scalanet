@@ -62,7 +62,7 @@ class MockChannel[A, M](
   private val messagesToSUT = ConcurrentQueue[Task].unsafe[ChannelEvent[M]](BufferCapacity.Unbounded())
 
   def isClosed: Boolean =
-    refCount.get == 0
+    refCount.get() == 0
 
   // Messages coming from the System Under Test.
   override def sendMessage(message: M): Task[Unit] =

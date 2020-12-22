@@ -42,7 +42,7 @@ object DefaultCodecs {
     )
 
   implicit val byteVectorOrdering: Ordering[ByteVector] =
-    Ordering.by[ByteVector, Iterable[Byte]](_.toIterable)
+    Ordering.by[ByteVector, Seq[Byte]](_.toSeq)
 
   implicit val attrCodec: Codec[SortedMap[ByteVector, ByteVector]] =
     sortedMapCodec[ByteVector, ByteVector]

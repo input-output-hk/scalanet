@@ -420,7 +420,7 @@ class DiscoveryNetworkSpec extends AsyncFlatSpec with Matchers {
   // from earlier channels are exhausted before it would handle later ones.
   it should "handle multiple channels in concurrently" in test {
     new Fixture {
-      val remotes = List.fill(5)(aRandomAddress -> sigalg.newKeyPair)
+      val remotes = List.fill(5)(aRandomAddress() -> sigalg.newKeyPair)
 
       override val test = for {
         _ <- network.startHandling {
@@ -797,7 +797,7 @@ object DiscoveryNetworkSpec extends Matchers {
 
     lazy val config = defaultConfig
 
-    lazy val localAddress = aRandomAddress
+    lazy val localAddress = aRandomAddress()
     // Keys for the System Under Test.
     lazy val (publicKey, privateKey) = sigalg.newKeyPair
 
@@ -814,7 +814,7 @@ object DiscoveryNetworkSpec extends Matchers {
     )
 
     // A random peer to talk to.
-    lazy val remoteAddress = aRandomAddress
+    lazy val remoteAddress = aRandomAddress()
     lazy val (remotePublicKey, remotePrivateKey) = sigalg.newKeyPair
     lazy val remotePeer = Peer(remotePublicKey, remoteAddress)
 

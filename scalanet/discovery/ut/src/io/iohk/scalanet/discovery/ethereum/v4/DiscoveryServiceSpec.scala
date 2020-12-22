@@ -89,7 +89,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   }
   it should "return false for nodes that changed their address" in test {
     new IsBondedFixture {
-      override def peer = Peer(remotePublicKey, aRandomAddress)
+      override def peer = Peer(remotePublicKey, aRandomAddress())
       override def expected = false
       override def setupState =
         _.withLastPongTimestamp(
@@ -354,7 +354,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         ping = _ => _ => Task.pure(Some(None)),
         enrRequest = _ => _ => Task(Some(remoteENR))
       )
-      val previousAddress = aRandomAddress
+      val previousAddress = aRandomAddress()
       val previousNode = makeNode(remotePublicKey, previousAddress)
       // Say it had the same ENR SEQ, but a different address.
       val previousEnr = EthereumNodeRecord.fromNode(previousNode, remotePrivateKey, seq = remoteENR.content.seq).require
@@ -394,7 +394,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
           List.fill(5)(service.fetchEnr(remotePeer))
         )
       } yield {
-        callCount.get shouldBe 1
+        callCount.get() shouldBe 1
       }
     }
   }
@@ -463,7 +463,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       if (Node.kademliaId(publicKey)(0) == Node.kademliaId(localPublicKey)(0))
         makePeerInFirstBucket
       else {
-        val address = aRandomAddress
+        val address = aRandomAddress()
         val node = makeNode(publicKey, address)
         val peer = Peer(publicKey, address)
         val enr = EthereumNodeRecord.fromNode(node, privateKey, seq = 1).require
@@ -569,7 +569,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     new Fixture {
       val caller = {
         val (callerPublicKey, _) = sigalg.newKeyPair
-        val callerAddress = aRandomAddress
+        val callerAddress = aRandomAddress()
         Peer(callerPublicKey, callerAddress)
       }
 
@@ -623,7 +623,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
     def newRandomNode = {
       val (publicKey, privateKey) = sigalg.newKeyPair
-      val address = aRandomAddress
+      val address = aRandomAddress()
       val node = makeNode(publicKey, address)
       val enr = EthereumNodeRecord.fromNode(node, privateKey, seq = 1).require
       node -> enr
@@ -747,7 +747,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     new Fixture {
       val localNodes = List.fill(config.kademliaBucketSize) {
         val (publicKey, privateKey) = sigalg.newKeyPair
-        val address = aRandomAddress
+        val address = aRandomAddress()
         val node = makeNode(publicKey, address)
         val enr = EthereumNodeRecord.fromNode(node, privateKey, seq = 1).require
         node -> enr
@@ -1058,12 +1058,12 @@ object DiscoveryServiceSpec {
       Node(publicKey, Node.Address(address.getAddress, address.getPort, address.getPort))
 
     lazy val (localPublicKey, localPrivateKey) = sigalg.newKeyPair
-    lazy val localAddress = aRandomAddress
+    lazy val localAddress = aRandomAddress()
     lazy val localNode = makeNode(localPublicKey, localAddress)
     lazy val localPeer = Peer(localPublicKey, localAddress)
     lazy val localENR = EthereumNodeRecord.fromNode(localNode, localPrivateKey, seq = 1).require
 
-    lazy val remoteAddress = aRandomAddress
+    lazy val remoteAddress = aRandomAddress()
     lazy val (remotePublicKey, remotePrivateKey) = sigalg.newKeyPair
     lazy val remoteNode = makeNode(remotePublicKey, remoteAddress)
     lazy val remotePeer = Peer(remotePublicKey, remoteAddress)
