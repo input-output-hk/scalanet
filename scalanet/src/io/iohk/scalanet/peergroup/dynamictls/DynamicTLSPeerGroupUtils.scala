@@ -10,11 +10,11 @@ import io.netty.handler.ssl.{ClientAuth, SslContext, SslContextBuilder}
 import javax.net.ssl._
 import scodec.bits.BitVector
 
-import scala.collection.JavaConverters._
+import java.util.Arrays
 
 private[scalanet] object DynamicTLSPeerGroupUtils {
   // supporting only ciphers which are used in TLS 1.3
-  val supportedCipherSuites: Seq[String] = Seq(
+  private val supportedCipherSuites: java.lang.Iterable[String] = Arrays.asList(
     "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
     "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
   )
@@ -87,7 +87,7 @@ private[scalanet] object DynamicTLSPeerGroupUtils {
           .forServer(config.connectionKeyPair.getPrivate, List(config.connectionCertificate): _*)
           .trustManager(new CustomTrustManagerFactory(None))
           .clientAuth(ClientAuth.REQUIRE)
-          .ciphers(supportedCipherSuites.asJava)
+          .ciphers(supportedCipherSuites)
           .protocols("TLSv1.2")
           .build()
 
@@ -96,7 +96,7 @@ private[scalanet] object DynamicTLSPeerGroupUtils {
           .forClient()
           .keyManager(config.connectionKeyPair.getPrivate, List(config.connectionCertificate): _*)
           .trustManager(new CustomTrustManagerFactory(Some(info.id)))
-          .ciphers(supportedCipherSuites.asJava)
+          .ciphers(supportedCipherSuites)
           .protocols("TLSv1.2")
           .build()
     }

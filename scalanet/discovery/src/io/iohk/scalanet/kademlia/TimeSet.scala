@@ -3,7 +3,7 @@ package io.iohk.scalanet.kademlia
 import java.time.Clock
 import java.time.Clock.systemUTC
 
-import scala.collection.AbstractSet
+import scala.collection.{Set, AbstractSet}
 import scala.collection.immutable.{HashMap, ListSet}
 
 class TimeSet[T] private (val clock: Clock, val timestamps: HashMap[T, Long], val underlying: ListSet[T])
@@ -27,6 +27,9 @@ class TimeSet[T] private (val clock: Clock, val timestamps: HashMap[T, Long], va
 
   override def iterator: Iterator[T] =
     underlying.iterator
+
+  def diff(that: Set[T]): Set[T] = 
+    underlying &~ that
 
   def touch(elem: T): TimeSet[T] =
     this + elem

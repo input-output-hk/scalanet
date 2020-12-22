@@ -55,6 +55,7 @@ class TransportPeerGroupAsyncSpec extends AsyncFlatSpec with BeforeAndAfterAll {
             resp2 shouldEqual msg3 ++ msg3
             resp3 shouldEqual (msg3 ++ msg1) ++ (msg3 ++ msg1)
           }
+        case _ => fail()
       }
     }
 
@@ -86,6 +87,7 @@ class TransportPeerGroupAsyncSpec extends AsyncFlatSpec with BeforeAndAfterAll {
             r3 shouldEqual 2 * k
             responses shouldEqual (1 to 4).map(2 * _)
           }
+        case _ => fail()
       }
     }
 
@@ -113,6 +115,7 @@ class TransportPeerGroupAsyncSpec extends AsyncFlatSpec with BeforeAndAfterAll {
             resp2 shouldEqual client2Numbers.map(2 * _)
             resp3 shouldEqual client3Numbers.map(2 * _)
           }
+        case _ => fail()
       }
     }
   }

@@ -10,9 +10,12 @@ import scodec.codecs.{Discriminated, Discriminator, uint4}
 import scodec.codecs.implicits._
 import scodec.bits.{BitVector, ByteVector}
 import scala.collection.SortedMap
+import scala.math.Ordering.Implicits._
 import java.net.InetAddress
 
+
 object DefaultCodecs {
+
   implicit val publicKeyCodec: Codec[PublicKey] =
     implicitly[Codec[BitVector]].xmap(PublicKey(_), identity)
 
@@ -39,7 +42,7 @@ object DefaultCodecs {
     )
 
   implicit val byteVectorOrdering: Ordering[ByteVector] =
-    Ordering.by[ByteVector, Iterable[Byte]](_.toIterable)
+    Ordering.by[ByteVector, Seq[Byte]](_.toSeq)
 
   implicit val attrCodec: Codec[SortedMap[ByteVector, ByteVector]] =
     sortedMapCodec[ByteVector, ByteVector]

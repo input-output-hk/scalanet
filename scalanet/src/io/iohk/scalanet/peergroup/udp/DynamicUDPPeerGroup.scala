@@ -4,7 +4,6 @@ import java.io.IOException
 import java.net.{InetSocketAddress, PortUnreachableException}
 import java.util.concurrent.ConcurrentHashMap
 import cats.effect.Resource
-import cats.syntax.functor._
 import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.peergroup.{Channel, InetMultiAddress, CloseableQueue}
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived, UnexpectedError}
@@ -157,7 +156,7 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
                 serverChannel,
                 localAddress,
                 remoteAddress,
-                makeMessageQueue,
+                makeMessageQueue(),
                 ServerChannel
               )
               try {

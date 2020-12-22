@@ -5,7 +5,7 @@ import io.iohk.scalanet.kademlia.Xor._
 import org.scalacheck.Gen.posNum
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
-import org.scalatest.prop.GeneratorDrivenPropertyChecks._
+import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks._
 import scodec.bits.BitVector
 
 class XorSpec extends FlatSpec {

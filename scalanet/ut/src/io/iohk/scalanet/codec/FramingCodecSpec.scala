@@ -10,10 +10,12 @@ import scodec.codecs.implicits._
 import scodec.codecs._
 
 import scala.util.Random
-import org.scalatest.prop.GeneratorDrivenPropertyChecks._
+import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks._
 import FramingCodecSpec._
 import scodec.codecs.Discriminated
+import scala.annotation.nowarn
 
+@nowarn
 class FramingCodecSpec extends FlatSpec with EitherValues {
 
   behavior of "FramingCodec"

@@ -2,7 +2,6 @@ package io.iohk.scalanet.kconsole
 import java.io.File
 import java.nio.file.Path
 import cats.effect.ExitCode
-import cats.implicits._
 import io.iohk.scalanet.kconsole.Utils.{configToStr, generateRandomConfig}
 import io.iohk.scalanet.peergroup.InetMultiAddress
 import io.iohk.scalanet.kademlia.KRouter
