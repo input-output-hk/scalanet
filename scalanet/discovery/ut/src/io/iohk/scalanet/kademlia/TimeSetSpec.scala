@@ -5,8 +5,8 @@ import java.time.Clock
 import org.mockito.Mockito.when
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers._
-import org.scalatest.mockito.MockitoSugar._
-import org.scalatest.prop.GeneratorDrivenPropertyChecks._
+import org.scalatestplus.mockito.MockitoSugar._
+import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks._
 
 import scala.util.Random
 

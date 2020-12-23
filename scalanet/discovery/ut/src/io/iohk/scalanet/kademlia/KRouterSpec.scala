@@ -23,7 +23,7 @@ import org.scalatest.FreeSpec
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.Eventually
 import org.scalatest.concurrent.ScalaFutures._
-import org.scalatest.mockito.MockitoSugar._
+import org.scalatestplus.mockito.MockitoSugar._
 import scodec.bits._
 
 import scala.concurrent.TimeoutException

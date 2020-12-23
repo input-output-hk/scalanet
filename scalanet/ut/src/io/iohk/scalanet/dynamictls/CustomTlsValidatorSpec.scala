@@ -16,8 +16,7 @@ import io.iohk.scalanet.peergroup.dynamictls.{CustomTlsValidator, DynamicTLSExte
 import io.iohk.scalanet.testutils.GeneratorUtils
 import org.bouncycastle.asn1.DERGeneralString
 import org.joda.time.DateTime
-import org.scalatest.prop.GeneratorDrivenPropertyChecks.forAll
-import org.scalatest.prop.GeneratorDrivenPropertyChecks._
+import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks._
 import org.scalatest.{FlatSpec, Matchers}
 import scodec.bits.BitVector
 

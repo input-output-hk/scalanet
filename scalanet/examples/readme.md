@@ -1,8 +1,15 @@
 ### Scalanet examples
+Scalanet is now capable of building against Scala 2.12.10 and 2.13.4
+
+This guide will be using version 2.13.4 build: `mill csm[2.13.4]...`
+But it is legitimate for any other version available as well.
+
+In order to trigger all-version build - replace a version with a placeholder: `mill csm[_]...`
+
 In order to run examples in this folder you should run
 ```bash
-mill scalanet.examples.assembly
-java -cp out/scalanet/examples/assembly/dest/out.jar <main class> [args]
+mill csm[2.13.4].scalanet.examples.assembly
+java -cp out/csm/2.13.4/scalanet/examples/assembly/dest/out.jar <main class> [args]
 ```
 
 ### Kademlia Console
@@ -11,14 +18,14 @@ remove entries from the kademlia node.
 
 After assembling the examples out.jar, run the following command to get a list of available command line options:
 ```bash
-java -cp out/scalanet/examples/assembly/dest/out.jar io.iohk.scalanet.kconsole.App -h
+java -cp out/csm/2.13.4/scalanet/examples/assembly/dest/out.jar io.iohk.scalanet.kconsole.App -h
 ```
 
 Here is an example of starting a simple, two-node network
 
 ```bash
 # First console
-$ java -cp out/scalanet/examples/assembly/dest/out.jar io.iohk.scalanet.kconsole.App
+$ java -cp out/csm/2.13.4/scalanet/examples/assembly/dest/out.jar io.iohk.scalanet.kconsole.App
 
 # ... log output ...
 Initialized with node record {"id":"a98e6fa629b7b4ae679748ad65915f1bf1178ac0","messaging-address":"localhost:52570","routing-address":"localhost:52569"}
@@ -34,7 +41,7 @@ Initialized with node record {"id":"a98e6fa629b7b4ae679748ad65915f1bf1178ac0","m
 >
 
 # In a second console start another node, bootstrapping it from the the first...
-$ java -cp out/scalanet/examples/assembly/dest/out.jar io.iohk.scalanet.kconsole.App -b '{"id":"a98e6fa629b7b4ae679748ad65915f1bf1178ac0","messaging-address":"localhost:52570","routing-address":"localhost:52569"}'
+$ java -cp out/csm/2.13.4/scalanet/examples/assembly/dest/out.jar io.iohk.scalanet.kconsole.App -b '{"id":"a98e6fa629b7b4ae679748ad65915f1bf1178ac0","messaging-address":"localhost:52570","routing-address":"localhost:52569"}'
 
 Initialized with node record {"id":"442c01efed34c16002e5943932f2c765d45c3baa","messaging-address":"localhost:52561","routing-address":"localhost:52560"}
 

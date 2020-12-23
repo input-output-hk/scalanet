@@ -190,15 +190,11 @@ object DiscoveryNetwork {
       private def maybeRespond[Res](maybeResponse: Task[Option[Res]])(
           f: Res => Task[Unit]
       ): Task[Unit] =
-        maybeResponse.attempt.flatMap {
-          case Right(Some(response)) =>
-            f(response)
-          case Right(None) =>
-            Task.unit
-          case Left(NonFatal(ex)) =>
+        maybeResponse.onErrorRecoverWith {
+          case NonFatal(ex) =>
             // Not responding to this one, but it shouldn't stop handling further requests.
-            Task(logger.error(s"Error handling incoming request: $ex"))
-        }
+            Task(logger.error(s"Error handling incoming request: $ex")).as(None)
+        }.flatMap(_.fold(Task.unit)(f))
 
       /** Serialize the payload to binary and sign the packet. */
       private def pack(payload: Payload): Task[Packet] =
@@ -385,6 +381,10 @@ object DiscoveryNetwork {
                 // New response, fold it with the existing to decide if we need more.
                 val next = (acc: Z) => Some(acc -> (count + 1))
                 Task.pure(f(acc, response).bimap(next, next))
+
+              case (None, _) => 
+                // Invalid state - this cannot happen
+                Task.raiseError(new IllegalStateException(s"Unexpected state while collecting responses from ${channel.to}"))
             }
             .map(_.map(_._1))
 
@@ -404,7 +404,7 @@ object DiscoveryNetwork {
     )
     val expiration = System.currentTimeMillis
 
-    Stream
+    Iterator
       .iterate(List(sampleNode))(sampleNode :: _)
       .map { nodes =>
         val payload = Neighbors(nodes, expiration)

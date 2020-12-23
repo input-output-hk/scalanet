@@ -33,8 +33,8 @@ class DiscoveryKademliaIntegrationSpec extends KademliaIntegrationSpec("Discover
   // Not dealing with non-conforming clients here.
   implicit val packetCoded = Packet.packetCodec(allowDecodeOverMaxPacketSize = false)
 
-  override def generatePeerRecordWithKey() = {
-    val address = NetUtils.aRandomAddress
+  override def generatePeerRecordWithKey = {
+    val address = NetUtils.aRandomAddress()
     val (publicKey, privateKey) = sigalg.newKeyPair
     val node = Node(publicKey, Node.Address(address.getAddress, address.getPort, address.getPort))
     node -> privateKey

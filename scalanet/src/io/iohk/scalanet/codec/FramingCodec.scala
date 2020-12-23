@@ -15,11 +15,12 @@ class FramingCodec[T](val messageCodec: Codec[T], lengthFieldLength: Int = 32) e
   private val atomicBuffer = AtomicAny[BitVector](BitVector.empty)
 
   override def streamDecode(newBits: BitVector): Either[String, Seq[T]] = {
-    val result = atomicBuffer.transformAndExtract { state =>
+    val stateFn: BitVector => (Either[String, Seq[T]], BitVector) = state => {
       val newBuffer = state ++ newBits
       val (resultingBuffer, decodedMessages) = processBuffer(newBuffer, codec)
       (decodedMessages, resultingBuffer)
     }
+    val result = atomicBuffer.transformAndExtract(s => stateFn(s))
     result
   }
 

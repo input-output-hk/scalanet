@@ -30,7 +30,9 @@ import scodec.codecs.implicits._
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Random
+import scala.annotation.nowarn
 
+@nowarn
 class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
 
   val timeOutConfig = 5.seconds
@@ -143,6 +145,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
           resp1b shouldEqual randomString2
           resp1c shouldEqual randomString3
         }
+      case _ => fail()
     }
   }
 

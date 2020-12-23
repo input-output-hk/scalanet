@@ -4,7 +4,7 @@ import java.security.SecureRandom
 
 import io.iohk.scalanet.peergroup.dynamictls.Secp256k1
 import org.scalatest.{FlatSpec, Matchers}
-import org.scalatest.prop.GeneratorDrivenPropertyChecks._
+import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks._
 import io.iohk.scalanet.testutils.GeneratorUtils
 import org.scalacheck.Gen
 

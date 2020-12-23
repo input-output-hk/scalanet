@@ -1,6 +1,5 @@
 package io.iohk.scalanet.peergroup
 
-import cats.implicits._
 import io.iohk.scalanet.peergroup.implicits._
 import io.iohk.scalanet.peergroup.Channel.MessageReceived
 import io.iohk.scalanet.peergroup.PeerGroup.ChannelSetupException

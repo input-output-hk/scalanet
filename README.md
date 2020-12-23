@@ -74,15 +74,19 @@ Two main branches are maintained: `develop` and `master`.
 `develop` is the place you want to merge to if submitting PRs.
 
 ### Building the codebase
+Scalanet is capable of building against Scala 2.12.10 and 2.13.4
+This guide will be using version 2.13.4 build: `mill csm[2.13.4]...` next to a multi-build `mill __.`
 
 To build the codebase, we use [mill](http://www.lihaoyi.com/mill). Assuming you have mill installed correctly, you can build and test the codebase with
 ```bash
+mill csm[2.13.4].__.test   -or-
 mill __.test
 ```
 
 A single test suite can be executed with the `single` helper command, for example:
 ```bash
-mill scalanet.ut.single io.iohk.scalanet.crypto.SignatureVerificationSpec
+mill csm[2.13.4].scalanet.ut.single io.iohk.scalanet.crypto.SignatureVerificationSpec   -or-
+mill __.scalanet.ut.single io.iohk.scalanet.crypto.SignatureVerificationSpec
 ```
 
 ### Publishing

@@ -33,7 +33,7 @@ class KBuckets[T <: BitVector] private (
     // then all of its elements are closer to nodeId that any element
     // from buckets further in the stream
     // virtual one-element bucket with baseId is added
-    def orderedBucketsStream: Stream[Seq[T]] = {
+    def orderedBucketsIterator: Iterator[Seq[T]] = {
       // That part is simple in implementation but complex conceptually. It bases on observation that buckets can
       // be ordered by closeness to nodeId, i.e. for buckets A and B either all elements its elements are closer
       // to nodeId than any element of B or all elements from A are farther from nodeId than any element from B.
@@ -73,27 +73,27 @@ class KBuckets[T <: BitVector] private (
       //    starting our iteration
 
       // buckets with elements closer to nodeId that baseId, sorted appropriately
-      def closerBuckets: Stream[Seq[T]] =
-        Stream
-          .range(buckets.size - 1, -1, -1)
+      def closerBuckets: Iterator[Seq[T]] =
+        Range(buckets.size - 1, -1, -1)
+          .iterator
           .filter(i => nodeId(buckets.size - i - 1) != baseId(buckets.size - i - 1))
           .map(i => buckets(i).toSeq)
 
       // buckets with elements farther from nodeId than baseId, sorted appropriately
-      def furtherBuckets: Stream[Seq[T]] =
-        Stream
-          .range(0, buckets.size, 1)
+      def furtherBuckets: Iterator[Seq[T]] =
+        Range(0, buckets.size, 1)
+          .iterator
           .filter(i => nodeId(buckets.size - i - 1) == baseId(buckets.size - i - 1))
           .map(i => buckets(i).toSeq)
 
-      closerBuckets ++ (Seq(baseId) #:: furtherBuckets)
+      closerBuckets ++ Iterator.single(Seq(baseId)) ++ furtherBuckets
     }
 
     if (n == 1) {
       // special case to avoid sorting the bucket
-      orderedBucketsStream.find(_.nonEmpty).map(_.min(ordering)).toList
+      orderedBucketsIterator.find(_.nonEmpty).map(_.min(ordering)).toList
     } else {
-      orderedBucketsStream.flatMap(_.sorted(ordering)).take(n).toList
+      orderedBucketsIterator.flatMap(_.sorted(ordering)).take(n).toList
     }
   }
 
