@@ -120,6 +120,8 @@ class ScalanetModule(crossVersion: String) extends Module {
   //object scalanet extends ScalaModule with PublishModule with ScoverageModule {
   object scalanet extends ScalanetModule with ScalanetPublishModule {
 
+    override def artifactName = "scalanet"
+
     override val description =
       "Asynchronous, strongly typed, resource-managed networking library, written in Scala with support for a variety of network technologies"
 
@@ -147,6 +149,8 @@ class ScalanetModule(crossVersion: String) extends Module {
     object ut extends TestModule
 
     object discovery extends ScalanetModule with ScalanetPublishModule {
+
+      override def artifactName = "scalanet-discovery"
 
       override val description =
         "Implementation of peer-to-peer discovery algorithms such as that of Ethereum."
