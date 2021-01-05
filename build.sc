@@ -101,7 +101,7 @@ class ScalanetModule(crossVersion: String) extends Module {
   trait ScalanetPublishModule extends PublishModule {
     def description: String
 
-    override def publishVersion = "0.5.1-SNAPSHOT"
+    override def publishVersion = "0.5.2-SNAPSHOT"
 
     override def pomSettings = PomSettings(
       description = description,
