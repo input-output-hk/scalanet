@@ -13,13 +13,11 @@ object NetUtils {
 
   val keyStore: KeyStore = loadKeyStore("keystore.p12", "password")
   val trustStore: KeyStore = loadKeyStore("truststore.p12", "password")
-  @nowarn 
+  @nowarn
   val trustedCerts: Array[Certificate] = {
     import scala.collection.JavaConverters._
     trustStore.aliases().asScala.toArray.map(trustStore.getCertificate(_))
   }
-
-  
 
   def loadKeyStore(keystoreLocation: String, keystorePassword: String): KeyStore = {
     val keystore = KeyStore.getInstance("PKCS12")

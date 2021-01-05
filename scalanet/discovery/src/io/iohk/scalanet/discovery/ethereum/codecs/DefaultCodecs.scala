@@ -13,7 +13,6 @@ import scala.collection.SortedMap
 import scala.math.Ordering.Implicits._
 import java.net.InetAddress
 
-
 object DefaultCodecs {
 
   implicit val publicKeyCodec: Codec[PublicKey] =

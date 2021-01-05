@@ -28,7 +28,7 @@ class TimeSet[T] private (val clock: Clock, val timestamps: HashMap[T, Long], va
   override def iterator: Iterator[T] =
     underlying.iterator
 
-  def diff(that: Set[T]): Set[T] = 
+  def diff(that: Set[T]): Set[T] =
     underlying &~ that
 
   def touch(elem: T): TimeSet[T] =

@@ -3,28 +3,30 @@ package io.iohk.scalanet.peergroup.dynamictls
 import java.io.IOException
 import java.net.{ConnectException, InetSocketAddress}
 import java.nio.channels.ClosedChannelException
-
 import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived, UnexpectedError}
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
+import io.iohk.scalanet.peergroup.PeerGroup.PeerGroupWithProxySupport.Socks5Config
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, HandshakeException, ServerEvent}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.PeerInfo
-import io.iohk.scalanet.peergroup.{Channel, InetMultiAddress, PeerGroup, CloseableQueue}
+import io.iohk.scalanet.peergroup.{Channel, CloseableQueue, InetMultiAddress, PeerGroup}
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.{ByteBuf, Unpooled}
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter, ChannelInitializer, EventLoop}
 import io.netty.handler.ssl.{SslContext, SslHandshakeCompletionEvent}
+
 import javax.net.ssl.{SSLException, SSLHandshakeException, SSLKeyException}
 import monix.eval.Task
-import monix.execution.{Scheduler, ChannelType}
+import monix.execution.{ChannelType, Scheduler}
 import scodec.bits.BitVector
 
 import scala.concurrent.Promise
 import scala.util.control.NonFatal
 import io.netty.channel.EventLoop
+import io.netty.handler.proxy.Socks5ProxyHandler
 
 private[dynamictls] object DynamicTLSPeerGroupInternals {
   implicit class ChannelOps(val channel: io.netty.channel.Channel) {
@@ -95,7 +97,8 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       peerInfo: PeerInfo,
       clientBootstrap: Bootstrap,
       sslClientCtx: SslContext,
-      codec: StreamCodec[M]
+      codec: StreamCodec[M],
+      socks5Config: Option[Socks5Config]
   )(implicit scheduler: Scheduler)
       extends Channel[PeerInfo, M]
       with StrictLogging {
@@ -114,6 +117,16 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
           logger.debug("Initiating connection to peer {}", peerInfo)
           val pipeline = ch.pipeline()
           val sslHandler = sslClientCtx.newHandler(ch.alloc())
+
+          socks5Config.foreach { config =>
+            val sock5Proxy = if (config.authConfig.isDefined) {
+              val authConfig = config.authConfig.get
+              new Socks5ProxyHandler(config.proxyAddress, authConfig.user, authConfig.password)
+            } else {
+              new Socks5ProxyHandler(config.proxyAddress)
+            }
+            pipeline.addLast(sock5Proxy)
+          }
 
           pipeline
             .addLast("ssl", sslHandler) //This needs to be first

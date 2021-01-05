@@ -1,5 +1,7 @@
 package io.iohk.scalanet.peergroup
 
+import cats.effect.Resource
+
 import java.net.InetSocketAddress
 import java.security.SecureRandom
 import cats.implicits._
@@ -11,6 +13,7 @@ import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
 import io.iohk.scalanet.peergroup.implicits._
 import io.iohk.scalanet.peergroup.Channel.{DecodingError, MessageReceived}
 import io.iohk.scalanet.peergroup.DynamicTLSPeerGroupSpec._
+import io.iohk.scalanet.peergroup.PeerGroup.PeerGroupWithProxySupport.Socks5Config
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, HandshakeException}
 import io.iohk.scalanet.peergroup.ReqResponseProtocol.DynamicTLS
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.SignedKey
@@ -19,6 +22,7 @@ import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{Config, PeerIn
 import io.iohk.scalanet.testutils.GeneratorUtils
 import monix.eval.Task
 import monix.execution.Scheduler
+import monix.reactive.Observable
 import org.scalatest.Matchers._
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
@@ -26,6 +30,7 @@ import org.scalatest.{Assertion, AsyncFlatSpec, BeforeAndAfterAll}
 import scodec.Codec
 import scodec.bits.BitVector
 import scodec.codecs.implicits._
+import sockslib.server.{SocksProxyServer, SocksProxyServerFactory}
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -55,6 +60,33 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
             case (ch, release) => ch.channelEventObservable.guarantee(release)
           }.headL
         } yield {
+          rec shouldEqual MessageReceived("Hello enc server")
+        }
+    }
+  }
+
+  it should "handshake successfully via proxy" in taskTestCase {
+    (for {
+      client <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      proxy <- buildProxyServer(1080)
+      server <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      ch1 <- client.client(server.processAddress, Socks5Config(new InetSocketAddress("localhost", 1080), None))
+    } yield (server, ch1, proxy)).use {
+      case (server, ch1, proxy) =>
+        for {
+          _ <- ch1.sendMessage("Hello enc server")
+          wo <- server.serverEventObservable.collectChannelCreated.mergeMap {
+            case (ch, release) =>
+              Observable(ch).zip(ch.channelEventObservable.guarantee(release))
+
+          }.headL
+          sessions <- Task(proxy.getSessionManager.getManagedSessions)
+          (chan, rec) = wo
+        } yield {
+          assert(sessions.size() == 1)
+          val session = sessions.get(1.toLong)
+          assert(session.getNetworkMonitor.getReceiveTCP > 0)
+          assert(session.getNetworkMonitor.getSendTCP > 0)
           rec shouldEqual MessageReceived("Hello enc server")
         }
     }
@@ -277,4 +309,15 @@ object DynamicTLSPeerGroupSpec {
     )
   }
 
+  def buildProxyServer(port: Int): Resource[Task, SocksProxyServer] = {
+    Resource.make {
+      Task {
+        val proxyServer = SocksProxyServerFactory.newNoAuthenticationServer(port)
+        proxyServer.start()
+        proxyServer
+      }
+    } { server =>
+      Task(server.shutdown())
+    }
+  }
 }

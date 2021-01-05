@@ -2,10 +2,13 @@ package io.iohk.scalanet.peergroup
 
 import cats.effect.Resource
 import io.iohk.scalanet.peergroup.Channel.ChannelEvent
+import io.iohk.scalanet.peergroup.PeerGroup.PeerGroupWithProxySupport.Socks5Config
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
 import monix.eval.Task
 import monix.reactive.Observable
 import scodec.Codec
+
+import java.net.InetSocketAddress
 
 /**
   * A Channel represents a route between two peers on the network for the purposes
@@ -106,6 +109,30 @@ trait PeerGroup[A, M] {
 object PeerGroup {
 
   abstract class TerminalPeerGroup[A, M](implicit codec: Codec[M]) extends PeerGroup[A, M]
+
+  abstract class PeerGroupWithProxySupport[A, M](implicit codec: Codec[M]) extends PeerGroup[A, M] {
+
+    /**
+      * This method builds a communication channel for the current peer to communicate messages with the
+      * desired address, going through proxy specified in proxy config
+      *
+      * @param to the address of the entity that would receive our messages. Note that this address can
+      *           be the address to refer to a single peer as well as a multicast address (to refer to a
+      *           set of peers).
+      * @param proxyConfig address and optional auth options to socks5 proxy
+      * @return the channel to interact with the desired peer(s).
+      */
+    def client(to: A, proxyConfig: Socks5Config): Resource[Task, Channel[A, M]]
+  }
+
+  object PeerGroupWithProxySupport {
+    final case class Sock5AuthenticationConfig(user: String, password: String)
+
+    final case class Socks5Config(
+        proxyAddress: InetSocketAddress,
+        authConfig: Option[Sock5AuthenticationConfig]
+    )
+  }
 
   sealed trait ServerEvent[A, M]
 

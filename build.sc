@@ -12,8 +12,8 @@ class ScalanetModule(crossVersion: String) extends Module {
 
   // A cross build is now a `root` of the module:
   // > mill show csm[2.13.4].scalanet.sources
-  // [1/1] show 
-  // [1/1] show > [1/1] csm[2.13.4].scalanet.sources 
+  // [1/1] show
+  // [1/1] show > [1/1] csm[2.13.4].scalanet.sources
   // [
   //     "ref:c984eca8: ../csm/2.13.4/scalanet/src"
   // ]
@@ -24,7 +24,6 @@ class ScalanetModule(crossVersion: String) extends Module {
   //            // some output omitted //
   //     "ref:c984eca8: ../scalanet/src"
   override def millSourcePath = super.millSourcePath / os.up / os.up
-
 
   // scala 2.12 - only options
   // it causes errors when built against 2.13 (and vice-versa):
@@ -37,11 +36,10 @@ class ScalanetModule(crossVersion: String) extends Module {
     "-Ywarn-value-discard"
   )
 
-
   // scala 2.13 might have another set of options
   private val `scala 2.13 options`: Seq[String] = Nil
 
-  trait ScalanetModule extends ScalaModule { 
+  trait ScalanetModule extends ScalaModule {
     override def scalaVersion = crossVersion
 
     override def repositories =
@@ -63,7 +61,7 @@ class ScalanetModule(crossVersion: String) extends Module {
       "utf-8"
     )
 
-    private val versionOptions = crossVersion.take(4) match { 
+    private val versionOptions = crossVersion.take(4) match {
       case "2.12" => `scala 2.12 options`
       case "2.13" => `scala 2.13 options`
     }
@@ -84,7 +82,8 @@ class ScalanetModule(crossVersion: String) extends Module {
         ivy"org.scalacheck::scalacheck:1.14.0",
         ivy"ch.qos.logback:logback-core:1.2.3",
         ivy"ch.qos.logback:logback-classic:1.2.3",
-        ivy"org.mockito:mockito-core:2.21.0"
+        ivy"org.mockito:mockito-core:2.21.0",
+        ivy"com.github.mike10004:fengyouchao-sockslib:1.0.6"
       )
 
       override def moduleDeps: Seq[JavaModule] =
@@ -95,7 +94,6 @@ class ScalanetModule(crossVersion: String) extends Module {
       }
     }
   }
-
 
   // In objects inheriting this trait, use `override def moduleDeps: Seq[PublishModule]`
   // to point at other modules that also get published. In other cases such as tests

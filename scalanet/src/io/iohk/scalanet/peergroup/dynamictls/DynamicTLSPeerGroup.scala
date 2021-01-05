@@ -10,13 +10,14 @@ import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
-import io.iohk.scalanet.peergroup.PeerGroup.{ServerEvent, TerminalPeerGroup}
+import io.iohk.scalanet.peergroup.PeerGroup.{PeerGroupWithProxySupport, ServerEvent}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.SignedKeyExtensionNodeData
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{Config, PeerInfo}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroupInternals.{ClientChannelImpl, ServerChannelBuilder}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroupUtils.{SSLContextForClient, SSLContextForServer}
 import io.iohk.scalanet.peergroup.{Addressable, Channel, InetMultiAddress}
 import io.iohk.scalanet.peergroup.CloseableQueue
+import io.iohk.scalanet.peergroup.PeerGroup.PeerGroupWithProxySupport.Socks5Config
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
@@ -25,7 +26,7 @@ import io.netty.channel.socket.nio.{NioServerSocketChannel, NioSocketChannel}
 import io.netty.handler.logging.{LogLevel, LoggingHandler}
 import io.netty.handler.ssl.SslContext
 import monix.eval.Task
-import monix.execution.{Scheduler, ChannelType}
+import monix.execution.{ChannelType, Scheduler}
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair
 import scodec.bits.BitVector
 
@@ -45,7 +46,7 @@ import scala.util.control.NonFatal
 class DynamicTLSPeerGroup[M] private (val config: Config)(
     implicit codec: StreamCodec[M],
     scheduler: Scheduler
-) extends TerminalPeerGroup[PeerInfo, M]
+) extends PeerGroupWithProxySupport[PeerInfo, M]
     with StrictLogging {
 
   private val sslServerCtx: SslContext = DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForServer, config)
@@ -86,7 +87,7 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
 
   override def processAddress: PeerInfo = config.peerInfo
 
-  override def client(to: PeerInfo): Resource[Task, Channel[PeerInfo, M]] = {
+  private def createChannel(to: PeerInfo, proxyConfig: Option[Socks5Config]): Resource[Task, Channel[PeerInfo, M]] = {
     // Creating new ssl context for each client is necessary, as this is only reliable way to pass peerInfo to TrustManager
     // which takes care of validating certificates and server node id.
     // Using Netty SSLEngine.getSession.putValue does not work as expected as until successfulhandshake there is no separate
@@ -97,10 +98,19 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
           to,
           clientBootstrap,
           DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForClient(to), config),
-          codec.cleanSlate
+          codec.cleanSlate,
+          proxyConfig
         ).initialize
       }
     )(_.close())
+  }
+
+  override def client(to: PeerInfo): Resource[Task, Channel[PeerInfo, M]] = {
+    createChannel(to, None)
+  }
+
+  override def client(to: PeerInfo, proxyConfig: Socks5Config): Resource[Task, Channel[PeerInfo, M]] = {
+    createChannel(to, Some(proxyConfig))
   }
 
   override def nextServerEvent =
