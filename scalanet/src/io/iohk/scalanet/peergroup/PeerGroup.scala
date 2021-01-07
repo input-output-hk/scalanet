@@ -126,11 +126,11 @@ object PeerGroup {
   }
 
   object ProxySupport {
-    final case class Sock5AuthenticationConfig(user: String, password: String)
+    final case class Socks5AuthenticationConfig(user: String, password: String)
 
     final case class Socks5Config(
         proxyAddress: InetSocketAddress,
-        authConfig: Option[Sock5AuthenticationConfig]
+        authConfig: Option[Socks5AuthenticationConfig]
     )
 
     def apply[A, M](config: Socks5Config)(underlying: PeerGroup[A, M] with ProxySupport[A, M]): PeerGroup[A, M] =
