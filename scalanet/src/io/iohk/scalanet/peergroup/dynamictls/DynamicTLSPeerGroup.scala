@@ -10,14 +10,14 @@ import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
-import io.iohk.scalanet.peergroup.PeerGroup.{PeerGroupWithProxySupport, ServerEvent}
+import io.iohk.scalanet.peergroup.PeerGroup.{ProxySupport, ServerEvent, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.SignedKeyExtensionNodeData
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{Config, PeerInfo}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroupInternals.{ClientChannelImpl, ServerChannelBuilder}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroupUtils.{SSLContextForClient, SSLContextForServer}
 import io.iohk.scalanet.peergroup.{Addressable, Channel, InetMultiAddress}
 import io.iohk.scalanet.peergroup.CloseableQueue
-import io.iohk.scalanet.peergroup.PeerGroup.PeerGroupWithProxySupport.Socks5Config
+import io.iohk.scalanet.peergroup.PeerGroup.ProxySupport.Socks5Config
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
@@ -46,7 +46,8 @@ import scala.util.control.NonFatal
 class DynamicTLSPeerGroup[M] private (val config: Config)(
     implicit codec: StreamCodec[M],
     scheduler: Scheduler
-) extends PeerGroupWithProxySupport[PeerInfo, M]
+) extends TerminalPeerGroup[PeerInfo, M]
+    with ProxySupport[PeerInfo, M]
     with StrictLogging {
 
   private val sslServerCtx: SslContext = DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForServer, config)

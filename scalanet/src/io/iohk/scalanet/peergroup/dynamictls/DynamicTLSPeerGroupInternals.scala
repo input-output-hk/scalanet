@@ -7,7 +7,7 @@ import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived, UnexpectedError}
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
-import io.iohk.scalanet.peergroup.PeerGroup.PeerGroupWithProxySupport.Socks5Config
+import io.iohk.scalanet.peergroup.PeerGroup.ProxySupport.Socks5Config
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, HandshakeException, ServerEvent}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.PeerInfo

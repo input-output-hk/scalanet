@@ -2,7 +2,7 @@ package io.iohk.scalanet.peergroup
 
 import cats.effect.Resource
 import io.iohk.scalanet.peergroup.Channel.ChannelEvent
-import io.iohk.scalanet.peergroup.PeerGroup.PeerGroupWithProxySupport.Socks5Config
+import io.iohk.scalanet.peergroup.PeerGroup.ProxySupport.Socks5Config
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent
 import monix.eval.Task
 import monix.reactive.Observable
@@ -110,7 +110,7 @@ object PeerGroup {
 
   abstract class TerminalPeerGroup[A, M](implicit codec: Codec[M]) extends PeerGroup[A, M]
 
-  abstract class PeerGroupWithProxySupport[A, M](implicit codec: Codec[M]) extends PeerGroup[A, M] {
+  trait ProxySupport[A, M] {
 
     /**
       * This method builds a communication channel for the current peer to communicate messages with the
@@ -125,13 +125,20 @@ object PeerGroup {
     def client(to: A, proxyConfig: Socks5Config): Resource[Task, Channel[A, M]]
   }
 
-  object PeerGroupWithProxySupport {
+  object ProxySupport {
     final case class Sock5AuthenticationConfig(user: String, password: String)
 
     final case class Socks5Config(
         proxyAddress: InetSocketAddress,
         authConfig: Option[Sock5AuthenticationConfig]
     )
+
+    def apply[A, M](config: Socks5Config)(underlying: PeerGroup[A, M] with ProxySupport[A, M]): PeerGroup[A, M] =
+      new PeerGroup[A, M] {
+        override def processAddress: A = underlying.processAddress
+        override def client(to: A): Resource[Task, Channel[A, M]] = underlying.client(to, config)
+        override def nextServerEvent: Task[Option[ServerEvent[A, M]]] = underlying.nextServerEvent
+      }
   }
 
   sealed trait ServerEvent[A, M]

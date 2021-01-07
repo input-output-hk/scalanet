@@ -13,8 +13,13 @@ import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
 import io.iohk.scalanet.peergroup.implicits._
 import io.iohk.scalanet.peergroup.Channel.{DecodingError, MessageReceived}
 import io.iohk.scalanet.peergroup.DynamicTLSPeerGroupSpec._
-import io.iohk.scalanet.peergroup.PeerGroup.PeerGroupWithProxySupport.Socks5Config
-import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, ChannelSetupException, HandshakeException}
+import io.iohk.scalanet.peergroup.PeerGroup.ProxySupport.Socks5Config
+import io.iohk.scalanet.peergroup.PeerGroup.{
+  ChannelBrokenException,
+  ChannelSetupException,
+  HandshakeException,
+  ProxySupport
+}
 import io.iohk.scalanet.peergroup.ReqResponseProtocol.DynamicTLS
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.SignedKey
 import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSExtension, DynamicTLSPeerGroup, Secp256k1}
@@ -67,10 +72,12 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
 
   it should "handshake successfully via proxy" in taskTestCase {
     (for {
-      client <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      client <- DynamicTLSPeerGroup[String](getCorrectConfig()).map(
+        group => ProxySupport(Socks5Config(new InetSocketAddress("localhost", 1080), None))(group)
+      )
       proxy <- buildProxyServer(1080)
       server <- DynamicTLSPeerGroup[String](getCorrectConfig())
-      ch1 <- client.client(server.processAddress, Socks5Config(new InetSocketAddress("localhost", 1080), None))
+      ch1 <- client.client(server.processAddress)
     } yield (server, ch1, proxy)).use {
       case (server, ch1, proxy) =>
         for {
