@@ -119,11 +119,8 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
           val sslHandler = sslClientCtx.newHandler(ch.alloc())
 
           socks5Config.foreach { config =>
-            val sock5Proxy = if (config.authConfig.isDefined) {
-              val authConfig = config.authConfig.get
+            val sock5Proxy = config.authConfig.fold(new Socks5ProxyHandler(config.proxyAddress)) { authConfig =>
               new Socks5ProxyHandler(config.proxyAddress, authConfig.user, authConfig.password)
-            } else {
-              new Socks5ProxyHandler(config.proxyAddress)
             }
             pipeline.addLast(sock5Proxy)
           }
