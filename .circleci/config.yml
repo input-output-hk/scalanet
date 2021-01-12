@@ -45,20 +45,9 @@ jobs:
                 name: install base64
                 command: apt update && apt install -y cl-base64
 
-            - when:
-                condition:
-                  equal: [ develop, << pipeline.git.branch >> ]
-                steps:
-                  - run:
-                      name: publish into Sonatype
-                      command: .circleci/publish
-            - when:
-                condition:
-                  equal: [ master, << pipeline.git.branch >> ]
-                steps:
-                  - run:
-                      name: publish release
-                      command: .circleci/publishRelease
+            - run:
+                name: publish
+                command: .circleci/publish
 
       # scoverage disabled
       #- store_artifacts:

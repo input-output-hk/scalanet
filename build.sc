@@ -111,14 +111,14 @@ class ScalanetModule(crossVersion: String) extends Module {
       versionControl = VersionControl.github("input-output-hk", "scalanet"),
       developers = Seq(
         Developer("aakoshh", "Akosh Farkash", "https://github.com/aakoshh"),
-        Developer("shaileshp0110", "Shailesh Patil", "https://github.com/shaileshp0110"),
-        Developer("jtownson", "Jeremy Townson", "https://github.com/jtownson"),
-        Developer("KonradStaniec", "Konrad Staniec", "https://github.com/KonradStaniec"),
-        Developer("marcesquerra", "Marc Esquerra", "https://github.com/marcesquerra"),
-        Developer("EzequielPostan", "Ezequiel Postan", "https://github.com/EzequielPostan"),
         Developer("AlexITC", "Alexis Hernandez", "https://github.com/AlexITC"),
         Developer("dmitry-worker", "Dmitry Voronov", "https://github.com/dmitry-worker"),
-        Developer("krcz", "Marcin Kurczych", "https://github.com/krcz")
+        Developer("EzequielPostan", "Ezequiel Postan", "https://github.com/EzequielPostan"),
+        Developer("jtownson", "Jeremy Townson", "https://github.com/jtownson"),
+        Developer("KonradStaniec", "Konrad Staniec", "https://github.com/KonradStaniec"),
+        Developer("krcz", "Marcin Kurczych", "https://github.com/krcz"),
+        Developer("marcesquerra", "Marc Esquerra", "https://github.com/marcesquerra"),
+        Developer("shaileshp0110", "Shailesh Patil", "https://github.com/shaileshp0110")
       )
     )
   }
