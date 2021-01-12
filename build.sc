@@ -102,7 +102,7 @@ class ScalanetModule(crossVersion: String) extends Module {
     def description: String
 
     override def publishVersion = "0.6.0-SNAPSHOT"
-    
+
     override def pomSettings = PomSettings(
       description = description,
       organization = "io.iohk",
