@@ -102,14 +102,24 @@ class ScalanetModule(crossVersion: String) extends Module {
     def description: String
 
     override def publishVersion = "0.6.0-SNAPSHOT"
-
+    
     override def pomSettings = PomSettings(
       description = description,
       organization = "io.iohk",
       url = "https://github.com/input-output-hk/scalanet",
       licenses = Seq(License.`Apache-2.0`),
       versionControl = VersionControl.github("input-output-hk", "scalanet"),
-      developers = Seq()
+      developers = Seq(
+        Developer("aakoshh", "Akosh Farkash", "https://github.com/aakoshh"),
+        Developer("shaileshp0110", "Shailesh Patil", "https://github.com/shaileshp0110"),
+        Developer("jtownson", "Jeremy Townson", "https://github.com/jtownson"),
+        Developer("KonradStaniec", "Konrad Staniec", "https://github.com/KonradStaniec"),
+        Developer("marcesquerra", "Marc Esquerra", "https://github.com/marcesquerra"),
+        Developer("EzequielPostan", "Ezequiel Postan", "https://github.com/EzequielPostan"),
+        Developer("AlexITC", "Alexis Hernandez", "https://github.com/AlexITC"),
+        Developer("dmitry-worker", "Dmitry Voronov", "https://github.com/dmitry-worker"),
+        Developer("krcz", "Marcin Kurczych", "https://github.com/krcz")
+      )
     )
   }
 
