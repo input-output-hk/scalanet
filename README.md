@@ -101,7 +101,7 @@ resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repos
 
 To publish new release to maven central:
 1. Create release branch `realease/versionFromVersionFile`
-2. Create PR from release branch to `master` branch
+2. Create a PR from release branch to `master` branch
 3. Merge release PR to `master`, tag merge commit and push it
 4. Create merge back PR from `master` to `develop` bumping appropriate version in `versionFile/version`, 
    e.g. `mill versionFile.setNextVersion --bump minor`, to make sure no more updates are sent to the released snapshot
