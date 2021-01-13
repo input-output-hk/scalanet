@@ -4,13 +4,8 @@ jobs:
     docker:
       - image: openjdk:8
     working_directory: ~/repo
-    parameters:
-      publish:
-        type: boolean
-        default: false
     steps:
       - checkout
-
       - run:
           name: install coursier
           command: curl -L -o coursier https://git.io/vgvpD && chmod +x coursier
@@ -34,7 +29,10 @@ jobs:
           command: test -f scalafmt && ./scalafmt --test || echo "scalafmt not installed"
 
       - when:
-          condition: << parameters.publish >>
+          condition:
+            or:
+              - equal: [ master, << pipeline.git.branch >> ]
+              - equal: [ develop, << pipeline.git.branch >> ]
           steps:
             - run:
                 name: install gpg2
@@ -48,7 +46,7 @@ jobs:
                 command: apt update && apt install -y cl-base64
 
             - run:
-                name: publish into Sonatype
+                name: publish
                 command: .circleci/publish
 
       # scoverage disabled
@@ -58,15 +56,4 @@ jobs:
 workflows:
   build_and_publish:
     jobs:
-      - build:
-          publish: true
-          filters:
-            branches:
-              only:
-                - develop
-      - build:
-          publish: false
-          filters:
-            branches:
-              ignore:
-                - develop
+      - build

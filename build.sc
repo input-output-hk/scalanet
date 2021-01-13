@@ -5,7 +5,10 @@ import ammonite.ops._
 import coursier.maven.MavenRepository
 import mill.scalalib.{PublishModule, ScalaModule}
 import mill.scalalib.publish.{Developer, License, PomSettings, VersionControl}
+import $ivy.`com.lihaoyi::mill-contrib-versionfile:$MILL_VERSION`
+import mill.contrib.versionfile.VersionFileModule
 
+object versionFile extends VersionFileModule
 object csm extends Cross[ScalanetModule]("2.12.10", "2.13.4")
 
 class ScalanetModule(crossVersion: String) extends Module {
@@ -101,7 +104,7 @@ class ScalanetModule(crossVersion: String) extends Module {
   trait ScalanetPublishModule extends PublishModule {
     def description: String
 
-    override def publishVersion = "0.6.0-SNAPSHOT"
+    override def publishVersion = versionFile.currentVersion().toString
 
     override def pomSettings = PomSettings(
       description = description,
@@ -109,7 +112,17 @@ class ScalanetModule(crossVersion: String) extends Module {
       url = "https://github.com/input-output-hk/scalanet",
       licenses = Seq(License.`Apache-2.0`),
       versionControl = VersionControl.github("input-output-hk", "scalanet"),
-      developers = Seq()
+      developers = Seq(
+        Developer("aakoshh", "Akosh Farkash", "https://github.com/aakoshh"),
+        Developer("AlexITC", "Alexis Hernandez", "https://github.com/AlexITC"),
+        Developer("dmitry-worker", "Dmitry Voronov", "https://github.com/dmitry-worker"),
+        Developer("EzequielPostan", "Ezequiel Postan", "https://github.com/EzequielPostan"),
+        Developer("jtownson", "Jeremy Townson", "https://github.com/jtownson"),
+        Developer("KonradStaniec", "Konrad Staniec", "https://github.com/KonradStaniec"),
+        Developer("krcz", "Marcin Kurczych", "https://github.com/krcz"),
+        Developer("marcesquerra", "Marc Esquerra", "https://github.com/marcesquerra"),
+        Developer("shaileshp0110", "Shailesh Patil", "https://github.com/shaileshp0110")
+      )
     )
   }
 
