@@ -99,6 +99,13 @@ To use it in a downstream project add the snapshots to the resolvers, e.g. in `b
 resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
 ```
 
+To publish new release to maven central:
+1. Create release branch `realease/versionFromVersionFile`
+2. Crete pr from release branch to `master` branch
+3. Merge release pr to `master`, tag merge commit and push it
+4. Create merge back pr from `master` to `develop` bumping appropriate version in `versionFile/version`
+
+
 ### Formatting the codebase
 In order to keep the code format consistent, we use scalafmt.
 

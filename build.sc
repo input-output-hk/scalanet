@@ -5,7 +5,10 @@ import ammonite.ops._
 import coursier.maven.MavenRepository
 import mill.scalalib.{PublishModule, ScalaModule}
 import mill.scalalib.publish.{Developer, License, PomSettings, VersionControl}
+import $ivy.`com.lihaoyi::mill-contrib-versionfile:$MILL_VERSION`
+import mill.contrib.versionfile.VersionFileModule
 
+object versionFile extends VersionFileModule
 object csm extends Cross[ScalanetModule]("2.12.10", "2.13.4")
 
 class ScalanetModule(crossVersion: String) extends Module {
@@ -101,7 +104,7 @@ class ScalanetModule(crossVersion: String) extends Module {
   trait ScalanetPublishModule extends PublishModule {
     def description: String
 
-    override def publishVersion = "0.6.0-SNAPSHOT"
+    override def publishVersion = versionFile.currentVersion().toString
 
     override def pomSettings = PomSettings(
       description = description,
