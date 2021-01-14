@@ -20,6 +20,8 @@ mill mill.scalalib.PublishModule/publishAll \
     __.publishArtifacts \
     "$OSS_USERNAME":"$OSS_PASSWORD" \
     --gpgArgs --passphrase="$GPG_PASSPHRASE",--batch,--yes,-a,-b \
+    --readTimeout 600000 \
+    --awaitTimeout 600000 \
     --release true
 
 else
