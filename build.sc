@@ -5,15 +5,18 @@ import ammonite.ops._
 import coursier.maven.MavenRepository
 import mill.scalalib.{PublishModule, ScalaModule}
 import mill.scalalib.publish.{Developer, License, PomSettings, VersionControl}
+import $ivy.`com.lihaoyi::mill-contrib-versionfile:$MILL_VERSION`
+import mill.contrib.versionfile.VersionFileModule
 
+object versionFile extends VersionFileModule
 object csm extends Cross[ScalanetModule]("2.12.10", "2.13.4")
 
 class ScalanetModule(crossVersion: String) extends Module {
 
   // A cross build is now a `root` of the module:
   // > mill show csm[2.13.4].scalanet.sources
-  // [1/1] show 
-  // [1/1] show > [1/1] csm[2.13.4].scalanet.sources 
+  // [1/1] show
+  // [1/1] show > [1/1] csm[2.13.4].scalanet.sources
   // [
   //     "ref:c984eca8: ../csm/2.13.4/scalanet/src"
   // ]
@@ -24,7 +27,6 @@ class ScalanetModule(crossVersion: String) extends Module {
   //            // some output omitted //
   //     "ref:c984eca8: ../scalanet/src"
   override def millSourcePath = super.millSourcePath / os.up / os.up
-
 
   // scala 2.12 - only options
   // it causes errors when built against 2.13 (and vice-versa):
@@ -37,11 +39,10 @@ class ScalanetModule(crossVersion: String) extends Module {
     "-Ywarn-value-discard"
   )
 
-
   // scala 2.13 might have another set of options
   private val `scala 2.13 options`: Seq[String] = Nil
 
-  trait ScalanetModule extends ScalaModule { 
+  trait ScalanetModule extends ScalaModule {
     override def scalaVersion = crossVersion
 
     override def repositories =
@@ -63,7 +64,7 @@ class ScalanetModule(crossVersion: String) extends Module {
       "utf-8"
     )
 
-    private val versionOptions = crossVersion.take(4) match { 
+    private val versionOptions = crossVersion.take(4) match {
       case "2.12" => `scala 2.12 options`
       case "2.13" => `scala 2.13 options`
     }
@@ -84,7 +85,8 @@ class ScalanetModule(crossVersion: String) extends Module {
         ivy"org.scalacheck::scalacheck:1.14.0",
         ivy"ch.qos.logback:logback-core:1.2.3",
         ivy"ch.qos.logback:logback-classic:1.2.3",
-        ivy"org.mockito:mockito-core:2.21.0"
+        ivy"org.mockito:mockito-core:2.21.0",
+        ivy"com.github.mike10004:fengyouchao-sockslib:1.0.6"
       )
 
       override def moduleDeps: Seq[JavaModule] =
@@ -96,14 +98,13 @@ class ScalanetModule(crossVersion: String) extends Module {
     }
   }
 
-
   // In objects inheriting this trait, use `override def moduleDeps: Seq[PublishModule]`
   // to point at other modules that also get published. In other cases such as tests
   // it can be `override def moduleDeps: Seq[JavaModule]`.
   trait ScalanetPublishModule extends PublishModule {
     def description: String
 
-    override def publishVersion = "0.5.1-SNAPSHOT"
+    override def publishVersion = versionFile.currentVersion().toString
 
     override def pomSettings = PomSettings(
       description = description,
@@ -111,7 +112,17 @@ class ScalanetModule(crossVersion: String) extends Module {
       url = "https://github.com/input-output-hk/scalanet",
       licenses = Seq(License.`Apache-2.0`),
       versionControl = VersionControl.github("input-output-hk", "scalanet"),
-      developers = Seq()
+      developers = Seq(
+        Developer("aakoshh", "Akosh Farkash", "https://github.com/aakoshh"),
+        Developer("AlexITC", "Alexis Hernandez", "https://github.com/AlexITC"),
+        Developer("dmitry-worker", "Dmitry Voronov", "https://github.com/dmitry-worker"),
+        Developer("EzequielPostan", "Ezequiel Postan", "https://github.com/EzequielPostan"),
+        Developer("jtownson", "Jeremy Townson", "https://github.com/jtownson"),
+        Developer("KonradStaniec", "Konrad Staniec", "https://github.com/KonradStaniec"),
+        Developer("krcz", "Marcin Kurczych", "https://github.com/krcz"),
+        Developer("marcesquerra", "Marc Esquerra", "https://github.com/marcesquerra"),
+        Developer("shaileshp0110", "Shailesh Patil", "https://github.com/shaileshp0110")
+      )
     )
   }
 

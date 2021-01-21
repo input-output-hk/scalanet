@@ -74,15 +74,13 @@ class KBuckets[T <: BitVector] private (
 
       // buckets with elements closer to nodeId that baseId, sorted appropriately
       def closerBuckets: Iterator[Seq[T]] =
-        Range(buckets.size - 1, -1, -1)
-          .iterator
+        Range(buckets.size - 1, -1, -1).iterator
           .filter(i => nodeId(buckets.size - i - 1) != baseId(buckets.size - i - 1))
           .map(i => buckets(i).toSeq)
 
       // buckets with elements farther from nodeId than baseId, sorted appropriately
       def furtherBuckets: Iterator[Seq[T]] =
-        Range(0, buckets.size, 1)
-          .iterator
+        Range(0, buckets.size, 1).iterator
           .filter(i => nodeId(buckets.size - i - 1) == baseId(buckets.size - i - 1))
           .map(i => buckets(i).toSeq)
 

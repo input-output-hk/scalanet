@@ -190,11 +190,13 @@ object DiscoveryNetwork {
       private def maybeRespond[Res](maybeResponse: Task[Option[Res]])(
           f: Res => Task[Unit]
       ): Task[Unit] =
-        maybeResponse.onErrorRecoverWith {
-          case NonFatal(ex) =>
-            // Not responding to this one, but it shouldn't stop handling further requests.
-            Task(logger.error(s"Error handling incoming request: $ex")).as(None)
-        }.flatMap(_.fold(Task.unit)(f))
+        maybeResponse
+          .onErrorRecoverWith {
+            case NonFatal(ex) =>
+              // Not responding to this one, but it shouldn't stop handling further requests.
+              Task(logger.error(s"Error handling incoming request: $ex")).as(None)
+          }
+          .flatMap(_.fold(Task.unit)(f))
 
       /** Serialize the payload to binary and sign the packet. */
       private def pack(payload: Payload): Task[Packet] =
@@ -382,9 +384,11 @@ object DiscoveryNetwork {
                 val next = (acc: Z) => Some(acc -> (count + 1))
                 Task.pure(f(acc, response).bimap(next, next))
 
-              case (None, _) => 
+              case (None, _) =>
                 // Invalid state - this cannot happen
-                Task.raiseError(new IllegalStateException(s"Unexpected state while collecting responses from ${channel.to}"))
+                Task.raiseError(
+                  new IllegalStateException(s"Unexpected state while collecting responses from ${channel.to}")
+                )
             }
             .map(_.map(_._1))
 
