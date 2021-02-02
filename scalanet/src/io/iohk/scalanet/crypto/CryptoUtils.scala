@@ -5,7 +5,6 @@ import java.security._
 import java.security.cert.X509Certificate
 import java.security.spec.{ECGenParameterSpec, PKCS8EncodedKeySpec, X509EncodedKeySpec}
 import java.util.Date
-
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.Extension
 import org.bouncycastle.asn1.sec.SECNamedCurves
 import org.bouncycastle.asn1.x500.X500Name
@@ -39,7 +38,8 @@ private[scalanet] object CryptoUtils {
 
   type SignatureBytes = Array[Byte]
 
-  private val usedSignatureScheme = "SHA256withECDSA"
+  abstract class SignatureScheme(val name: String)
+  case object SHA256withECDSA extends SignatureScheme("SHA256withECDSA")
 
   private val usedKeyScheme = "EC"
 
@@ -51,7 +51,7 @@ private[scalanet] object CryptoUtils {
     new ECDomainParameters(curveParams.getCurve, curveParams.getG, curveParams.getN, curveParams.getH)
 
   private def getEcdsaSignature: Signature = {
-    Signature.getInstance(usedSignatureScheme, PROVIDER)
+    Signature.getInstance(SHA256withECDSA.name, PROVIDER)
   }
 
   private def getEcKeyFactory: KeyFactory = {
@@ -99,7 +99,7 @@ private[scalanet] object CryptoUtils {
     new KeyPair(keyFac.generatePublic(spkiKeySpec), keyFac.generatePrivate(pkcs8KeySpec))
   }
 
-  def getKeyFromBytes(bytes: Array[Byte]): Try[PublicKey] = Try {
+  def getSecp256k1KeyFromBytes(bytes: Array[Byte]): Try[PublicKey] = Try {
     val ecPoint = curve.getCurve.decodePoint(bytes)
     val spec = new ECParameterSpec(curveParams.getCurve, curveParams.getG, curveParams.getN)
     val pubKeySpec = new ECPublicKeySpec(ecPoint, spec)
@@ -122,7 +122,8 @@ private[scalanet] object CryptoUtils {
       random: SecureRandom,
       extensions: List[Extension],
       beforeDate: Date,
-      afterDate: Date
+      afterDate: Date,
+      signatureScheme: SignatureScheme
   ): X509Certificate = {
     val name = "scalanet-tls"
     val sn = new BigInteger(64, random)
@@ -134,7 +135,7 @@ private[scalanet] object CryptoUtils {
       certificateBuilder.addExtension(extension.oid, extension.isCritical, extension.value)
     }
 
-    val signer = new JcaContentSignerBuilder(usedSignatureScheme).build(connectionKeyPair.getPrivate);
+    val signer = new JcaContentSignerBuilder(signatureScheme.name).build(connectionKeyPair.getPrivate);
 
     val ca = certificateBuilder.build(signer)
 

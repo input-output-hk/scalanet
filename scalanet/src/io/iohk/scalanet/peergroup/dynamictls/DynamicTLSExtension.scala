@@ -2,9 +2,8 @@ package io.iohk.scalanet.peergroup.dynamictls
 
 import java.security.cert.X509Certificate
 import java.security.{KeyPair, PublicKey, SecureRandom}
-
 import io.iohk.scalanet.crypto.CryptoUtils
-import io.iohk.scalanet.crypto.CryptoUtils.SupportedCurves
+import io.iohk.scalanet.crypto.CryptoUtils.{SignatureScheme, SupportedCurves}
 import org.bouncycastle.asn1._
 import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils
 import org.bouncycastle.math.ec.custom.sec.SecP256K1Curve
@@ -68,7 +67,7 @@ private[scalanet] object DynamicTLSExtension {
         for {
           keyTypeResult <- keyCodec.decode(bits)
           rest <- keyTypeResult.value match {
-            case Secp256k1 => Attempt.fromTry(CryptoUtils.getKeyFromBytes(keyTypeResult.remainder.toByteArray))
+            case Secp256k1 => Attempt.fromTry(CryptoUtils.getSecp256k1KeyFromBytes(keyTypeResult.remainder.toByteArray))
           }
         } yield DecodeResult(new ExtensionPublicKey(keyTypeResult.value, rest), BitVector.empty)
       }
@@ -226,7 +225,8 @@ private[scalanet] object DynamicTLSExtension {
         hostKeyType: KeyType,
         hostKeyPair: KeyPair,
         connectionKeyType: SupportedCurves,
-        secureRandom: SecureRandom
+        secureRandom: SecureRandom,
+        certificateSignatureScheme: SignatureScheme
     ): Try[SignedKeyExtensionNodeData] = {
       // key must be one from 5.1.1. Supported Elliptic Curves Extension rfc4492, we only support subset which is also
       // available in tls 1.3 it will ease up migration in the future
@@ -250,7 +250,8 @@ private[scalanet] object DynamicTLSExtension {
                 secureRandom,
                 List(signedKeyExtension),
                 validInterval.getStart.toDate,
-                validInterval.getEnd.toDate
+                validInterval.getEnd.toDate,
+                certificateSignatureScheme
               )
 
             new SignedKeyExtensionNodeData(nodeId, cert, connectionKeyPair)

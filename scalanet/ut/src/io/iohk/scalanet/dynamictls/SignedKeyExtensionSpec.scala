@@ -1,9 +1,8 @@
 package io.iohk.scalanet.dynamictls
 
 import java.security.SecureRandom
-
 import io.iohk.scalanet.crypto.CryptoUtils
-import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
+import io.iohk.scalanet.crypto.CryptoUtils.{SHA256withECDSA, Secp256r1}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.{
   ExtensionPublicKey,
   SignedKey,
@@ -48,14 +47,14 @@ class SignedKeyExtensionSpec extends FlatSpec with Matchers {
 
   it should "successfully build extension node data" in {
     forAll(GeneratorUtils.genKey(Secp256k1.curveName, rnd)) { hostKey =>
-      val nodeData = SignedKeyExtensionNodeData(Secp256k1, hostKey, Secp256r1, rnd)
+      val nodeData = SignedKeyExtensionNodeData(Secp256k1, hostKey, Secp256r1, rnd, SHA256withECDSA)
       assert(nodeData.isSuccess)
     }
   }
 
   it should "successfully parse node data from extension" in {
     forAll(GeneratorUtils.genKey(Secp256k1.curveName, rnd)) { hostKey =>
-      val nodeData = SignedKeyExtensionNodeData(Secp256k1, hostKey, Secp256r1, rnd).get
+      val nodeData = SignedKeyExtensionNodeData(Secp256k1, hostKey, Secp256r1, rnd, SHA256withECDSA).get
       val extensionBytes = nodeData.certWithExtension.getExtensionValue(SignedKey.extensionIdentifier)
       val recoveredSignedKey = SignedKey.parseAsn1EncodedValue(extensionBytes)
       assert(recoveredSignedKey.isSuccessful)

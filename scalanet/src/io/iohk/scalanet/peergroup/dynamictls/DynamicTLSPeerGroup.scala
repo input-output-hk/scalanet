@@ -7,7 +7,7 @@ import cats.effect.Resource
 import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.crypto.CryptoUtils
-import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
+import io.iohk.scalanet.crypto.CryptoUtils.{SHA256withECDSA, Secp256r1}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.{ProxySupport, ServerEvent, TerminalPeerGroup}
@@ -152,7 +152,7 @@ object DynamicTLSPeerGroup {
         secureRandom: SecureRandom
     ): Try[Config] = {
 
-      SignedKeyExtensionNodeData(keyType, hostKeyPair, Secp256r1, secureRandom).map { nodeData =>
+      SignedKeyExtensionNodeData(keyType, hostKeyPair, Secp256r1, secureRandom, SHA256withECDSA).map { nodeData =>
         Config(
           bindAddress,
           PeerInfo(nodeData.calculatedNodeId, InetMultiAddress(bindAddress)),

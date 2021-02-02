@@ -9,7 +9,7 @@ import cats.effect.concurrent.Deferred
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.codec.FramingCodec
 import io.iohk.scalanet.crypto.CryptoUtils
-import io.iohk.scalanet.crypto.CryptoUtils.Secp256r1
+import io.iohk.scalanet.crypto.CryptoUtils.{SHA256withECDSA, Secp256r1}
 import io.iohk.scalanet.peergroup.implicits._
 import io.iohk.scalanet.peergroup.Channel.{DecodingError, MessageReceived}
 import io.iohk.scalanet.peergroup.DynamicTLSPeerGroupSpec._
@@ -305,7 +305,8 @@ object DynamicTLSPeerGroupSpec {
       rnd,
       List(extension),
       validInterval.getStart.toDate,
-      validInterval.getEnd.toDate
+      validInterval.getEnd.toDate,
+      SHA256withECDSA
     )
 
     DynamicTLSPeerGroup.Config(
