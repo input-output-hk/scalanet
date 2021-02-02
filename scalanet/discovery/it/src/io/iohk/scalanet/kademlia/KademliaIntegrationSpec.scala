@@ -84,10 +84,12 @@ abstract class KademliaIntegrationSpec(name: String)
   }
 
   it should "enable finding nodes with common bootstrap node" in taskTestCase {
+    val lowRefConfig = defaultConfig.copy(refreshRate = 500.millis)
+
     (for {
       node <- startNode()
-      node1 <- startNode(initialNodes = Set(node.self))
-      node2 <- startNode(initialNodes = Set(node.self))
+      node1 <- startNode(initialNodes = Set(node.self), testConfig = lowRefConfig)
+      node2 <- startNode(initialNodes = Set(node.self), testConfig = lowRefConfig)
     } yield (node, node1, node2)).use {
       case (node, node1, node2) =>
         Task {
@@ -126,12 +128,14 @@ abstract class KademliaIntegrationSpec(name: String)
   }
 
   it should "enable discovering neighbours of the neighbours" in taskTestCase {
+    val lowRefConfig = defaultConfig.copy(refreshRate = 500.millis)
+
     (for {
       node <- startNode()
-      node1 <- startNode(initialNodes = Set(node.self))
-      node2 <- startNode(initialNodes = Set(node1.self))
-      node3 <- startNode(initialNodes = Set(node2.self))
-      node4 <- startNode(initialNodes = Set(node3.self))
+      node1 <- startNode(initialNodes = Set(node.self), testConfig = lowRefConfig)
+      node2 <- startNode(initialNodes = Set(node1.self), testConfig = lowRefConfig)
+      node3 <- startNode(initialNodes = Set(node2.self), testConfig = lowRefConfig)
+      node4 <- startNode(initialNodes = Set(node3.self), testConfig = lowRefConfig)
     } yield (node, node1, node2, node3, node4)).use {
       case (node, node1, node2, node3, node4) =>
         Task {
