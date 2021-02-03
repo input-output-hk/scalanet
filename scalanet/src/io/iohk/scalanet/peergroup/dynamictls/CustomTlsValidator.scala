@@ -12,8 +12,6 @@ import java.security.interfaces.ECPublicKey
 import scala.util.{Failure, Success, Try}
 
 private[scalanet] object CustomTlsValidator {
-  private val knownCertificateExtension = SignedKey.extensionIdentifier
-
   sealed abstract class CertificateError(msg: String) extends CertificateException(msg)
   case object WrongNumberOfCertificates extends CertificateError("Number of certificates not equal 1")
   case object WrongCertificateDate extends CertificateError("Certificate is expired or not yet valid")
@@ -48,11 +46,7 @@ private[scalanet] object CustomTlsValidator {
   private def validateCertificatesQuantity(
       certificates: Array[X509Certificate]
   ): Either[CertificateError, X509Certificate] = {
-    if (certificates.length != 1) {
-      Left(WrongNumberOfCertificates)
-    } else {
-      Right(certificates.head)
-    }
+    Either.cond(certificates.length == 1, certificates.head, WrongNumberOfCertificates)
   }
 
   /**
@@ -94,11 +88,7 @@ private[scalanet] object CustomTlsValidator {
     */
   private def validateCertificateSignatureScheme(cert: X509Certificate): Either[CertificateError, Unit] = {
     val sigAlgName = cert.getSigAlgName
-    if (sigAlgName.equalsIgnoreCase(CryptoUtils.SHA256withECDSA.name)) {
-      Right(())
-    } else {
-      Left(WrongCertificateSignatureScheme)
-    }
+    Either.cond(sigAlgName.equalsIgnoreCase(CryptoUtils.SHA256withECDSA.name), (), WrongCertificateSignatureScheme)
   }
 
   /**
@@ -138,13 +128,9 @@ private[scalanet] object CustomTlsValidator {
       val subjectKeyInfo = SubjectPublicKeyInfo.getInstance(ASN1Primitive.fromByteArray(ecPublicKey.getEncoded))
       val x962Params = X962Parameters.getInstance(subjectKeyInfo.getAlgorithm.getParameters)
       (ecPublicKey, x962Params)
-    }.toEither.left.map(_ => WrongCertificateKeyFormat).flatMap {
-      case (key, parameters) =>
-        if (parameters.isNamedCurve) {
-          Right(key)
-        } else {
-          Left(WrongCertificateKeyFormat)
-        }
+    } match {
+      case Success((key, parameters)) if parameters.isNamedCurve => Right(key)
+      case _ => Left(WrongCertificateKeyFormat)
     }
   }
 
@@ -153,25 +139,27 @@ private[scalanet] object CustomTlsValidator {
     * The certificate MUST contain the libp2p Public Key Extension. If this extension is missing,
     * endpoints MUST abort the connection attempt
     *
-    * Endpoints MUST abort the connection attempt if the certificate contains critical extensions
-    * that the endpoint does not understand.
     */
-  private def validateCertificateExtension(
+  private def getCertificateExtension(
       cert: X509Certificate,
       extensionId: String
   ): Either[CertificateError, Array[Byte]] = {
-    Option(cert.getExtensionValue(extensionId)).toRight(NoCertExtension).flatMap { extension =>
-      val criticalExtensions = cert.getCriticalExtensionOIDs
+    Option(cert.getExtensionValue(extensionId)).toRight(NoCertExtension)
+  }
 
-      val containsOnlyOneKnownCriticalExtension = criticalExtensions.size() == 0 ||
-        (criticalExtensions.size() == 1 && criticalExtensions.contains(knownCertificateExtension))
+  /**
+    *
+    * Endpoints MUST abort the connection attempt if the certificate contains critical extensions
+    * that the endpoint does not understand.
+    */
+  def validateOnlyKnownCriticalExtensions(cert: X509Certificate): Either[CertificateError, Unit] = {
+    val criticalExtensions = cert.getCriticalExtensionOIDs
 
-      if (containsOnlyOneKnownCriticalExtension) {
-        Right(extension)
-      } else {
-        Left(NotKnownCriticalExtensions)
-      }
-    }
+    val containsOnlyOneKnownCriticalExtension =
+      criticalExtensions == null || criticalExtensions.size() == 0 ||
+        (criticalExtensions.size() == 1 && criticalExtensions.contains(SignedKey.extensionIdentifier))
+
+    Either.cond(containsOnlyOneKnownCriticalExtension, (), NotKnownCriticalExtensions)
   }
 
   /**
@@ -189,8 +177,9 @@ private[scalanet] object CustomTlsValidator {
       _ <- validateCertificateSelfSig(cert)
       _ <- validateCertificateDate(cert)
       validPublicKey <- validateCertificatePublicKey(cert)
-      extension <- validateCertificateExtension(cert, SignedKey.extensionIdentifier)
-      signedKeyExtension <- validateExtension(extension)
+      _ <- validateOnlyKnownCriticalExtensions(cert)
+      signedKeyExtension <- getCertificateExtension(cert, SignedKey.extensionIdentifier)
+        .flatMap(validateSignedKeyExtension)
       _ <- validateCertificateSignature(signedKeyExtension, validPublicKey)
       _ <- if (connectingTo.isDefined) validateServerId(signedKeyExtension, connectingTo.get) else Right(())
     } yield {
@@ -198,7 +187,7 @@ private[scalanet] object CustomTlsValidator {
     }
   }
 
-  private def validateExtension(extension: Array[Byte]): Either[CertificateError, SignedKey] = {
+  private def validateSignedKeyExtension(extension: Array[Byte]): Either[CertificateError, SignedKey] = {
     SignedKey.parseAsn1EncodedValue(extension).toEither.left.map(_ => WrongExtensionFormat)
   }
 }
