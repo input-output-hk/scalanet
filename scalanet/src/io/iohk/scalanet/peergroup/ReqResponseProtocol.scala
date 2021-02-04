@@ -261,7 +261,7 @@ object ReqResponseProtocol {
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
 
     for {
-      config <- Resource.liftF(Task.fromTry(DynamicTLSPeerGroup.Config(address, Secp256k1, hostkeyPair, rnd)))
+      config <- Resource.liftF(Task.fromTry(DynamicTLSPeerGroup.Config(address, Secp256k1, hostkeyPair, rnd, None)))
       pg <- DynamicTLSPeerGroup[MessageEnvelope[M]](config)
       prot <- buildProtocol(pg)
     } yield prot

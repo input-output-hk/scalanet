@@ -10,6 +10,7 @@ import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ProxySupport.Socks5Config
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, HandshakeException, ServerEvent}
+import io.iohk.scalanet.peergroup.dynamictls.CustomHandlers.ThrottlingIpFilter
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.PeerInfo
 import io.iohk.scalanet.peergroup.{Channel, CloseableQueue, InetMultiAddress, PeerGroup}
 import io.netty.bootstrap.Bootstrap
@@ -227,7 +228,8 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       serverQueue: CloseableQueue[ServerEvent[PeerInfo, M]],
       val nettyChannel: SocketChannel,
       sslServerCtx: SslContext,
-      codec: StreamCodec[M]
+      codec: StreamCodec[M],
+      throttlingIpFilter: Option[ThrottlingIpFilter]
   )(implicit scheduler: Scheduler)
       extends StrictLogging {
     val sslHandler = sslServerCtx.newHandler(nettyChannel.alloc())
@@ -235,8 +237,13 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
     val messageQueue = makeMessageQueue[M]
     val sslEngine = sslHandler.engine()
 
-    nettyChannel
-      .pipeline()
+    val pipeLine = nettyChannel.pipeline()
+
+    // adding throttling filter as first (if configures), so if its connection from address which breaks throttling rules
+    // it will be closed immediately without using more resources
+    throttlingIpFilter.foreach(filter => pipeLine.addLast(filter))
+
+    pipeLine
       .addLast("ssl", sslHandler) //This needs to be first
       .addLast(new ChannelInboundHandlerAdapter() {
         override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {

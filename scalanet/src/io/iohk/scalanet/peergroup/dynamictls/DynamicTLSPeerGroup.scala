@@ -18,6 +18,7 @@ import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroupUtils.{SSLContex
 import io.iohk.scalanet.peergroup.{Addressable, Channel, InetMultiAddress}
 import io.iohk.scalanet.peergroup.CloseableQueue
 import io.iohk.scalanet.peergroup.PeerGroup.ProxySupport.Socks5Config
+import io.iohk.scalanet.peergroup.dynamictls.CustomHandlers.ThrottlingIpFilter
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
@@ -30,6 +31,7 @@ import monix.execution.{ChannelType, Scheduler}
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair
 import scodec.bits.BitVector
 
+import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
 import scala.util.control.NonFatal
 
@@ -58,6 +60,9 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
 
   private val workerGroup = new NioEventLoopGroup()
 
+  // throttling filter is shared between all incoming channels
+  private val throttlingFilter = config.incomingConnectionsThrottling.map(cfg => new ThrottlingIpFilter(cfg))
+
   private val clientBootstrap = new Bootstrap()
     .group(workerGroup)
     .channel(classOf[NioSocketChannel])
@@ -71,7 +76,7 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
-        new ServerChannelBuilder[M](serverQueue, ch, sslServerCtx, codec.cleanSlate)
+        new ServerChannelBuilder[M](serverQueue, ch, sslServerCtx, codec.cleanSlate, throttlingFilter)
         logger.info(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })
@@ -114,7 +119,7 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
     createChannel(to, Some(proxyConfig))
   }
 
-  override def nextServerEvent =
+  override def nextServerEvent: Task[Option[ServerEvent[PeerInfo, M]]] =
     serverQueue.next
 
   private def shutdown: Task[Unit] = {
@@ -136,11 +141,23 @@ object DynamicTLSPeerGroup {
     }
   }
 
+  /**
+    *
+    * Config which enables specifying minimal duration between subsequent incoming connections attempts from the same
+    * ip address
+    *
+    * @param throttleLocalhost if connections from localhost should also be throttled. Useful for test and testnets
+    *                          when user want to quickly connects several peers to server
+    * @param throttlingDuration minimal duration between subsequent incoming connections from same ip
+    */
+  case class IncomingConnectionThrottlingConfig(throttleLocalhost: Boolean, throttlingDuration: FiniteDuration)
+
   case class Config(
       bindAddress: InetSocketAddress,
       peerInfo: PeerInfo,
       connectionKeyPair: KeyPair,
-      connectionCertificate: X509Certificate
+      connectionCertificate: X509Certificate,
+      incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
   )
 
   object Config {
@@ -149,7 +166,8 @@ object DynamicTLSPeerGroup {
         bindAddress: InetSocketAddress,
         keyType: KeyType,
         hostKeyPair: KeyPair,
-        secureRandom: SecureRandom
+        secureRandom: SecureRandom,
+        incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
     ): Try[Config] = {
 
       SignedKeyExtensionNodeData(keyType, hostKeyPair, Secp256r1, secureRandom, SHA256withECDSA).map { nodeData =>
@@ -157,7 +175,8 @@ object DynamicTLSPeerGroup {
           bindAddress,
           PeerInfo(nodeData.calculatedNodeId, InetMultiAddress(bindAddress)),
           nodeData.generatedConnectionKey,
-          nodeData.certWithExtension
+          nodeData.certWithExtension,
+          incomingConnectionsThrottling
         )
       }
     }
@@ -166,10 +185,11 @@ object DynamicTLSPeerGroup {
         bindAddress: InetSocketAddress,
         keyType: KeyType,
         hostKeyPair: AsymmetricCipherKeyPair,
-        secureRandom: SecureRandom
+        secureRandom: SecureRandom,
+        incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
     ): Try[Config] = {
       val convertedKeyPair = CryptoUtils.convertBcToJceKeyPair(hostKeyPair)
-      Config(bindAddress, keyType, convertedKeyPair, secureRandom)
+      Config(bindAddress, keyType, convertedKeyPair, secureRandom, incomingConnectionsThrottling)
     }
   }
 

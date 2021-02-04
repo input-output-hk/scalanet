@@ -150,7 +150,8 @@ class ScalanetModule(crossVersion: String) extends Module {
       ivy"org.scodec::scodec-core:1.11.7",
       ivy"org.bouncycastle:bcprov-jdk15on:1.64",
       ivy"org.bouncycastle:bcpkix-jdk15on:1.64",
-      ivy"org.bouncycastle:bctls-jdk15on:1.64"
+      ivy"org.bouncycastle:bctls-jdk15on:1.64",
+      ivy"com.github.ben-manes.caffeine:caffeine:2.8.8"
     )
 
     def scoverageVersion = "1.3.1"

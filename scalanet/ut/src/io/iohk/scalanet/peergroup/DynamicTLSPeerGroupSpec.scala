@@ -70,6 +70,38 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
     }
   }
 
+  it should "throttle incoming connections when configured" in taskTestCase {
+    val throttlingDuration = 1.second
+    val throttlingConfig = DynamicTLSPeerGroup.IncomingConnectionThrottlingConfig(
+      throttleLocalhost = true,
+      throttlingDuration = throttlingDuration
+    )
+    (for {
+      clientGroup1 <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      clientGroup2 <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      serverGroup <- DynamicTLSPeerGroup[String](
+        getCorrectConfig().copy(incomingConnectionsThrottling = Some(throttlingConfig))
+      )
+    } yield (serverGroup, clientGroup1, clientGroup2)).use {
+      case (server, clientGroup1, clientGroup2) =>
+        for {
+          result1 <- clientGroup1.client(server.processAddress).allocated
+          (ch1, release1) = result1
+          // this connection will fail as clientGroup2 has the same address as clientGroup1 i.e Localhost
+          result2 <- clientGroup2.client(server.processAddress).allocated.attempt
+          _ <- Task.sleep(throttlingDuration + 1.second)
+          //
+          result3 <- clientGroup2.client(server.processAddress).allocated.attempt
+          (ch2, release2) = result3.right.get
+          _ <- Task.parZip2(release1, release2)
+        } yield {
+          assert(result2.isLeft)
+          assert(result2.left.get.isInstanceOf[ChannelBrokenException[_]])
+          assert(result3.isRight)
+        }
+    }
+  }
+
   it should "handshake successfully via proxy" in taskTestCase {
     (for {
       client <- DynamicTLSPeerGroup[String](getCorrectConfig()).map(
@@ -281,7 +313,7 @@ object DynamicTLSPeerGroupSpec {
 
   def getCorrectConfig(address: InetSocketAddress = aRandomAddress()): DynamicTLSPeerGroup.Config = {
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
-    Config(address, Secp256k1, hostkeyPair, rnd).get
+    Config(address, Secp256k1, hostkeyPair, rnd, None).get
   }
 
   def getIncorrectConfigWrongId(address: InetSocketAddress = aRandomAddress()): DynamicTLSPeerGroup.Config = {
@@ -313,7 +345,8 @@ object DynamicTLSPeerGroupSpec {
       address,
       PeerInfo(sig.publicKey.getNodeId, InetMultiAddress(address)),
       connectionKeyPair,
-      cer
+      cer,
+      None
     )
   }
 
