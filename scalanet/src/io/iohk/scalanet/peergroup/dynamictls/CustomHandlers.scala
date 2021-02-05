@@ -8,25 +8,35 @@ import io.netty.handler.ipfilter.AbstractRemoteAddressFilter
 import java.net.{InetAddress, InetSocketAddress}
 
 private[scalanet] object CustomHandlers {
-  // to share handlers between pipelines they need to be marked as @Sharable, if not netty refuses to share it.
+
+  /**
+    *
+    * Custom handler which keeps recent history of incoming connections. If it receive new connection from the ip address
+    * which is still in history, it rejects it as it means the remote caller tries to often.
+    *
+    * Handler needs to be thread safe as it is shared between several netty pipelines
+    *
+    * To share handlers between pipelines they need to be marked as @Sharable, if not netty refuses to share it.
+    */
   @Sharable
   class ThrottlingIpFilter(config: DynamicTLSPeerGroup.IncomingConnectionThrottlingConfig)
       extends AbstractRemoteAddressFilter[InetSocketAddress] {
-    private val cache = Caffeine
+
+    private val cacheView = Caffeine
       .newBuilder()
       .expireAfterWrite(config.throttlingDuration.length, config.throttlingDuration.unit)
       .build[InetAddress, java.lang.Boolean]()
-    private val cacheView = cache.asMap()
+      .asMap()
 
-    private def addIfAbsent(address: InetAddress): Boolean = {
+    private def isQuotaAvailable(address: InetAddress): Boolean = {
       cacheView.putIfAbsent(address, java.lang.Boolean.TRUE) == null
     }
 
     override def accept(ctx: ChannelHandlerContext, remoteAddress: InetSocketAddress): Boolean = {
       val address = remoteAddress.getAddress
-      val throttleLocalAddress = (address.isLoopbackAddress && !config.throttleLocalhost)
+      val localNoThrottle = (address.isLoopbackAddress && !config.throttleLocalhost)
 
-      throttleLocalAddress || addIfAbsent(address)
+      localNoThrottle || isQuotaAvailable(address)
     }
   }
 
