@@ -271,11 +271,19 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
     } yield (client, server)).use {
       case (client, server) =>
         for {
-          ch1 <- client.client(server.processAddress).use(_ => Task.unit).attempt
+          ch1 <- client.client(server.processAddress).allocated.attempt
           serverHandshake <- server.serverEventObservable.collectHandshakeFailure.headL
+          // In tls 1.3 clients complete the TLS handshake immediately after sending the certificate without waiting
+          // for verification results from server
+          _ <- Task(assert(ch1.isRight))
+          (chan, release) = ch1.right.get
+          clientSendResult <- chan.sendMessage("hello").attempt
+          _ <- Task(assert(clientSendResult.isLeft))
+          result = clientSendResult.left.get
+          // validation of client certificate failed on server side, when clients try to sent data it will fail as server
+          // closed connection
+          _ <- Task(assert(result.isInstanceOf[ChannelBrokenException[_]]))
         } yield {
-          ch1.isLeft shouldEqual true
-          ch1.left.get shouldBe a[HandshakeException[_]]
           serverHandshake shouldBe a[HandshakeException[_]]
         }
     }

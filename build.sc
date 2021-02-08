@@ -143,7 +143,7 @@ class ScalanetModule(crossVersion: String) extends Module {
       ivy"com.typesafe.scala-logging::scala-logging:3.9.2",
       ivy"com.github.jgonian:commons-ip-math:1.32",
       ivy"org.slf4j:slf4j-api:1.7.25",
-      ivy"io.netty:netty-all:4.1.51.Final",
+      ivy"io.netty:netty-all:4.1.58.Final",
       ivy"org.eclipse.californium:scandium:2.0.0-M15",
       ivy"org.eclipse.californium:element-connector:2.0.0-M15",
       ivy"org.scodec::scodec-bits:1.1.12",

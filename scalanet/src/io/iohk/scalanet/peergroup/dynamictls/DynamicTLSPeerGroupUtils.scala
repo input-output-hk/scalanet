@@ -3,22 +3,14 @@ package io.iohk.scalanet.peergroup.dynamictls
 import java.net.Socket
 import java.security.KeyStore
 import java.security.cert.X509Certificate
-
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.PeerInfo
 import io.netty.handler.ssl.util.SimpleTrustManagerFactory
 import io.netty.handler.ssl.{ClientAuth, SslContext, SslContextBuilder}
+
 import javax.net.ssl._
 import scodec.bits.BitVector
 
-import java.util.Arrays
-
 private[scalanet] object DynamicTLSPeerGroupUtils {
-  // supporting only ciphers which are used in TLS 1.3
-  private val supportedCipherSuites: java.lang.Iterable[String] = Arrays.asList(
-    "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
-    "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
-  )
-
   // key for peerId passed in Handshake session, used in sslEngine
   val peerIdKey = "peerId"
 
@@ -87,8 +79,7 @@ private[scalanet] object DynamicTLSPeerGroupUtils {
           .forServer(config.connectionKeyPair.getPrivate, List(config.connectionCertificate): _*)
           .trustManager(new CustomTrustManagerFactory(None))
           .clientAuth(ClientAuth.REQUIRE)
-          .ciphers(supportedCipherSuites)
-          .protocols("TLSv1.2")
+          .protocols("TLSv1.3")
           .build()
 
       case SSLContextForClient(info) =>
@@ -96,8 +87,7 @@ private[scalanet] object DynamicTLSPeerGroupUtils {
           .forClient()
           .keyManager(config.connectionKeyPair.getPrivate, List(config.connectionCertificate): _*)
           .trustManager(new CustomTrustManagerFactory(Some(info.id)))
-          .ciphers(supportedCipherSuites)
-          .protocols("TLSv1.2")
+          .protocols("TLSv1.3")
           .build()
     }
   }
