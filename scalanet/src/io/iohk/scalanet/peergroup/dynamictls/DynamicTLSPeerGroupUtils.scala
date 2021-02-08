@@ -5,7 +5,7 @@ import java.security.KeyStore
 import java.security.cert.X509Certificate
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.PeerInfo
 import io.netty.handler.ssl.util.SimpleTrustManagerFactory
-import io.netty.handler.ssl.{ClientAuth, SslContext, SslContextBuilder}
+import io.netty.handler.ssl.{ClientAuth, SslContext, SslContextBuilder, SslProvider}
 
 import javax.net.ssl._
 import scodec.bits.BitVector
@@ -73,11 +73,14 @@ private[scalanet] object DynamicTLSPeerGroupUtils {
   case class SSLContextForClient(to: PeerInfo) extends SSLContextFor
 
   def buildCustomSSlContext(f: SSLContextFor, config: DynamicTLSPeerGroup.Config): SslContext = {
+    val sslProvider = if (config.useNativeTlsImplementation) SslProvider.OPENSSL else SslProvider.JDK
+
     f match {
       case SSLContextForServer =>
         SslContextBuilder
           .forServer(config.connectionKeyPair.getPrivate, List(config.connectionCertificate): _*)
           .trustManager(new CustomTrustManagerFactory(None))
+          .sslProvider(sslProvider)
           .clientAuth(ClientAuth.REQUIRE)
           .protocols("TLSv1.3")
           .build()
@@ -87,6 +90,7 @@ private[scalanet] object DynamicTLSPeerGroupUtils {
           .forClient()
           .keyManager(config.connectionKeyPair.getPrivate, List(config.connectionCertificate): _*)
           .trustManager(new CustomTrustManagerFactory(Some(info.id)))
+          .sslProvider(sslProvider)
           .protocols("TLSv1.3")
           .build()
     }

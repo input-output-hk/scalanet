@@ -144,6 +144,7 @@ class ScalanetModule(crossVersion: String) extends Module {
       ivy"com.github.jgonian:commons-ip-math:1.32",
       ivy"org.slf4j:slf4j-api:1.7.25",
       ivy"io.netty:netty-all:4.1.58.Final",
+      ivy"io.netty:netty-tcnative-boringssl-static:2.0.36.Final",
       ivy"org.eclipse.californium:scandium:2.0.0-M15",
       ivy"org.eclipse.californium:element-connector:2.0.0-M15",
       ivy"org.scodec::scodec-bits:1.1.12",

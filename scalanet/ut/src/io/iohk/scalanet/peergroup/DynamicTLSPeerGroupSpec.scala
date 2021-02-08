@@ -70,6 +70,42 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
     }
   }
 
+  it should "handshake successfully using native tls implementation" in taskTestCase {
+    (for {
+      client <- DynamicTLSPeerGroup[String](getCorrectConfig(useNativeTlsImplementation = true))
+      server <- DynamicTLSPeerGroup[String](getCorrectConfig(useNativeTlsImplementation = true))
+      ch1 <- client.client(server.processAddress)
+    } yield (server, ch1)).use {
+      case (server, ch1) =>
+        for {
+          _ <- ch1.sendMessage("Hello enc server")
+          rec <- server.serverEventObservable.collectChannelCreated.mergeMap {
+            case (ch, release) => ch.channelEventObservable.guarantee(release)
+          }.headL
+        } yield {
+          rec shouldEqual MessageReceived("Hello enc server")
+        }
+    }
+  }
+
+  it should "handshake successfully using native and jdk tls implementation" in taskTestCase {
+    (for {
+      client <- DynamicTLSPeerGroup[String](getCorrectConfig(useNativeTlsImplementation = true))
+      server <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      ch1 <- client.client(server.processAddress)
+    } yield (server, ch1)).use {
+      case (server, ch1) =>
+        for {
+          _ <- ch1.sendMessage("Hello enc server")
+          rec <- server.serverEventObservable.collectChannelCreated.mergeMap {
+            case (ch, release) => ch.channelEventObservable.guarantee(release)
+          }.headL
+        } yield {
+          rec shouldEqual MessageReceived("Hello enc server")
+        }
+    }
+  }
+
   it should "throttle incoming connections when configured" in taskTestCase {
     val throttlingDuration = 1.second
     val throttlingConfig = DynamicTLSPeerGroup.IncomingConnectionThrottlingConfig(
@@ -319,9 +355,12 @@ object DynamicTLSPeerGroupSpec {
 
   val rnd = new SecureRandom()
 
-  def getCorrectConfig(address: InetSocketAddress = aRandomAddress()): DynamicTLSPeerGroup.Config = {
+  def getCorrectConfig(
+      address: InetSocketAddress = aRandomAddress(),
+      useNativeTlsImplementation: Boolean = false
+  ): DynamicTLSPeerGroup.Config = {
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
-    Config(address, Secp256k1, hostkeyPair, rnd, None).get
+    Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation, None).get
   }
 
   def getIncorrectConfigWrongId(address: InetSocketAddress = aRandomAddress()): DynamicTLSPeerGroup.Config = {
@@ -354,6 +393,7 @@ object DynamicTLSPeerGroupSpec {
       PeerInfo(sig.publicKey.getNodeId, InetMultiAddress(address)),
       connectionKeyPair,
       cer,
+      useNativeTlsImplementation = false,
       None
     )
   }

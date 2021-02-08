@@ -157,6 +157,7 @@ object DynamicTLSPeerGroup {
       peerInfo: PeerInfo,
       connectionKeyPair: KeyPair,
       connectionCertificate: X509Certificate,
+      useNativeTlsImplementation: Boolean,
       incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
   )
 
@@ -167,6 +168,7 @@ object DynamicTLSPeerGroup {
         keyType: KeyType,
         hostKeyPair: KeyPair,
         secureRandom: SecureRandom,
+        useNativeTlsImplementation: Boolean,
         incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
     ): Try[Config] = {
 
@@ -176,6 +178,7 @@ object DynamicTLSPeerGroup {
           PeerInfo(nodeData.calculatedNodeId, InetMultiAddress(bindAddress)),
           nodeData.generatedConnectionKey,
           nodeData.certWithExtension,
+          useNativeTlsImplementation,
           incomingConnectionsThrottling
         )
       }
@@ -186,10 +189,18 @@ object DynamicTLSPeerGroup {
         keyType: KeyType,
         hostKeyPair: AsymmetricCipherKeyPair,
         secureRandom: SecureRandom,
+        useNativeTlsImplementation: Boolean,
         incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
     ): Try[Config] = {
       val convertedKeyPair = CryptoUtils.convertBcToJceKeyPair(hostKeyPair)
-      Config(bindAddress, keyType, convertedKeyPair, secureRandom, incomingConnectionsThrottling)
+      Config(
+        bindAddress,
+        keyType,
+        convertedKeyPair,
+        secureRandom,
+        useNativeTlsImplementation,
+        incomingConnectionsThrottling
+      )
     }
   }
 
