@@ -52,59 +52,26 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
 
   behavior of "Dynamic TLSPeerGroup"
 
-  it should "handshake successfully" in taskTestCase {
-    (for {
-      client <- DynamicTLSPeerGroup[String](getCorrectConfig())
-      server <- DynamicTLSPeerGroup[String](getCorrectConfig())
-      ch1 <- client.client(server.processAddress)
-    } yield (server, ch1)).use {
-      case (server, ch1) =>
-        for {
-          _ <- ch1.sendMessage("Hello enc server")
-          rec <- server.serverEventObservable.collectChannelCreated.mergeMap {
-            case (ch, release) => ch.channelEventObservable.guarantee(release)
-          }.headL
-        } yield {
-          rec shouldEqual MessageReceived("Hello enc server")
+  for (nc <- List(true, false))
+    for (ns <- List(true, false))
+      it should s"handshake successfully using ${if (nc) "native" else "JDK"} client TLS and ${if (ns) "native"
+      else "JDK"} server TLS" in taskTestCase {
+        (for {
+          client <- DynamicTLSPeerGroup[String](getCorrectConfig(useNativeTlsImplementation = nc))
+          server <- DynamicTLSPeerGroup[String](getCorrectConfig(useNativeTlsImplementation = ns))
+          ch1 <- client.client(server.processAddress)
+        } yield (server, ch1)).use {
+          case (server, ch1) =>
+            for {
+              _ <- ch1.sendMessage("Hello enc server")
+              rec <- server.serverEventObservable.collectChannelCreated.mergeMap {
+                case (ch, release) => ch.channelEventObservable.guarantee(release)
+              }.headL
+            } yield {
+              rec shouldEqual MessageReceived("Hello enc server")
+            }
         }
-    }
-  }
-
-  it should "handshake successfully using native tls implementation" in taskTestCase {
-    (for {
-      client <- DynamicTLSPeerGroup[String](getCorrectConfig(useNativeTlsImplementation = true))
-      server <- DynamicTLSPeerGroup[String](getCorrectConfig(useNativeTlsImplementation = true))
-      ch1 <- client.client(server.processAddress)
-    } yield (server, ch1)).use {
-      case (server, ch1) =>
-        for {
-          _ <- ch1.sendMessage("Hello enc server")
-          rec <- server.serverEventObservable.collectChannelCreated.mergeMap {
-            case (ch, release) => ch.channelEventObservable.guarantee(release)
-          }.headL
-        } yield {
-          rec shouldEqual MessageReceived("Hello enc server")
-        }
-    }
-  }
-
-  it should "handshake successfully using native and jdk tls implementation" in taskTestCase {
-    (for {
-      client <- DynamicTLSPeerGroup[String](getCorrectConfig(useNativeTlsImplementation = true))
-      server <- DynamicTLSPeerGroup[String](getCorrectConfig())
-      ch1 <- client.client(server.processAddress)
-    } yield (server, ch1)).use {
-      case (server, ch1) =>
-        for {
-          _ <- ch1.sendMessage("Hello enc server")
-          rec <- server.serverEventObservable.collectChannelCreated.mergeMap {
-            case (ch, release) => ch.channelEventObservable.guarantee(release)
-          }.headL
-        } yield {
-          rec shouldEqual MessageReceived("Hello enc server")
-        }
-    }
-  }
+      }
 
   it should "throttle incoming connections when configured" in taskTestCase {
     val throttlingDuration = 1.second
