@@ -146,7 +146,8 @@ object DynamicTLSPeerGroup {
       maxFrameLength: Int,
       lengthFieldOffset: Int,
       lengthFieldLength: Int,
-      lengthAdjustment: Int,
+      encodingLengthAdjustment: Int,
+      decodingLengthAdjustment: Int,
       initialBytesToStrip: Int,
       failFast: Boolean,
       byteOrder: ByteOrder,
@@ -165,7 +166,8 @@ object DynamicTLSPeerGroup {
       *                       channel with generate DecodingError event.
       * @param lengthFieldOffset the offset of the length field.
       * @param lengthFieldLength  the length of the length field. Must be 1, 2, 3, 4 or 8 bytes.
-      * @param lengthAdjustment the compensation value to add to the value of the length field.
+      * @param encodingLengthAdjustment the compensation value to add to the value of the length field when encoding.
+      * @param decodingLengthAdjustment the compensation value to add to the value of the length field when decoding.
       * @param initialBytesToStrip the number of first bytes to strip out from the decoded frame. In standard framing setup
       *                            it should be equal to lengthFieldLength.
       * @param failFast  If true, a DecodingError event is generated as soon as the decoder notices the length of the frame will
@@ -178,7 +180,8 @@ object DynamicTLSPeerGroup {
         maxFrameLength: Int,
         lengthFieldOffset: Int,
         lengthFieldLength: Int,
-        lengthAdjustment: Int,
+        encodingLengthAdjustment: Int,
+        decodingLengthAdjustment: Int,
         initialBytesToStrip: Int,
         failFast: Boolean = true,
         byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN,
@@ -194,7 +197,8 @@ object DynamicTLSPeerGroup {
             maxFrameLength,
             lengthFieldOffset,
             lengthFieldLength,
-            lengthAdjustment,
+            encodingLengthAdjustment,
+            decodingLengthAdjustment,
             initialBytesToStrip,
             failFast,
             byteOrder,
@@ -202,6 +206,28 @@ object DynamicTLSPeerGroup {
           ) {}
         )
       }
+    }
+
+    /**
+      *
+      * Configures framing format for all the peers in PeerGroup, which will pre-pend length to all messages when encoding
+      * and strip this length when decoding
+      *
+      * @param maxFrameLength the maximum length of the frame. If the length of the frame is greater than this value
+      *                       channel with generate DecodingError event.
+      * @param lengthFieldLength  the length of the length field. Must be 1, 2, 3, 4 or 8 bytes.
+      * @param failFast  If true, a DecodingError event is generated as soon as the decoder notices the length of the frame will
+      *                  exceed maxFrameLength regardless of whether the entire frame has been read. If false,
+      *                  a a DecodingError event is generated after the entire frame that exceeds maxFrameLength has been read..
+      * @param byteOrder the ByteOrder of the length field.
+      */
+    def buildConfigWithStrippedLength(
+        maxFrameLength: Int,
+        lengthFieldLength: Int,
+        failFast: Boolean = true,
+        byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
+    ): Option[FramingConfig] = {
+      buildConfig(maxFrameLength, 0, lengthFieldLength, 0, 0, lengthFieldLength, failFast, byteOrder)
     }
   }
 

@@ -252,7 +252,7 @@ object ReqResponseProtocol {
     implicit lazy val envelopeCodec = MessageEnvelope.defaultCodec[M]
     val rnd = new SecureRandom()
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
-    val framingConfig = FramingConfig.buildConfig(192000, 0, 4, 0, 4).get
+    val framingConfig = FramingConfig.buildConfigWithStrippedLength(192000, 4).get
     for {
       config <- Resource.liftF(
         Task.fromTry(

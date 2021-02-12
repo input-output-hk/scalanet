@@ -32,7 +32,7 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.{Assertion, AsyncFlatSpec, BeforeAndAfterAll}
 import scodec.Codec
-import scodec.bits.BitVector
+import scodec.bits.{BitVector}
 import scodec.codecs.implicits._
 import sockslib.server.{SocksProxyServer, SocksProxyServerFactory}
 
@@ -312,6 +312,51 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
         }
     }
   }
+  it should "handle messages with prepended messages id-s" in taskTestCase {
+    implicit val s = Codec[TestMessage[String]]
+    (for {
+      client <- DynamicTLSPeerGroup[TestMessage[String]](getCorrectConfig())
+      server <- DynamicTLSPeerGroup[TestMessage[String]](getCorrectConfig())
+      ch1 <- client.client(server.processAddress)
+    } yield (client, server, ch1)).use {
+      case (client, server, ch1) =>
+        for {
+          result <- Task.parZip2(
+            ch1.sendMessage(TestMessage.Foo("hello")),
+            server.serverEventObservable.collectChannelCreated.mergeMap {
+              case (channel, release) =>
+                channel.channelEventObservable.guarantee(release)
+            }.headL
+          )
+          (_, eventReceived) = result
+        } yield {
+          assert(eventReceived == MessageReceived(TestMessage.Foo("hello")))
+        }
+    }
+  }
+
+  it should "inform user about too large frame" in taskTestCase {
+    (for {
+      client <- DynamicTLSPeerGroup[Byte](getCorrectConfig())
+      // 1byte message + 4 bytes length field gives frame of size 5, so maxFrameLength = 4 should end with error
+      server <- DynamicTLSPeerGroup[Byte](getCorrectConfig(maxFrameLength = 4))
+      ch1 <- client.client(server.processAddress)
+    } yield (client, server, ch1)).use {
+      case (client, server, ch1) =>
+        for {
+          result <- Task.parZip2(
+            ch1.sendMessage(1.toByte),
+            server.serverEventObservable.collectChannelCreated.mergeMap {
+              case (channel, release) =>
+                channel.channelEventObservable.guarantee(release)
+            }.headL
+          )
+          (_, eventReceived) = result
+        } yield {
+          assert(eventReceived == DecodingError)
+        }
+    }
+  }
 }
 
 object DynamicTLSPeerGroupSpec {
@@ -326,7 +371,7 @@ object DynamicTLSPeerGroupSpec {
       maxFrameLength: Int = 192000
   ): DynamicTLSPeerGroup.Config = {
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
-    val framingConfig = FramingConfig.buildConfig(maxFrameLength, 0, 4, 0, 4).get
+    val framingConfig = FramingConfig.buildConfigWithStrippedLength(maxFrameLength, 4).get
     Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation, framingConfig, None).get
   }
 
@@ -355,7 +400,7 @@ object DynamicTLSPeerGroupSpec {
       SHA256withECDSA
     )
 
-    val framingConfig = FramingConfig.buildConfig(192000, 0, 4, 0, 4).get
+    val framingConfig = FramingConfig.buildConfigWithStrippedLength(192000, 4).get
 
     DynamicTLSPeerGroup.Config(
       address,

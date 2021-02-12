@@ -26,7 +26,7 @@ import scodec.bits.BitVector
 import scala.concurrent.Promise
 import scala.util.control.NonFatal
 import io.netty.channel.EventLoop
-import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender}
+import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender, TooLongFrameException}
 import io.netty.handler.proxy.Socks5ProxyHandler
 import scodec.Attempt.{Failure, Successful}
 import scodec.Codec
@@ -36,7 +36,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
     val encoder = new LengthFieldPrepender(
       config.byteOrder,
       config.lengthFieldLength,
-      config.lengthAdjustment,
+      config.encodingLengthAdjustment,
       config.lengthIncludesLengthFieldLength
     )
 
@@ -45,7 +45,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       config.maxFrameLength,
       config.lengthFieldOffset,
       config.lengthFieldLength,
-      config.lengthAdjustment,
+      config.decodingLengthAdjustment,
       config.initialBytesToStrip,
       config.failFast
     )
@@ -96,13 +96,19 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
     }
 
     override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
-      // swallow netty's default logging of the stack trace.
-      logger.error(
-        "Unexpected exception {} on channel to peer {}",
-        cause.getMessage: Any,
-        ctx.channel().remoteAddress(): Any
-      )
-      handleEvent(UnexpectedError(cause))
+      cause match {
+        case e: TooLongFrameException =>
+          logger.error("Too long frame {} on channel to peer {}", e.getMessage, ctx.channel().remoteAddress())
+          handleEvent(DecodingError)
+        case e =>
+          // swallow netty's default logging of the stack trace.
+          logger.error(
+            "Unexpected exception {} on channel to peer {}",
+            cause.getMessage: Any,
+            ctx.channel().remoteAddress(): Any
+          )
+          handleEvent(UnexpectedError(cause))
+      }
     }
 
     private def handleEvent(event: ChannelEvent[M]): Unit =
