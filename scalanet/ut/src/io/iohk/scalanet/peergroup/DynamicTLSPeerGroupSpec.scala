@@ -7,7 +7,6 @@ import java.security.SecureRandom
 import cats.implicits._
 import cats.effect.concurrent.Deferred
 import io.iohk.scalanet.NetUtils._
-import io.iohk.scalanet.codec.FramingCodec
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.crypto.CryptoUtils.{SHA256withECDSA, Secp256r1}
 import io.iohk.scalanet.peergroup.implicits._
@@ -23,7 +22,7 @@ import io.iohk.scalanet.peergroup.PeerGroup.{
 import io.iohk.scalanet.peergroup.ReqResponseProtocol.DynamicTLS
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.SignedKey
 import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSExtension, DynamicTLSPeerGroup, Secp256k1}
-import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{Config, PeerInfo}
+import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{Config, FramingConfig, PeerInfo}
 import io.iohk.scalanet.testutils.GeneratorUtils
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -47,7 +46,6 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
 
   val timeOutConfig = 5.seconds
   implicit val patienceConfig: ScalaFutures.PatienceConfig = PatienceConfig(5.seconds)
-  implicit val codec = new FramingCodec(Codec[String])
   implicit val scheduler = Scheduler.fixedPool("test", 16)
 
   behavior of "Dynamic TLSPeerGroup"
@@ -293,7 +291,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
   }
 
   it should "inform user about decoding error" in taskTestCase {
-    implicit val s = new FramingCodec[TestMessage[String]](Codec[TestMessage[String]])
+    implicit val s = Codec[TestMessage[String]]
     (for {
       client <- DynamicTLSPeerGroup[String](getCorrectConfig())
       server <- DynamicTLSPeerGroup[TestMessage[String]](getCorrectConfig())
@@ -324,10 +322,12 @@ object DynamicTLSPeerGroupSpec {
 
   def getCorrectConfig(
       address: InetSocketAddress = aRandomAddress(),
-      useNativeTlsImplementation: Boolean = false
+      useNativeTlsImplementation: Boolean = false,
+      maxFrameLength: Int = 192000
   ): DynamicTLSPeerGroup.Config = {
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
-    Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation, None).get
+    val framingConfig = FramingConfig.buildConfig(maxFrameLength, 0, 4, 0, 4).get
+    Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation, framingConfig, None).get
   }
 
   def getIncorrectConfigWrongId(address: InetSocketAddress = aRandomAddress()): DynamicTLSPeerGroup.Config = {
@@ -355,12 +355,15 @@ object DynamicTLSPeerGroupSpec {
       SHA256withECDSA
     )
 
+    val framingConfig = FramingConfig.buildConfig(192000, 0, 4, 0, 4).get
+
     DynamicTLSPeerGroup.Config(
       address,
       PeerInfo(sig.publicKey.getNodeId, InetMultiAddress(address)),
       connectionKeyPair,
       cer,
       useNativeTlsImplementation = false,
+      framingConfig,
       None
     )
   }

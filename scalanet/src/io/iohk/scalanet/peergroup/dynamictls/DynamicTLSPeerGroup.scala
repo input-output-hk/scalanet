@@ -5,7 +5,6 @@ import java.security._
 import java.security.cert.X509Certificate
 import cats.effect.Resource
 import com.typesafe.scalalogging.StrictLogging
-import io.iohk.scalanet.codec.StreamCodec
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.crypto.CryptoUtils.{SHA256withECDSA, Secp256r1}
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
@@ -29,8 +28,10 @@ import io.netty.handler.ssl.SslContext
 import monix.eval.Task
 import monix.execution.{ChannelType, Scheduler}
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair
+import scodec.Codec
 import scodec.bits.BitVector
 
+import java.nio.ByteOrder
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
 import scala.util.control.NonFatal
@@ -46,7 +47,7 @@ import scala.util.control.NonFatal
   * @tparam M the message type.
   */
 class DynamicTLSPeerGroup[M] private (val config: Config)(
-    implicit codec: StreamCodec[M],
+    implicit codec: Codec[M],
     scheduler: Scheduler
 ) extends TerminalPeerGroup[PeerInfo, M]
     with ProxySupport[PeerInfo, M]
@@ -76,7 +77,7 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
-        new ServerChannelBuilder[M](serverQueue, ch, sslServerCtx, codec.cleanSlate, throttlingFilter)
+        new ServerChannelBuilder[M](serverQueue, ch, sslServerCtx, config.framingConfig, throttlingFilter)
         logger.info(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })
@@ -104,7 +105,7 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
           to,
           clientBootstrap,
           DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForClient(to), config),
-          codec.cleanSlate,
+          config.framingConfig,
           proxyConfig
         ).initialize
       }
@@ -141,6 +142,69 @@ object DynamicTLSPeerGroup {
     }
   }
 
+  sealed abstract case class FramingConfig private (
+      maxFrameLength: Int,
+      lengthFieldOffset: Int,
+      lengthFieldLength: Int,
+      lengthAdjustment: Int,
+      initialBytesToStrip: Int,
+      failFast: Boolean,
+      byteOrder: ByteOrder,
+      lengthIncludesLengthFieldLength: Boolean
+  )
+
+  object FramingConfig {
+    private val possibleLengthFieldLength = Set(1, 2, 3, 4, 8)
+
+    /**
+      *
+      * Configures framing format for all the peers in PeerGroup
+      *
+      *
+      * @param maxFrameLength the maximum length of the frame. If the length of the frame is greater than this value
+      *                       channel with generate DecodingError event.
+      * @param lengthFieldOffset the offset of the length field.
+      * @param lengthFieldLength  the length of the length field. Must be 1, 2, 3, 4 or 8 bytes.
+      * @param lengthAdjustment the compensation value to add to the value of the length field.
+      * @param initialBytesToStrip the number of first bytes to strip out from the decoded frame. In standard framing setup
+      *                            it should be equal to lengthFieldLength.
+      * @param failFast  If true, a DecodingError event is generated as soon as the decoder notices the length of the frame will
+      *                  exceed maxFrameLength regardless of whether the entire frame has been read. If false,
+      *                  a a DecodingError event is generated after the entire frame that exceeds maxFrameLength has been read..
+      * @param byteOrder the ByteOrder of the length field.
+      * @param lengthIncludesLengthFieldLength if true, the length of the prepended length field is added to the value of the prepended length field.
+      */
+    def buildConfig(
+        maxFrameLength: Int,
+        lengthFieldOffset: Int,
+        lengthFieldLength: Int,
+        lengthAdjustment: Int,
+        initialBytesToStrip: Int,
+        failFast: Boolean = true,
+        byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN,
+        lengthIncludesLengthFieldLength: Boolean = false
+    ): Option[FramingConfig] = {
+      val tooLargeOffset = lengthFieldOffset > maxFrameLength - lengthFieldLength
+      if (maxFrameLength <= 0 || lengthFieldOffset < 0 || initialBytesToStrip < 0 || !possibleLengthFieldLength
+          .contains(lengthFieldLength) || tooLargeOffset) {
+        None
+      } else {
+        Some(
+          new FramingConfig(
+            maxFrameLength,
+            lengthFieldOffset,
+            lengthFieldLength,
+            lengthAdjustment,
+            initialBytesToStrip,
+            failFast,
+            byteOrder,
+            lengthIncludesLengthFieldLength
+          ) {}
+        )
+      }
+    }
+  }
+
   /**
     *
     * Config which enables specifying minimal duration between subsequent incoming connections attempts from the same
@@ -158,6 +222,7 @@ object DynamicTLSPeerGroup {
       connectionKeyPair: KeyPair,
       connectionCertificate: X509Certificate,
       useNativeTlsImplementation: Boolean,
+      framingConfig: FramingConfig,
       incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
   )
 
@@ -169,6 +234,7 @@ object DynamicTLSPeerGroup {
         hostKeyPair: KeyPair,
         secureRandom: SecureRandom,
         useNativeTlsImplementation: Boolean,
+        framingConfig: FramingConfig,
         incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
     ): Try[Config] = {
 
@@ -179,6 +245,7 @@ object DynamicTLSPeerGroup {
           nodeData.generatedConnectionKey,
           nodeData.certWithExtension,
           useNativeTlsImplementation,
+          framingConfig,
           incomingConnectionsThrottling
         )
       }
@@ -190,6 +257,7 @@ object DynamicTLSPeerGroup {
         hostKeyPair: AsymmetricCipherKeyPair,
         secureRandom: SecureRandom,
         useNativeTlsImplementation: Boolean,
+        framingConfig: FramingConfig,
         incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
     ): Try[Config] = {
       val convertedKeyPair = CryptoUtils.convertBcToJceKeyPair(hostKeyPair)
@@ -199,13 +267,14 @@ object DynamicTLSPeerGroup {
         convertedKeyPair,
         secureRandom,
         useNativeTlsImplementation,
+        framingConfig,
         incomingConnectionsThrottling
       )
     }
   }
 
   /** Create the peer group as a resource that is guaranteed to initialize itself and shut itself down at the end. */
-  def apply[M: StreamCodec](config: Config)(implicit scheduler: Scheduler): Resource[Task, DynamicTLSPeerGroup[M]] =
+  def apply[M: Codec](config: Config)(implicit scheduler: Scheduler): Resource[Task, DynamicTLSPeerGroup[M]] =
     Resource.make {
       for {
         // NOTE: The DynamicTLSPeerGroup creates Netty workgroups in its constructor, so calling `shutdown` is a must.
