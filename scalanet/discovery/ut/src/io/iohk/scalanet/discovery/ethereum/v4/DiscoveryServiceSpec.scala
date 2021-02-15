@@ -1118,7 +1118,8 @@ object DiscoveryServiceSpec {
       config,
       rpc,
       stateRef,
-      toAddress = nodeAddressToInetSocketAddress
+      toAddress = nodeAddressToInetSocketAddress,
+      maybeEnrFilter = None
     )
   }
 

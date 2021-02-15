@@ -4,7 +4,7 @@ import cats.effect.{Clock, Resource}
 import cats.effect.concurrent.{Deferred, Ref}
 import cats.implicits._
 import io.iohk.scalanet.discovery.crypto.{PrivateKey, SigAlg}
-import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord}
+import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord, NetworkId}
 import io.iohk.scalanet.discovery.hash.Hash
 import io.iohk.scalanet.kademlia.XorOrdering
 import io.iohk.scalanet.peergroup.Addressable
@@ -89,11 +89,23 @@ object DiscoveryService {
         for {
           _ <- checkKeySize("private key", privateKey, sigalg.PrivateKeyBytesSize)
           _ <- checkKeySize("node ID", node.id, sigalg.PublicKeyBytesSize)
+
           // Use the current time to set the ENR sequence to something fresh.
           now <- clock.monotonic(MILLISECONDS)
-          enr <- Task(EthereumNodeRecord.fromNode(node, privateKey, seq = now).require)
+          enrAttrs = maybeNetworkId.map(NetworkId.enrAttr).toList
+          enr <- Task(EthereumNodeRecord.fromNode(node, privateKey, seq = now, enrAttrs: _*).require)
+
           stateRef <- Ref[Task].of(State[A](node, enr, SubnetLimits.fromConfig(config)))
-          service <- Task(new ServiceImpl[A](privateKey, config, network, stateRef, toAddress))
+
+          service = new ServiceImpl[A](
+            privateKey,
+            config,
+            network,
+            stateRef,
+            toAddress,
+            maybeNetworkId.map(NetworkId.enrFilter)
+          )
+
           // Start handling requests, we need them during enrolling so the peers can ping and bond with us.
           cancelToken <- network.startHandling(service)
           // Contact the bootstrap nodes.
@@ -275,7 +287,8 @@ object DiscoveryService {
       config: DiscoveryConfig,
       rpc: DiscoveryRPC[Peer[A]],
       stateRef: StateRef[A],
-      toAddress: Node.Address => A
+      toAddress: Node.Address => A,
+      maybeEnrFilter: Option[EthereumNodeRecord => Either[String, Unit]]
   )(
       implicit clock: Clock[Task],
       sigalg: SigAlg,
@@ -635,31 +648,7 @@ object DiscoveryService {
                       Task(logger.debug(s"Could not fetch ENR from $peer")).as(None)
 
                     case Some(enr) =>
-                      EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
-                        case Attempt.Successful(true) =>
-                          // Try to extract the node address from the ENR record and update the node database,
-                          // otherwise if there's no address we can use remove the peer.
-                          Node.Address.fromEnr(enr) match {
-                            case None =>
-                              Task(logger.debug(s"Could not extract node address from ENR $enr")) >>
-                                removePeer(peer).as(None)
-
-                            case Some(address) if !address.checkRelay(peer) =>
-                              Task(logger.debug(s"Ignoring ENR with $address from $peer because of invalid relay IP.")) >>
-                                removePeer(peer).as(None)
-
-                            case Some(address) =>
-                              Task(logger.info(s"Storing the ENR for $peer")) >>
-                                storePeer(peer, enr, address)
-                          }
-
-                        case Attempt.Successful(false) =>
-                          Task(logger.info(s"Could not validate ENR signature from $peer!")) >>
-                            removePeer(peer).as(None)
-
-                        case Attempt.Failure(err) =>
-                          Task(logger.error(s"Error validating ENR from $peer: $err")).as(None)
-                      }
+                      validateEnr(peer, enr)
                   }
           }
 
@@ -672,6 +661,45 @@ object DiscoveryService {
             .guarantee(stateRef.update(_.clearEnrFetch(peer)))
       }
     }
+
+    private def validateEnr(peer: Peer[A], enr: EthereumNodeRecord): Task[Option[EthereumNodeRecord]] = {
+      filterEnr(enr) match {
+        case Left(reject) =>
+          Task(logger.debug(s"Ignoring ENR from $peer: $reject")) >>
+            removePeer(peer).as(None)
+
+        case Right(()) =>
+          EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
+            case Attempt.Successful(true) =>
+              // Try to extract the node address from the ENR record and update the node database,
+              // otherwise if there's no address we can use remove the peer.
+              Node.Address.fromEnr(enr) match {
+                case None =>
+                  Task(logger.debug(s"Could not extract node address from ENR $enr")) >>
+                    removePeer(peer).as(None)
+
+                case Some(address) if !address.checkRelay(peer) =>
+                  Task(logger.debug(s"Ignoring ENR with $address from $peer because of invalid relay IP.")) >>
+                    removePeer(peer).as(None)
+
+                case Some(address) =>
+                  Task(logger.info(s"Storing the ENR for $peer")) >>
+                    storePeer(peer, enr, address)
+              }
+
+            case Attempt.Successful(false) =>
+              Task(logger.info(s"Could not validate ENR signature from $peer!")) >>
+                removePeer(peer).as(None)
+
+            case Attempt.Failure(err) =>
+              Task(logger.error(s"Error validating ENR from $peer: $err")).as(None)
+          }
+      }
+    }
+
+    /** Run the optional ENR filter to check if we can use this peer record. */
+    private def filterEnr(enr: EthereumNodeRecord): Either[String, Unit] =
+      maybeEnrFilter.map(_(enr)).getOrElse(Right(()))
 
     /** Add the peer to the node and ENR maps, then see if the bucket the node would fit into isn't already full.
       * If it isn't, add the peer to the routing table, otherwise try to evict the least recently seen peer.

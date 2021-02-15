@@ -4,9 +4,8 @@ import scodec.bits.ByteVector
 import scala.collection.SortedMap
 import scala.math.Ordering.Implicits._
 import java.nio.charset.StandardCharsets
-import io.iohk.scalanet.discovery.crypto.{Signature, PrivateKey, SigAlg}
+import io.iohk.scalanet.discovery.crypto.{Signature, PrivateKey, PublicKey, SigAlg}
 import scodec.{Codec, Attempt}
-import io.iohk.scalanet.discovery.crypto.PublicKey
 import java.net.Inet6Address
 
 /** ENR corresponding to https://github.com/ethereum/devp2p/blob/master/enr.md */
@@ -33,7 +32,7 @@ object EthereumNodeRecord {
   }
 
   object Keys {
-    private def key(k: String): ByteVector =
+    def key(k: String): ByteVector =
       ByteVector(k.getBytes(StandardCharsets.UTF_8))
 
     /** name of identity scheme, e.g. "v4" */
@@ -81,7 +80,7 @@ object EthereumNodeRecord {
     }
   }
 
-  def fromNode(node: Node, privateKey: PrivateKey, seq: Long)(
+  def fromNode(node: Node, privateKey: PrivateKey, seq: Long, customAttrs: (ByteVector, ByteVector)*)(
       implicit sigalg: SigAlg,
       codec: Codec[Content]
   ): Attempt[EthereumNodeRecord] = {
@@ -91,13 +90,16 @@ object EthereumNodeRecord {
       else
         (Keys.ip, Keys.tcp, Keys.udp)
 
-    val attrs = List(
+    val standardAttrs = List(
       Keys.id -> ByteVector("v4".getBytes(StandardCharsets.UTF_8)),
       Keys.secp256k1 -> sigalg.compressPublicKey(sigalg.toPublicKey(privateKey)).toByteVector,
       ipKey -> ByteVector(node.address.ip.getAddress),
       tcpKey -> ByteVector.fromInt(node.address.tcpPort),
       udpKey -> ByteVector.fromInt(node.address.udpPort)
     )
+
+    // Make sure a custom attribute doesn't overwrite a pre-defined one.
+    val attrs = standardAttrs ++ customAttrs.filterNot(kv => Keys.Predefined(kv._1))
 
     apply(privateKey, seq, attrs: _*)
   }
