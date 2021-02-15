@@ -12,7 +12,7 @@ import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.{ProxySupport, ServerEvent, TerminalPeerGroup}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.SignedKeyExtensionNodeData
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{Config, PeerInfo}
-import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroupInternals.{ClientChannelImpl, ServerChannelBuilder}
+import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroupInternals.{ClientChannelBuilder, ServerChannelBuilder}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroupUtils.{SSLContextForClient, SSLContextForServer}
 import io.iohk.scalanet.peergroup.{Addressable, Channel, InetMultiAddress}
 import io.iohk.scalanet.peergroup.CloseableQueue
@@ -77,7 +77,14 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
-        new ServerChannelBuilder[M](serverQueue, ch, sslServerCtx, config.framingConfig, throttlingFilter)
+        new ServerChannelBuilder[M](
+          serverQueue,
+          ch,
+          sslServerCtx,
+          config.framingConfig,
+          config.maxIncomingMessageQueueSize,
+          throttlingFilter
+        )
         logger.info(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
     })
@@ -101,11 +108,12 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
     // session for each connection.
     Resource.make(
       Task.suspend {
-        new ClientChannelImpl[M](
+        new ClientChannelBuilder[M](
           to,
           clientBootstrap,
           DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForClient(to), config),
           config.framingConfig,
+          config.maxIncomingMessageQueueSize,
           proxyConfig
         ).initialize
       }
@@ -249,6 +257,7 @@ object DynamicTLSPeerGroup {
       connectionCertificate: X509Certificate,
       useNativeTlsImplementation: Boolean,
       framingConfig: FramingConfig,
+      maxIncomingMessageQueueSize: Int,
       incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
   )
 
@@ -261,6 +270,7 @@ object DynamicTLSPeerGroup {
         secureRandom: SecureRandom,
         useNativeTlsImplementation: Boolean,
         framingConfig: FramingConfig,
+        maxIncomingMessageQueueSize: Int,
         incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
     ): Try[Config] = {
 
@@ -272,6 +282,7 @@ object DynamicTLSPeerGroup {
           nodeData.certWithExtension,
           useNativeTlsImplementation,
           framingConfig,
+          maxIncomingMessageQueueSize: Int,
           incomingConnectionsThrottling
         )
       }
@@ -284,6 +295,7 @@ object DynamicTLSPeerGroup {
         secureRandom: SecureRandom,
         useNativeTlsImplementation: Boolean,
         framingConfig: FramingConfig,
+        maxIncomingMessageQueueSize: Int,
         incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
     ): Try[Config] = {
       val convertedKeyPair = CryptoUtils.convertBcToJceKeyPair(hostKeyPair)
@@ -294,6 +306,7 @@ object DynamicTLSPeerGroup {
         secureRandom,
         useNativeTlsImplementation,
         framingConfig,
+        maxIncomingMessageQueueSize,
         incomingConnectionsThrottling
       )
     }

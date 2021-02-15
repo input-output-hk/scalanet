@@ -368,11 +368,12 @@ object DynamicTLSPeerGroupSpec {
   def getCorrectConfig(
       address: InetSocketAddress = aRandomAddress(),
       useNativeTlsImplementation: Boolean = false,
-      maxFrameLength: Int = 192000
+      maxFrameLength: Int = 192000,
+      maxQueueSize: Int = 100
   ): DynamicTLSPeerGroup.Config = {
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
     val framingConfig = FramingConfig.buildConfigWithStrippedLength(maxFrameLength, 4).get
-    Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation, framingConfig, None).get
+    Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation, framingConfig, maxQueueSize, None).get
   }
 
   def getIncorrectConfigWrongId(address: InetSocketAddress = aRandomAddress()): DynamicTLSPeerGroup.Config = {
@@ -409,6 +410,7 @@ object DynamicTLSPeerGroupSpec {
       cer,
       useNativeTlsImplementation = false,
       framingConfig,
+      100,
       None
     )
   }

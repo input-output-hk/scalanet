@@ -257,7 +257,7 @@ object ReqResponseProtocol {
       config <- Resource.liftF(
         Task.fromTry(
           DynamicTLSPeerGroup
-            .Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation = false, framingConfig, None)
+            .Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation = false, framingConfig, 100, None)
         )
       )
       pg <- DynamicTLSPeerGroup[MessageEnvelope[M]](config)
