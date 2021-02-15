@@ -885,6 +885,41 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
+  behavior of "getClosestNodes"
+
+  it should "resolve the ENR records for the lookup results" in test {
+    new LookupFixture {
+      // We can find an ENR only for half of the random nodes. These should never be returned.
+      val (nodesWithEnr, nodesWithoutEnr) = randomNodes.splitAt(randomNodes.size / 2)
+
+      override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(Some(None)),
+        enrRequest = peer =>
+          _ =>
+            Task.pure {
+              nodesWithEnr.find(_._1.id == peer.id).map(_._2)
+            },
+        findNode = _ =>
+          targetPublicKey =>
+            Task.pure {
+              Some(Random.shuffle(randomNodes).take(config.kademliaBucketSize).map(_._1))
+            }
+      )
+
+      override val test = for {
+        _ <- addRemotePeer
+        closest <- service.getClosestNodes(targetPublicKey)
+      } yield {
+        Inspectors.forAll(nodesWithoutEnr) {
+          case (node, _) => closest.contains(node) shouldBe false
+        }
+        Inspectors.forAtLeast(1, nodesWithEnr) {
+          case (node, _) => closest.contains(node) shouldBe true
+        }
+      }
+    }
+  }
+
   behavior of "getNodes"
 
   it should "return the local node among all nodes which have an ENR" in test {

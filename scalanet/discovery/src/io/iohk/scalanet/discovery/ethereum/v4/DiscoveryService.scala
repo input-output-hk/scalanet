@@ -44,10 +44,10 @@ trait DiscoveryService {
   def getLocalNode: Task[Node]
 
   /** Lookup the nodes closest to a given target. */
-  def lookup(target: Node.Id): Task[SortedSet[Node]]
+  def getClosestNodes(target: Node.Id): Task[SortedSet[Node]]
 
-  /** Lookup a random target, to discovery new nodes along the way. */
-  def lookupRandom: Task[Set[Node]]
+  /** Lookup a random target, to discover new nodes along the way. */
+  def getRandomNodes: Task[Set[Node]]
 }
 
 object DiscoveryService {
@@ -76,7 +76,8 @@ object DiscoveryService {
       config: DiscoveryConfig,
       network: DiscoveryNetwork[A],
       toAddress: Node.Address => A,
-      enrollInBackground: Boolean = false
+      enrollInBackground: Boolean = false,
+      maybeNetworkId: Option[String] = None
   )(
       implicit sigalg: SigAlg,
       enrCodec: Codec[EthereumNodeRecord.Content],
@@ -308,6 +309,20 @@ object DiscoveryService {
             }
         }
       }
+
+    /** Performa a lookup and also make sure the closest results have their ENR records fetched,
+      * to rule out the chance that incorrect details were relayed in the Neighbors response.
+      */
+    override def getClosestNodes(target: Node.Id): Task[SortedSet[Node]] =
+      for {
+        closest <- lookup(target)
+        _ <- closest.toList.traverse(n => maybeFetchEnr(toPeer(n), None))
+        state <- stateRef.get
+        resolved = closest.filter(n => state.nodeMap.contains(n.id))
+      } yield resolved
+
+    override def getRandomNodes: Task[Set[Node]] =
+      getClosestNodes(sigalg.newKeyPair._1)
 
     override def removeNode(nodeId: Node.Id): Task[Unit] =
       stateRef.update { state =>
@@ -730,9 +745,11 @@ object DiscoveryService {
       * arrive from each peer we ask (or if they return k quicker then it returns earlier)
       * it could be quite slow if it was used for routing.
       *
+      * It doesn't include fetching the ENR records, that happens in the background.
+      *
       * https://github.com/ethereum/devp2p/blob/master/discv4.md#recursive-lookup
       */
-    override def lookup(target: Node.Id): Task[SortedSet[Node]] = {
+    protected[v4] def lookup(target: Node.Id): Task[SortedSet[Node]] = {
       val targetId = Node.kademliaId(target)
 
       implicit val nodeOrdering: Ordering[Node] =
@@ -859,7 +876,7 @@ object DiscoveryService {
     }
 
     /** Look up a random node ID to discover new peers. */
-    override def lookupRandom: Task[Set[Node]] =
+    protected[v4] def lookupRandom: Task[Set[Node]] =
       Task(logger.info("Looking up a random target...")) >>
         lookup(target = sigalg.newKeyPair._1)
 
