@@ -324,7 +324,7 @@ object DiscoveryService {
         }
       }
 
-    /** Performa a lookup and also make sure the closest results have their ENR records fetched,
+    /** Perform a lookup and also make sure the closest results have their ENR records fetched,
       * to rule out the chance that incorrect details were relayed in the Neighbors response.
       */
     override def getClosestNodes(target: Node.Id): Task[SortedSet[Node]] =
@@ -774,7 +774,8 @@ object DiscoveryService {
       * arrive from each peer we ask (or if they return k quicker then it returns earlier)
       * it could be quite slow if it was used for routing.
       *
-      * It doesn't include fetching the ENR records, that happens in the background.
+      * It doesn't wait fetching and validating the ENR records, that happens in the background.
+      * Use `getNode` or `getClosestNodes` which wait for that extra step after the lookup.
       *
       * https://github.com/ethereum/devp2p/blob/master/discv4.md#recursive-lookup
       */

@@ -3,10 +3,11 @@ package io.iohk.scalanet.discovery.ethereum.v4
 import cats.implicits._
 import cats.effect.concurrent.Ref
 import io.iohk.scalanet.discovery.crypto.{PublicKey, Signature}
-import io.iohk.scalanet.discovery.ethereum.{EthereumNodeRecord, Node}
+import io.iohk.scalanet.discovery.ethereum.{EthereumNodeRecord, Node, NetworkId}
 import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs
 import io.iohk.scalanet.discovery.ethereum.v4.mocks.MockSigAlg
 import io.iohk.scalanet.discovery.ethereum.v4.DiscoveryNetwork.Peer
+import io.iohk.scalanet.discovery.ethereum.v4.KBucketsWithSubnetLimits.SubnetLimits
 import io.iohk.scalanet.kademlia.Xor
 import io.iohk.scalanet.NetUtils.aRandomAddress
 import java.net.InetSocketAddress
@@ -14,13 +15,12 @@ import monix.eval.Task
 import monix.execution.Scheduler
 import monix.execution.atomic.AtomicInt
 import org.scalatest._
+import org.scalatest.prop.TableDrivenPropertyChecks
 import scala.concurrent.duration._
 import scala.util.Random
 import java.net.InetAddress
-import io.iohk.scalanet.discovery.ethereum.v4.KBucketsWithSubnetLimits.SubnetLimits
-import io.iohk.scalanet.discovery.ethereum.NetworkId
 
-class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
+class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers with TableDrivenPropertyChecks {
   import DiscoveryService.{State, BondingResults}
   import DiscoveryServiceSpec._
   import DefaultCodecs._
@@ -479,23 +479,23 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
       }
   }
 
-  it should "reject the ENR if it's for a different network" in test {
+  it should "reject the ENR if remote network doesn't match the local one" in test {
     new NetworkIdFixture("test-network".some, "other-network".some, isCompatible = false)
   }
 
-  it should "reject the ENR if it's expected to have a network ID but it doesn't" in test {
+  it should "reject the ENR if remote network is missing when the local is set" in test {
     new NetworkIdFixture("test-network".some, none, isCompatible = false)
   }
 
-  it should "accept the ENR if it's for the same network" in test {
+  it should "accept the ENR if remote network matches the local one" in test {
     new NetworkIdFixture("test-network".some, "test-network".some, isCompatible = true)
   }
 
-  it should "accept the ENR if no network is expected but it's set to something" in test {
+  it should "accept the ENR if remote network is set but the local one isn't" in test {
     new NetworkIdFixture(none, "test-network".some, isCompatible = true)
   }
 
-  it should "accept the ENR if no network is expected and none is set" in test {
+  it should "accept the ENR if remote and the local networks are both empty" in test {
     new NetworkIdFixture(none, none, isCompatible = true)
   }
 
@@ -938,16 +938,15 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
 
   it should "resolve the ENR records for the lookup results" in test {
     new LookupFixture {
-      // We can find an ENR only for half of the random nodes. These should never be returned.
+      // We can find an ENR only for half of the random nodes.
+      // Thus the 2nd half of the random nodes should never be returned.
       val (nodesWithEnr, nodesWithoutEnr) = randomNodes.splitAt(randomNodes.size / 2)
 
       override lazy val rpc = unimplementedRPC.copy(
         ping = _ => _ => Task.pure(Some(None)),
-        enrRequest = peer =>
-          _ =>
-            Task.pure {
-              nodesWithEnr.find(_._1.id == peer.id).map(_._2)
-            },
+        // Only return ENR for the 1st half.
+        enrRequest = peer => _ => Task.pure { nodesWithEnr.find(_._1.id == peer.id).map(_._2) },
+        // Random selection from the whole range, some with ENR, some without.
         findNode = _ =>
           targetPublicKey =>
             Task.pure {

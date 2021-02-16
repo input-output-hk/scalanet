@@ -3,7 +3,7 @@ package io.iohk.scalanet.discovery.ethereum
 import scodec.bits.ByteVector
 import scala.collection.SortedMap
 import scala.math.Ordering.Implicits._
-import java.nio.charset.StandardCharsets
+import java.nio.charset.StandardCharsets.UTF_8
 import io.iohk.scalanet.discovery.crypto.{Signature, PrivateKey, PublicKey, SigAlg}
 import scodec.{Codec, Attempt}
 import java.net.Inet6Address
@@ -33,7 +33,7 @@ object EthereumNodeRecord {
 
   object Keys {
     def key(k: String): ByteVector =
-      ByteVector(k.getBytes(StandardCharsets.UTF_8))
+      ByteVector(k.getBytes(UTF_8))
 
     /** name of identity scheme, e.g. "v4" */
     val id = key("id")
@@ -91,7 +91,7 @@ object EthereumNodeRecord {
         (Keys.ip, Keys.tcp, Keys.udp)
 
     val standardAttrs = List(
-      Keys.id -> ByteVector("v4".getBytes(StandardCharsets.UTF_8)),
+      Keys.id -> ByteVector("v4".getBytes(UTF_8)),
       Keys.secp256k1 -> sigalg.compressPublicKey(sigalg.toPublicKey(privateKey)).toByteVector,
       ipKey -> ByteVector(node.address.ip.getAddress),
       tcpKey -> ByteVector.fromInt(node.address.tcpPort),
