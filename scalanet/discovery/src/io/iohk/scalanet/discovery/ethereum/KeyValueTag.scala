@@ -9,11 +9,19 @@ import scala.util.{Try, Success, Failure}
   * as a critera for accepting remote ENRs.
   */
 trait KeyValueTag {
-  def toAttr: (ByteVector, ByteVector)
+
+  /** Add a key-value pair to the outgoing ENR record.
+    * Return None if this tag is used only for filtering.
+    */
+  def toAttr: Option[(ByteVector, ByteVector)]
+
+  /** Apply a filter on incoming ENR records. */
   def toFilter: KeyValueTag.EnrFilter
 }
 
 object KeyValueTag {
+
+  /** Return either a rejection message or unit, to accept the ENR. */
   type EnrFilter = EthereumNodeRecord => Either[String, Unit]
 
   def toFilter(tags: List[KeyValueTag]): EnrFilter = {
@@ -29,7 +37,7 @@ object KeyValueTag {
       ByteVector(value.getBytes(UTF_8))
 
     override val toAttr =
-      (keyBytes, valueBytes)
+      Some(keyBytes -> valueBytes)
 
     override val toFilter = enr =>
       enr.content.attrs.get(keyBytes) match {

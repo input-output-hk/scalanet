@@ -463,7 +463,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers with TableDrivenP
       maybeLocalNetwork.map(NetworkId(_)).toList
 
     override lazy val remoteENR = {
-      val attrs = maybeRemoteNetwork.map(NetworkId(_).toAttr).toList
+      val attrs = maybeRemoteNetwork.flatMap(NetworkId(_).toAttr).toList
       EthereumNodeRecord
         .fromNode(remoteNode, remotePrivateKey, seq = 1, attrs: _*)
         .require

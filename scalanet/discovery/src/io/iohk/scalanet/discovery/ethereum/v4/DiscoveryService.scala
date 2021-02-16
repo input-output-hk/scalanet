@@ -94,7 +94,7 @@ object DiscoveryService {
           // Use the current time to set the ENR sequence to something fresh.
           now <- clock.monotonic(MILLISECONDS)
           enr <- Task {
-            EthereumNodeRecord.fromNode(node, privateKey, seq = now, tags.map(_.toAttr): _*).require
+            EthereumNodeRecord.fromNode(node, privateKey, seq = now, tags.flatMap(_.toAttr): _*).require
           }
 
           stateRef <- Ref[Task].of(State[A](node, enr, SubnetLimits.fromConfig(config)))
