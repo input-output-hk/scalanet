@@ -18,6 +18,7 @@ import scala.concurrent.duration._
 import scala.util.Random
 import java.net.InetAddress
 import io.iohk.scalanet.discovery.ethereum.v4.KBucketsWithSubnetLimits.SubnetLimits
+import io.iohk.scalanet.discovery.ethereum.NetworkId
 
 class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   import DiscoveryService.{State, BondingResults}
@@ -438,6 +439,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "not remove the bonded status if the ENR fetch fails" in test {
     new Fixture {
       override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(Some(None)),
         enrRequest = _ => _ => Task(None)
       )
       override val test = for {
@@ -448,6 +450,53 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         state.lastPongTimestampMap should contain key (remotePeer)
       }
     }
+  }
+
+  class NetworkIdFixture(
+      maybeLocalNetwork: Option[String],
+      maybeRemoteNetwork: Option[String],
+      isCompatible: Boolean
+  ) extends Fixture {
+
+    override lazy val maybeEnrFilter =
+      maybeLocalNetwork.map(NetworkId.enrFilter)
+
+    override lazy val remoteENR =
+      EthereumNodeRecord
+        .fromNode(remoteNode, remotePrivateKey, seq = 1, maybeRemoteNetwork.map(NetworkId.enrAttr).toList: _*)
+        .require
+
+    override lazy val rpc = unimplementedRPC.copy(
+      ping = _ => _ => Task.pure(Some(None)),
+      enrRequest = _ => _ => Task(Some(remoteENR))
+    )
+
+    override def test =
+      for {
+        maybeEnr <- service.fetchEnr(remotePeer)
+      } yield {
+        maybeEnr.isDefined shouldBe isCompatible
+      }
+  }
+
+  it should "reject the ENR if it's for a different network" in test {
+    new NetworkIdFixture("test-network".some, "other-network".some, isCompatible = false)
+  }
+
+  it should "reject the ENR if it's expected to have a network ID but it doesn't" in test {
+    new NetworkIdFixture("test-network".some, none, isCompatible = false)
+  }
+
+  it should "accept the ENR if it's for the same network" in test {
+    new NetworkIdFixture("test-network".some, "test-network".some, isCompatible = true)
+  }
+
+  it should "accept the ENR if no network is expected but it's set to something" in test {
+    new NetworkIdFixture(none, "test-network".some, isCompatible = true)
+  }
+
+  it should "accept the ENR if no network is expected and none is set" in test {
+    new NetworkIdFixture(none, none, isCompatible = true)
   }
 
   behavior of "storePeer"
@@ -1112,6 +1161,8 @@ object DiscoveryServiceSpec {
 
     lazy val rpc = unimplementedRPC
 
+    lazy val maybeEnrFilter: Option[DiscoveryService.EnrFilter] = None
+
     // Only using `new` for testing, normally we'd use it as a Resource with `apply`.
     lazy val service = new DiscoveryService.ServiceImpl[InetSocketAddress](
       localPrivateKey,
@@ -1119,7 +1170,7 @@ object DiscoveryServiceSpec {
       rpc,
       stateRef,
       toAddress = nodeAddressToInetSocketAddress,
-      maybeEnrFilter = None
+      maybeEnrFilter = maybeEnrFilter
     )
   }
 

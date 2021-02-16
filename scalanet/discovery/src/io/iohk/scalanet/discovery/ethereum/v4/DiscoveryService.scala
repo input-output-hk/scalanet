@@ -58,6 +58,7 @@ object DiscoveryService {
   type ENRSeq = Long
   type Timestamp = Long
   type StateRef[A] = Ref[Task, State[A]]
+  type EnrFilter = EthereumNodeRecord => Either[String, Unit]
 
   /** Implement the Discovery v4 protocol:
     *
@@ -288,7 +289,7 @@ object DiscoveryService {
       rpc: DiscoveryRPC[Peer[A]],
       stateRef: StateRef[A],
       toAddress: Node.Address => A,
-      maybeEnrFilter: Option[EthereumNodeRecord => Either[String, Unit]]
+      maybeEnrFilter: Option[EnrFilter]
   )(
       implicit clock: Clock[Task],
       sigalg: SigAlg,
