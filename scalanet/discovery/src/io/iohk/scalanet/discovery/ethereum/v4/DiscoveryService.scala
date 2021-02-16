@@ -4,7 +4,7 @@ import cats.effect.{Clock, Resource}
 import cats.effect.concurrent.{Deferred, Ref}
 import cats.implicits._
 import io.iohk.scalanet.discovery.crypto.{PrivateKey, SigAlg}
-import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord, NetworkId}
+import io.iohk.scalanet.discovery.ethereum.{Node, EthereumNodeRecord}
 import io.iohk.scalanet.discovery.hash.Hash
 import io.iohk.scalanet.kademlia.XorOrdering
 import io.iohk.scalanet.peergroup.Addressable
@@ -16,6 +16,7 @@ import scodec.{Codec, Attempt}
 import scodec.bits.BitVector
 import com.typesafe.scalalogging.LazyLogging
 import scala.collection.immutable.SortedSet
+import io.iohk.scalanet.discovery.ethereum.KeyValueTag
 
 /** Represent the minimal set of operations the rest of the system
   * can expect from the service to be able to talk to other peers.
@@ -58,7 +59,6 @@ object DiscoveryService {
   type ENRSeq = Long
   type Timestamp = Long
   type StateRef[A] = Ref[Task, State[A]]
-  type EnrFilter = EthereumNodeRecord => Either[String, Unit]
 
   /** Implement the Discovery v4 protocol:
     *
@@ -78,7 +78,7 @@ object DiscoveryService {
       network: DiscoveryNetwork[A],
       toAddress: Node.Address => A,
       enrollInBackground: Boolean = false,
-      maybeNetworkId: Option[String] = None
+      tags: List[KeyValueTag] = Nil
   )(
       implicit sigalg: SigAlg,
       enrCodec: Codec[EthereumNodeRecord.Content],
@@ -93,8 +93,9 @@ object DiscoveryService {
 
           // Use the current time to set the ENR sequence to something fresh.
           now <- clock.monotonic(MILLISECONDS)
-          enrAttrs = maybeNetworkId.map(NetworkId.enrAttr).toList
-          enr <- Task(EthereumNodeRecord.fromNode(node, privateKey, seq = now, enrAttrs: _*).require)
+          enr <- Task {
+            EthereumNodeRecord.fromNode(node, privateKey, seq = now, tags.map(_.toAttr): _*).require
+          }
 
           stateRef <- Ref[Task].of(State[A](node, enr, SubnetLimits.fromConfig(config)))
 
@@ -104,7 +105,7 @@ object DiscoveryService {
             network,
             stateRef,
             toAddress,
-            maybeNetworkId.map(NetworkId.enrFilter)
+            KeyValueTag.toFilter(tags)
           )
 
           // Start handling requests, we need them during enrolling so the peers can ping and bond with us.
@@ -289,7 +290,7 @@ object DiscoveryService {
       rpc: DiscoveryRPC[Peer[A]],
       stateRef: StateRef[A],
       toAddress: Node.Address => A,
-      maybeEnrFilter: Option[EnrFilter]
+      enrFilter: KeyValueTag.EnrFilter
   )(
       implicit clock: Clock[Task],
       sigalg: SigAlg,
@@ -664,7 +665,7 @@ object DiscoveryService {
     }
 
     private def validateEnr(peer: Peer[A], enr: EthereumNodeRecord): Task[Option[EthereumNodeRecord]] = {
-      filterEnr(enr) match {
+      enrFilter(enr) match {
         case Left(reject) =>
           Task(logger.debug(s"Ignoring ENR from $peer: $reject")) >>
             removePeer(peer).as(None)
@@ -697,10 +698,6 @@ object DiscoveryService {
           }
       }
     }
-
-    /** Run the optional ENR filter to check if we can use this peer record. */
-    private def filterEnr(enr: EthereumNodeRecord): Either[String, Unit] =
-      maybeEnrFilter.map(_(enr)).getOrElse(Right(()))
 
     /** Add the peer to the node and ENR maps, then see if the bucket the node would fit into isn't already full.
       * If it isn't, add the peer to the routing table, otherwise try to evict the least recently seen peer.

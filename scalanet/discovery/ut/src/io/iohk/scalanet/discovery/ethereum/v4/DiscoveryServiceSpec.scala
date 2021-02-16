@@ -3,7 +3,8 @@ package io.iohk.scalanet.discovery.ethereum.v4
 import cats.implicits._
 import cats.effect.concurrent.Ref
 import io.iohk.scalanet.discovery.crypto.{PublicKey, Signature}
-import io.iohk.scalanet.discovery.ethereum.{EthereumNodeRecord, Node, NetworkId}
+import io.iohk.scalanet.discovery.ethereum.{EthereumNodeRecord, Node}
+import io.iohk.scalanet.discovery.ethereum.KeyValueTag, KeyValueTag.NetworkId
 import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs
 import io.iohk.scalanet.discovery.ethereum.v4.mocks.MockSigAlg
 import io.iohk.scalanet.discovery.ethereum.v4.DiscoveryNetwork.Peer
@@ -458,13 +459,15 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers with TableDrivenP
       isCompatible: Boolean
   ) extends Fixture {
 
-    override lazy val maybeEnrFilter =
-      maybeLocalNetwork.map(NetworkId.enrFilter)
+    override lazy val tags =
+      maybeLocalNetwork.map(NetworkId(_)).toList
 
-    override lazy val remoteENR =
+    override lazy val remoteENR = {
+      val attrs = maybeRemoteNetwork.map(NetworkId(_).toAttr).toList
       EthereumNodeRecord
-        .fromNode(remoteNode, remotePrivateKey, seq = 1, maybeRemoteNetwork.map(NetworkId.enrAttr).toList: _*)
+        .fromNode(remoteNode, remotePrivateKey, seq = 1, attrs: _*)
         .require
+    }
 
     override lazy val rpc = unimplementedRPC.copy(
       ping = _ => _ => Task.pure(Some(None)),
@@ -1160,7 +1163,7 @@ object DiscoveryServiceSpec {
 
     lazy val rpc = unimplementedRPC
 
-    lazy val maybeEnrFilter: Option[DiscoveryService.EnrFilter] = None
+    lazy val tags: List[KeyValueTag] = Nil
 
     // Only using `new` for testing, normally we'd use it as a Resource with `apply`.
     lazy val service = new DiscoveryService.ServiceImpl[InetSocketAddress](
@@ -1169,7 +1172,7 @@ object DiscoveryServiceSpec {
       rpc,
       stateRef,
       toAddress = nodeAddressToInetSocketAddress,
-      maybeEnrFilter = maybeEnrFilter
+      enrFilter = KeyValueTag.toFilter(tags)
     )
   }
 
