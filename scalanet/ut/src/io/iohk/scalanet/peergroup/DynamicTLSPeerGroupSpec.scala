@@ -13,6 +13,7 @@ import io.iohk.scalanet.peergroup.implicits._
 import io.iohk.scalanet.peergroup.Channel.{DecodingError, MessageReceived}
 import io.iohk.scalanet.peergroup.DynamicTLSPeerGroupSpec._
 import io.iohk.scalanet.peergroup.PeerGroup.ProxySupport.Socks5Config
+import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup.{
   ChannelBrokenException,
   ChannelSetupException,
@@ -32,10 +33,11 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.{Assertion, AsyncFlatSpec, BeforeAndAfterAll}
 import scodec.Codec
-import scodec.bits.{BitVector}
+import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs.implicits._
 import sockslib.server.{SocksProxyServer, SocksProxyServerFactory}
 
+import java.util.concurrent.TimeoutException
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Random
@@ -70,6 +72,24 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
             }
         }
       }
+
+  it should s"handshake successfully when using bouncy and jdk key encodings" in taskTestCase {
+    (for {
+      client <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      server <- DynamicTLSPeerGroup[String](getCorrectConfigBouncyCastle())
+      ch1 <- client.client(server.processAddress)
+    } yield (server, ch1)).use {
+      case (server, ch1) =>
+        for {
+          _ <- ch1.sendMessage("Hello enc server")
+          rec <- server.serverEventObservable.collectChannelCreated.mergeMap {
+            case (ch, release) => ch.channelEventObservable.guarantee(release)
+          }.headL
+        } yield {
+          rec shouldEqual MessageReceived("Hello enc server")
+        }
+    }
+  }
 
   it should "throttle incoming connections when configured" in taskTestCase {
     val throttlingDuration = 1.second
@@ -357,11 +377,74 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
         }
     }
   }
+
+  it should "not send another message when receive queue and both buffers are full " in backPressureTestCase(
+    clientConfig = getCorrectConfig(maxFrameLength = 64 * 1024 * 1024),
+    serverConfig = getCorrectConfig(maxQueueSize = 1, maxFrameLength = 64 * 1024 * 1024)
+  ) {
+    case (clientChannel, serverChannel) =>
+      // we are using pretty large messages to be sure incoming and sending buffers will be full
+      val m1 = SizeAbleMessage.genRandomOfsizeN(4 * 1024 * 1024)
+      val m2 = SizeAbleMessage.genRandomOfsizeN(4 * 1024 * 1024)
+      for {
+        _ <- clientChannel.sendMessage(m1)
+        _ <- Task.sleep(1.second)
+        // snd buffer and rcv buffer are full, flushing message to snd buffer will be impossible
+        sendResult <- clientChannel.sendMessage(m2).timeout(5.seconds).attempt
+      } yield {
+        assert(sendResult.isLeft)
+        assert(sendResult.left.get.isInstanceOf[TimeoutException])
+      }
+  }
+
+  it should "successfully flush buffer when it will be free on receiver side " in backPressureTestCase(
+    clientConfig = getCorrectConfig(maxFrameLength = 64 * 1024 * 1024),
+    serverConfig = getCorrectConfig(maxQueueSize = 1, maxFrameLength = 64 * 1024 * 1024)
+  ) {
+    case (clientChannel, serverChannel) =>
+      // we are using pretty large messages to be sure incoming and sending buffers will be full
+      val m1 = SizeAbleMessage.genRandomOfsizeN(4 * 1024 * 1024)
+      val m2 = SizeAbleMessage.genRandomOfsizeN(4 * 1024 * 1024)
+      for {
+        finished <- Deferred.tryable[Task, Unit]
+        _ <- clientChannel.sendMessage(m1)
+        _ <- Task.sleep(1.second)
+        // snd buffer and rcv buffer all full, flushing message will be impossible
+        _ <- clientChannel.sendMessage(m2).doOnFinish(_ => finished.complete(())).startAndForget
+        _ <- Task.sleep(2.second)
+        check <- finished.tryGet
+        // even after some time message is not sent as buffers are still full
+        _ <- Task(assert(check.isEmpty))
+        // sending message should finish once receiver will consume event on its side and make space and rcv buffer
+        serverEvent1 <- Task.parMap2(finished.get, serverChannel.nextChannelEvent)((_, sEv) => sEv)
+        serverEvent2 <- serverChannel.nextChannelEvent
+      } yield {
+        assert(serverEvent1.get == MessageReceived(m1))
+        assert(serverEvent2.get == MessageReceived(m2))
+      }
+  }
+
 }
 
 object DynamicTLSPeerGroupSpec {
   def taskTestCase(t: => Task[Assertion])(implicit s: Scheduler): Future[Assertion] =
     t.runToFuture
+
+  def backPressureTestCase(clientConfig: DynamicTLSPeerGroup.Config, serverConfig: DynamicTLSPeerGroup.Config)(
+      testFun: ((Channel[PeerInfo, SizeAbleMessage], Channel[PeerInfo, SizeAbleMessage])) => Task[Assertion]
+  )(implicit s: Scheduler): Future[Assertion] = {
+    (for {
+      client <- DynamicTLSPeerGroup[SizeAbleMessage](clientConfig)
+      server <- DynamicTLSPeerGroup[SizeAbleMessage](serverConfig)
+      clientChannel <- client.client(server.processAddress)
+      sChan = server.nextServerEvent.map { ev =>
+        ev.collect {
+          case ChannelCreated(channel, release) => (channel, release)
+        }.get
+      }
+      serverChannel <- Resource.make(sChan)((chWithRelease) => chWithRelease._2).map(_._1)
+    } yield (clientChannel, serverChannel)).use(testFun).runToFuture
+  }
 
   val rnd = new SecureRandom()
 
@@ -372,6 +455,17 @@ object DynamicTLSPeerGroupSpec {
       maxQueueSize: Int = 100
   ): DynamicTLSPeerGroup.Config = {
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
+    val framingConfig = FramingConfig.buildConfigWithStrippedLength(maxFrameLength, 4).get
+    Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation, framingConfig, maxQueueSize, None).get
+  }
+
+  def getCorrectConfigBouncyCastle(
+      address: InetSocketAddress = aRandomAddress(),
+      useNativeTlsImplementation: Boolean = false,
+      maxFrameLength: Int = 192000,
+      maxQueueSize: Int = 100
+  ): DynamicTLSPeerGroup.Config = {
+    val hostkeyPair = CryptoUtils.generateKeyPair(rnd)
     val framingConfig = FramingConfig.buildConfigWithStrippedLength(maxFrameLength, 4).get
     Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation, framingConfig, maxQueueSize, None).get
   }
@@ -424,6 +518,18 @@ object DynamicTLSPeerGroupSpec {
       }
     } { server =>
       Task(server.shutdown())
+    }
+  }
+
+  case class SizeAbleMessage(vec: ByteVector)
+  object SizeAbleMessage {
+    implicit val messageCodec: Codec[SizeAbleMessage] =
+      scodec.codecs.bytes.xmap(bytes => SizeAbleMessage(bytes), mess => mess.vec)
+
+    def genRandomOfsizeN(n: Int): SizeAbleMessage = {
+      val arr = new Array[Byte](n)
+      Random.nextBytes(arr)
+      SizeAbleMessage(ByteVector(arr))
     }
   }
 }

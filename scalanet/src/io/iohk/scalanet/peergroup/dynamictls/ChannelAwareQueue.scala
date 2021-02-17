@@ -7,7 +7,7 @@ import monix.execution.ChannelType
 
 import java.util.concurrent.atomic.AtomicLong
 
-private[scalanet] final class ChannelAwareQueue[M](limit: Int, queue: CloseableQueue[M]) {
+private[scalanet] final class ChannelAwareQueue[M] private (limit: Int, queue: CloseableQueue[M]) {
   private val queueSize = new AtomicLong(0)
 
   private val lowerBound: Int = Math.max(1, limit / 2)
@@ -28,20 +28,14 @@ private[scalanet] final class ChannelAwareQueue[M](limit: Int, queue: CloseableQ
 
   def close(discard: Boolean): Task[Unit] = queue.close(discard)
 
-  @inline
-  private def increase: Long = queueSize.incrementAndGet
-
-  @inline
-  private def decrease: Long = queueSize.decrementAndGet
-
   private def enableBPIfNecessary(channelConfig: ChannelConfig): Unit =
-    if (increase >= limit && channelConfig.isAutoRead) {
+    if (queueSize.incrementAndGet() >= limit && channelConfig.isAutoRead) {
       channelConfig.setAutoRead(false)
       ()
     }
 
   private def disableBPIfNecessary(channelConfig: ChannelConfig): Unit =
-    if (decrease <= lowerBound && !channelConfig.isAutoRead) {
+    if (queueSize.decrementAndGet() <= lowerBound && !channelConfig.isAutoRead) {
       channelConfig.setAutoRead(true)
       ()
     }

@@ -1,7 +1,6 @@
 package io.iohk.scalanet.peergroup
 
 import java.net.{InetSocketAddress, ServerSocket}
-
 import io.netty.util
 import monix.eval.Task
 
@@ -11,15 +10,15 @@ object InetPeerGroupUtils {
 
   // TODO: This has nothing to do with InetPeerGroup, move it somewhere else.
   def toTask(f: => util.concurrent.Future[_]): Task[Unit] = {
-    Task.async[Unit] { cb =>
-      try {
-        f.addListener(
-          (future: util.concurrent.Future[_]) => if (future.isSuccess) cb.onSuccess(()) else cb.onError(future.cause())
-        )
+    Task.cancelable[Unit] { cb =>
+      val f2 = f.addListener(
+        (future: util.concurrent.Future[_]) =>
+          if (future.isSuccess || future.isCancelled) cb.onSuccess(()) else cb.onError(future.cause())
+      )
+
+      Task {
+        f2.cancel(true)
         ()
-      } catch {
-        case t: Throwable =>
-          cb.onError(t)
       }
     }
   }
