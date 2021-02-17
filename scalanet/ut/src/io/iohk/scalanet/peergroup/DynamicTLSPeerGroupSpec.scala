@@ -389,8 +389,8 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
   ) {
     case (clientChannel, serverChannel) =>
       // we are using pretty large messages to be sure incoming and sending buffers will be full
-      val m1 = SizeAbleMessage.genRandomOfsizeN(4 * 1024 * 1024)
-      val m2 = SizeAbleMessage.genRandomOfsizeN(4 * 1024 * 1024)
+      val m1 = SizeAbleMessage.genRandomOfsizeN(16 * 1024 * 1024)
+      val m2 = SizeAbleMessage.genRandomOfsizeN(16 * 1024 * 1024)
       for {
         _ <- clientChannel.sendMessage(m1)
         _ <- Task.sleep(1.second)
@@ -408,8 +408,8 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
   ) {
     case (clientChannel, serverChannel) =>
       // we are using pretty large messages to be sure incoming and sending buffers will be full
-      val m1 = SizeAbleMessage.genRandomOfsizeN(4 * 1024 * 1024)
-      val m2 = SizeAbleMessage.genRandomOfsizeN(4 * 1024 * 1024)
+      val m1 = SizeAbleMessage.genRandomOfsizeN(16 * 1024 * 1024)
+      val m2 = SizeAbleMessage.genRandomOfsizeN(16 * 1024 * 1024)
       for {
         finished <- Deferred.tryable[Task, Unit]
         _ <- clientChannel.sendMessage(m1)
