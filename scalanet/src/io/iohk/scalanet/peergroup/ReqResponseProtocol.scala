@@ -220,39 +220,12 @@ object ReqResponseProtocol {
       }
   }
 
-  sealed abstract class TransportProtocol extends Product with Serializable {
-    type AddressingType
-    def getProtocol[M](
-        address: InetSocketAddress
-    )(implicit s: Scheduler, c: Codec[M]): Resource[Task, ReqResponseProtocol[AddressingType, M]]
-  }
-  case object DynamicUDP extends TransportProtocol {
-    override type AddressingType = InetMultiAddress
-
-    override def getProtocol[M](
-        address: InetSocketAddress
-    )(implicit s: Scheduler, c: Codec[M]): Resource[Task, ReqResponseProtocol[InetMultiAddress, M]] = {
-      getDynamicUdpReqResponseProtocolClient(address)
-    }
-  }
-
-  case object DynamicTLS extends TransportProtocol {
-    override type AddressingType = PeerInfo
-
-    override def getProtocol[M](
-        address: InetSocketAddress
-    )(implicit s: Scheduler, c: Codec[M]): Resource[Task, ReqResponseProtocol[PeerInfo, M]] = {
-      getTlsReqResponseProtocolClient(address)
-    }
-  }
-
-  def getTlsReqResponseProtocolClient[M](
+  def getTlsReqResponseProtocolClient[M](framingConfig: FramingConfig)(
       address: InetSocketAddress
   )(implicit s: Scheduler, c: Codec[M]): Resource[Task, ReqResponseProtocol[PeerInfo, M]] = {
     implicit lazy val envelopeCodec = MessageEnvelope.defaultCodec[M]
     val rnd = new SecureRandom()
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
-    val framingConfig = FramingConfig.buildConfigWithStrippedLength(192000, 4).get
     for {
       config <- Resource.liftF(
         Task.fromTry(
