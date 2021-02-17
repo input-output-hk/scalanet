@@ -10,7 +10,7 @@ import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.crypto.CryptoUtils.{SHA256withECDSA, Secp256r1}
 import io.iohk.scalanet.peergroup.implicits._
-import io.iohk.scalanet.peergroup.Channel.{DecodingError, MessageReceived}
+import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived}
 import io.iohk.scalanet.peergroup.DynamicTLSPeerGroupSpec._
 import io.iohk.scalanet.peergroup.PeerGroup.ProxySupport.Socks5Config
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
@@ -22,7 +22,12 @@ import io.iohk.scalanet.peergroup.PeerGroup.{
 }
 import io.iohk.scalanet.peergroup.ReqResponseProtocol.DynamicTLS
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.SignedKey
-import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSExtension, DynamicTLSPeerGroup, Secp256k1}
+import io.iohk.scalanet.peergroup.dynamictls.{
+  DynamicTLSExtension,
+  DynamicTLSPeerGroup,
+  DynamicTLSPeerGroupInternals,
+  Secp256k1
+}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{Config, FramingConfig, PeerInfo}
 import io.iohk.scalanet.testutils.GeneratorUtils
 import monix.eval.Task
@@ -421,6 +426,70 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       } yield {
         assert(serverEvent1.get == MessageReceived(m1))
         assert(serverEvent2.get == MessageReceived(m2))
+      }
+  }
+
+  it should "get more bytes form rcv buffer as soon as incoming queue will be at least half empty" in backPressureTestCase(
+    clientConfig = getCorrectConfig(maxFrameLength = 64 * 1024 * 1024),
+    serverConfig = getCorrectConfig(maxQueueSize = 4, maxFrameLength = 64 * 1024 * 1024)
+  ) {
+    case (clientChannel, serverChannel) =>
+      val srvChannelImpl =
+        serverChannel.asInstanceOf[DynamicTLSPeerGroupInternals.DynamicTlsChannel[ChannelEvent[SizeAbleMessage]]]
+      // we are using small messages to not fill up snd and rcv buffers
+      val messagesToSend = (0 to 5).map(_ => SizeAbleMessage.genRandomOfsizeN(4 * 1024))
+      val firstBatch = messagesToSend.take(4)
+      val secondBatch = messagesToSend.takeRight(2)
+      for {
+        _ <- Task.traverse(firstBatch)(m => clientChannel.sendMessage(m))
+        _ <- Task(srvChannelImpl.incomingQueueSize).restartUntil(qSize => qSize == firstBatch.size)
+        _ <- Task.sleep(1.seconds)
+        // last two messages will be stored in rcv buffer, becouse incoming queue is full
+        _ <- Task.traverse(secondBatch)(m => clientChannel.sendMessage(m))
+        _ <- Task.sleep(1.seconds)
+        _ <- Task(assert(srvChannelImpl.incomingQueueSize == firstBatch.size))
+        _ <- srvChannelImpl.nextChannelEvent.map(ev => assert(ev.get == MessageReceived(firstBatch(0))))
+        _ <- Task(assert(srvChannelImpl.incomingQueueSize == firstBatch.size - 1))
+        _ <- srvChannelImpl.nextChannelEvent.map(ev => assert(ev.get == MessageReceived(firstBatch(1))))
+        // after reading first 2 messages, there place in queue for two new messages, so they are read from rcv buffer
+        _ <- Task(srvChannelImpl.incomingQueueSize)
+          .restartUntil(qSize => qSize == ((firstBatch.size - 2) + secondBatch.size))
+        _ <- Task(assert(srvChannelImpl.incomingQueueSize == 4))
+        // all received messages are in expected order
+        _ <- srvChannelImpl.nextChannelEvent.map(ev => assert(ev.get == MessageReceived(firstBatch(2))))
+        _ <- srvChannelImpl.nextChannelEvent.map(ev => assert(ev.get == MessageReceived(firstBatch(3))))
+        _ <- srvChannelImpl.nextChannelEvent.map(ev => assert(ev.get == MessageReceived(secondBatch(0))))
+        _ <- srvChannelImpl.nextChannelEvent.map(ev => assert(ev.get == MessageReceived(secondBatch(1))))
+        finalAssert <- Task(assert(srvChannelImpl.incomingQueueSize == 0))
+      } yield {
+        finalAssert
+      }
+  }
+
+  it should "communicate with slower consumer with small queue available" in backPressureTestCase(
+    clientConfig = getCorrectConfig(maxFrameLength = 64 * 1024 * 1024),
+    serverConfig = getCorrectConfig(maxQueueSize = 1, maxFrameLength = 64 * 1024 * 1024)
+  ) {
+    case (clientChannel, serverChannel) =>
+      val srvChannelImpl =
+        serverChannel.asInstanceOf[DynamicTLSPeerGroupInternals.DynamicTlsChannel[ChannelEvent[SizeAbleMessage]]]
+      // large message so fill the buffer after each sent
+      val messagesToSend = (0 to 24).map(_ => SizeAbleMessage.genRandomOfsizeN(4 * 1024 * 1024))
+      val sendTask = Task.traverse(messagesToSend)(m => clientChannel.sendMessage(m))
+      val receiveTask = serverChannel.nextChannelEvent
+        .delayExecution(500.milliseconds)
+        .toObservable
+        .collect { case MessageReceived(m) => m }
+        .take(messagesToSend.size)
+        .toListL
+      for {
+        receivedMessages <- Task.parMap2(sendTask, receiveTask)((_, received) => received)
+        _ <- Task(assert(messagesToSend == receivedMessages))
+        finalQueueSize <- Task(
+          serverChannel.asInstanceOf[DynamicTLSPeerGroupInternals.DynamicTlsChannel[_]].incomingQueueSize
+        )
+      } yield {
+        assert(finalQueueSize == 0)
       }
   }
 

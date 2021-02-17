@@ -36,7 +36,7 @@ import io.netty.handler.proxy.Socks5ProxyHandler
 import scodec.Attempt.{Failure, Successful}
 import scodec.Codec
 
-private[dynamictls] object DynamicTLSPeerGroupInternals {
+private[peergroup] object DynamicTLSPeerGroupInternals {
   def buildFramingCodecs(config: FramingConfig): (LengthFieldBasedFrameDecoder, LengthFieldPrepender) = {
     val encoder = new LengthFieldPrepender(
       config.byteOrder,
@@ -193,7 +193,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
         _ <- toTask(bootstrap.connect(peerInfo.address.inetSocketAddress))
         ch <- Task.deferFuture(activationF)
         _ <- Task(logger.debug("Connection to peer {} finished successfully", peerInfo))
-      } yield new ClientChannelImpl[M](peerInfo, ch, messageQueue)
+      } yield new DynamicTlsChannel[M](peerInfo, ch, messageQueue, ClientChannel)
 
       connectTask.onErrorRecoverWith {
         case t: Throwable =>
@@ -214,36 +214,6 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
         new PeerGroup.HandshakeException(to, t)
       case _ =>
         t
-    }
-  }
-
-  class ClientChannelImpl[M](val to: PeerInfo, ch: SocketChannel, channelAwareQueue: ChannelAwareQueue[ChannelEvent[M]])(
-      implicit codec: Codec[M]
-  ) extends Channel[PeerInfo, M]
-      with StrictLogging {
-    override def nextChannelEvent: Task[Option[ChannelEvent[M]]] = channelAwareQueue.next(ch.config())
-
-    override def sendMessage(message: M): Task[Unit] = {
-      ch.sendMessage(message)(codec).onErrorRecoverWith {
-        case e: IOException =>
-          Task(logger.debug("Sending message to {} failed due to {}", to: Any, e: Any)) *>
-            Task.raiseError(new ChannelBrokenException[PeerInfo](to, e))
-      }
-
-    }
-
-    /**
-      * To be sure that `channelInactive` had run before returning from close, we are also waiting for ctx.closeFuture() after
-      * ctx.close()
-      */
-    private[dynamictls] def close(): Task[Unit] = {
-      for {
-        _ <- Task(logger.debug("Closing client channel to peer {}", to))
-        _ <- toTask(ch.close())
-        _ <- toTask(ch.closeFuture())
-        _ <- channelAwareQueue.close(discard = true).attempt
-        _ <- Task(logger.debug("Client channel to peer {} closed", to))
-      } yield ()
     }
   }
 
@@ -286,7 +256,8 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
                   s"Ssl Handshake server channel from $localAddress " +
                     s"to $remoteAddress with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
                 )
-                val channel = new ServerChannelImpl[M](nettyChannel, peerId, messageQueue)
+                val info = PeerInfo(peerId, InetMultiAddress(nettyChannel.remoteAddress()))
+                val channel = new DynamicTlsChannel[M](info, nettyChannel, messageQueue, ServerChannel)
                 handleEvent(ChannelCreated(channel, channel.close()))
               } else {
                 logger.debug("Ssl handshake failed from peer with address {}", remoteAddress)
@@ -312,22 +283,21 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       serverQueue.offer(event).void.runSyncUnsafe()
   }
 
-  class ServerChannelImpl[M](
-      val nettyChannel: SocketChannel,
-      peerId: BitVector,
-      messageQueue: ChannelAwareQueue[ChannelEvent[M]]
+  class DynamicTlsChannel[M](
+      val to: PeerInfo,
+      nettyChannel: SocketChannel,
+      incomingMessagesQueue: ChannelAwareQueue[ChannelEvent[M]],
+      channelType: TlsChannelType
   )(implicit codec: Codec[M])
       extends Channel[PeerInfo, M]
       with StrictLogging {
 
     logger.debug(
-      s"Creating server channel from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
+      s"Creating $channelType from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
     )
 
-    override val to: PeerInfo = PeerInfo(peerId, InetMultiAddress(nettyChannel.remoteAddress()))
-
     override def sendMessage(message: M): Task[Unit] = {
-      logger.debug("Sending message to peer {} via server channel", nettyChannel.localAddress())
+      logger.debug("Sending message to peer {} via {}", nettyChannel.localAddress(), channelType)
       nettyChannel.sendMessage(message)(codec).onErrorRecoverWith {
         case e: IOException =>
           logger.debug("Sending message to {} failed due to {}", message, e)
@@ -335,7 +305,9 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       }
     }
 
-    override def nextChannelEvent: Task[Option[ChannelEvent[M]]] = messageQueue.next(nettyChannel.config())
+    override def nextChannelEvent: Task[Option[ChannelEvent[M]]] = incomingMessagesQueue.next(nettyChannel.config())
+
+    private[peergroup] def incomingQueueSize: Long = incomingMessagesQueue.size
 
     /**
       * To be sure that `channelInactive` had run before returning from close, we are also waiting for nettyChannel.closeFuture() after
@@ -343,16 +315,24 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       */
     private[dynamictls] def close(): Task[Unit] =
       for {
-        _ <- Task(logger.debug("Closing server channel to peer {}", to))
+        _ <- Task(logger.debug("Closing {} to peer {}", channelType, to))
         _ <- toTask(nettyChannel.close())
         _ <- toTask(nettyChannel.closeFuture())
-        _ <- messageQueue.close(discard = true).attempt
-        _ <- Task(logger.debug("Server channel to peer {} closed", to))
+        _ <- incomingMessagesQueue.close(discard = true).attempt
+        _ <- Task(logger.debug("{} to peer {} closed", channelType, to))
       } yield ()
   }
 
   private def makeMessageQueue[M](limit: Int)(implicit scheduler: Scheduler) = {
     ChannelAwareQueue[ChannelEvent[M]](limit, ChannelType.SPMC).runSyncUnsafe()
+  }
+
+  sealed abstract class TlsChannelType
+  case object ClientChannel extends TlsChannelType {
+    override def toString: String = "tls client channel"
+  }
+  case object ServerChannel extends TlsChannelType {
+    override def toString: String = "tls server channel"
   }
 
 }

@@ -12,6 +12,8 @@ private[scalanet] final class ChannelAwareQueue[M] private (limit: Int, queue: C
 
   private val lowerBound: Int = Math.max(1, limit / 2)
 
+  def size: Long = queueSize.get()
+
   def offer(channelConfig: ChannelConfig, a: M): Task[Unit] = {
     Task(enableBPIfNecessary(channelConfig)).flatMap(_ => queue.offer(a).void)
   }
