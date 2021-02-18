@@ -3,18 +3,16 @@ package io.iohk.scalanet.peergroup
 import java.net.InetSocketAddress
 import java.security.SecureRandom
 import java.util.UUID
-
 import cats.implicits._
 import cats.effect.{Fiber, Resource}
 import cats.effect.concurrent.{Ref, Semaphore}
-import io.iohk.scalanet.codec.FramingCodec
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.peergroup.implicits._
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, MessageReceived}
 import io.iohk.scalanet.peergroup.InetPeerGroupUtils.ChannelId
 import io.iohk.scalanet.peergroup.ReqResponseProtocol._
 import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSPeerGroup, Secp256k1}
-import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.PeerInfo
+import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{FramingConfig, PeerInfo}
 import io.iohk.scalanet.peergroup.udp.DynamicUDPPeerGroup
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -197,11 +195,6 @@ object ReqResponseProtocol {
   final case class MessageEnvelope[M](id: UUID, m: M)
   object MessageEnvelope {
 
-    /** scodec specific framing codec for streaming. */
-    def framingCodec[M: Codec]: FramingCodec[MessageEnvelope[M]] = {
-      new FramingCodec(defaultCodec[M])
-    }
-
     /** scodec scpecific codec for a single message. */
     def defaultCodec[M: Codec]: Codec[MessageEnvelope[M]] = {
       import scodec.codecs.implicits._
@@ -227,43 +220,17 @@ object ReqResponseProtocol {
       }
   }
 
-  sealed abstract class TransportProtocol extends Product with Serializable {
-    type AddressingType
-    def getProtocol[M](
-        address: InetSocketAddress
-    )(implicit s: Scheduler, c: Codec[M]): Resource[Task, ReqResponseProtocol[AddressingType, M]]
-  }
-  case object DynamicUDP extends TransportProtocol {
-    override type AddressingType = InetMultiAddress
-
-    override def getProtocol[M](
-        address: InetSocketAddress
-    )(implicit s: Scheduler, c: Codec[M]): Resource[Task, ReqResponseProtocol[InetMultiAddress, M]] = {
-      getDynamicUdpReqResponseProtocolClient(address)
-    }
-  }
-
-  case object DynamicTLS extends TransportProtocol {
-    override type AddressingType = PeerInfo
-
-    override def getProtocol[M](
-        address: InetSocketAddress
-    )(implicit s: Scheduler, c: Codec[M]): Resource[Task, ReqResponseProtocol[PeerInfo, M]] = {
-      getTlsReqResponseProtocolClient(address)
-    }
-  }
-
-  def getTlsReqResponseProtocolClient[M](
+  def getTlsReqResponseProtocolClient[M](framingConfig: FramingConfig)(
       address: InetSocketAddress
   )(implicit s: Scheduler, c: Codec[M]): Resource[Task, ReqResponseProtocol[PeerInfo, M]] = {
-    implicit lazy val framingCodec = MessageEnvelope.framingCodec[M]
+    implicit lazy val envelopeCodec = MessageEnvelope.defaultCodec[M]
     val rnd = new SecureRandom()
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
-
     for {
       config <- Resource.liftF(
         Task.fromTry(
-          DynamicTLSPeerGroup.Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation = false, None)
+          DynamicTLSPeerGroup
+            .Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation = false, framingConfig, None)
         )
       )
       pg <- DynamicTLSPeerGroup[MessageEnvelope[M]](config)
