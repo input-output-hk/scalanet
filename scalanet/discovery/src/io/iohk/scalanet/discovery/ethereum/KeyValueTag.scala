@@ -41,17 +41,17 @@ object KeyValueTag {
 
     override val toFilter = enr =>
       enr.content.attrs.get(keyBytes) match {
-        case Some(`valueBytes`) =>
-          Right(())
-
-        case Some(other) =>
-          Try(new String(other.toArray, UTF_8)) match {
+        case Some(otherBytes) if otherBytes != valueBytes =>
+          Try(new String(otherBytes.toArray, UTF_8)) match {
             case Success(otherValue) =>
               Left(s"$key mismatch; $otherValue != $value")
 
             case Failure(_) =>
-              Left(s"$key mismatch; $other != $valueBytes")
+              Left(s"$key mismatch; $otherBytes != $valueBytes")
           }
+
+        case Some(_) =>
+          Right(())
 
         case None =>
           Left(s"$key is missing; expected $value")

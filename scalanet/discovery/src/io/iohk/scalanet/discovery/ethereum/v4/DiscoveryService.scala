@@ -331,7 +331,7 @@ object DiscoveryService {
     override def getClosestNodes(target: Node.Id): Task[SortedSet[Node]] =
       for {
         closest <- lookup(target)
-        _ <- closest.toList.traverse(n => maybeFetchEnr(toPeer(n), None))
+        _ <- closest.toList.parTraverse(n => maybeFetchEnr(toPeer(n), None))
         state <- stateRef.get
         resolved = closest.filter(n => state.nodeMap.contains(n.id))
       } yield resolved
