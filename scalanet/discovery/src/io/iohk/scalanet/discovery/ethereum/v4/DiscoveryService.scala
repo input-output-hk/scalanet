@@ -45,7 +45,7 @@ trait DiscoveryService {
   def getLocalNode: Task[Node]
 
   /** Lookup the nodes closest to a given target. */
-  def getClosestNodes(target: Node.Id): Task[SortedSet[Node]]
+  def getClosestNodes(target: Node.Id): Task[Seq[Node]]
 
   /** Lookup a random target, to discover new nodes along the way. */
   def getRandomNodes: Task[Set[Node]]
@@ -328,16 +328,19 @@ object DiscoveryService {
     /** Perform a lookup and also make sure the closest results have their ENR records fetched,
       * to rule out the chance that incorrect details were relayed in the Neighbors response.
       */
-    override def getClosestNodes(target: Node.Id): Task[SortedSet[Node]] =
+    override def getClosestNodes(target: Node.Id): Task[Seq[Node]] =
       for {
         closest <- lookup(target)
+        // Ensure we have an ENR record, so that the TCP port is retrieved from the source,
+        // not just relying on Neighbors to be correct.
         _ <- closest.toList.parTraverse(n => maybeFetchEnr(toPeer(n), None))
         state <- stateRef.get
-        resolved = closest.filter(n => state.nodeMap.contains(n.id))
+        // Get the resolved records from state.
+        resolved = closest.toList.flatMap(n => state.nodeMap.get(n.id))
       } yield resolved
 
     override def getRandomNodes: Task[Set[Node]] =
-      getClosestNodes(sigalg.newKeyPair._1)
+      getClosestNodes(sigalg.newKeyPair._1).map(_.toSet)
 
     override def removeNode(nodeId: Node.Id): Task[Unit] =
       stateRef.update { state =>
