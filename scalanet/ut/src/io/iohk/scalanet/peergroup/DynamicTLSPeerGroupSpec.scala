@@ -395,6 +395,31 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       }
   }
 
+  it should "inform about remote peer disconnect while waiting for free space in buffers " in backPressureTestCase(
+    clientConfig = getCorrectConfig(maxFrameLength = 64 * 1024 * 1024),
+    serverConfig = getCorrectConfig(maxQueueSize = 1, maxFrameLength = 64 * 1024 * 1024)
+  ) {
+    case (clientChannel, serverChannel) =>
+      val srvChannelImpl =
+        serverChannel.asInstanceOf[DynamicTLSPeerGroupInternals.DynamicTlsChannel[ChannelEvent[SizeAbleMessage]]]
+      // we are using pretty large messages to be sure incoming and sending buffers will be full
+      val m1 = SizeAbleMessage.genRandomOfsizeN(16 * 1024 * 1024)
+      val m2 = SizeAbleMessage.genRandomOfsizeN(16 * 1024 * 1024)
+      for {
+        promise <- Deferred.tryable[Task, Option[Throwable]]
+        _ <- clientChannel.sendMessage(m1)
+        _ <- Task.sleep(1.second)
+        // snd buffer and rcv buffer are full, flushing message to snd buffer will be impossible
+        _ <- clientChannel.sendMessage(m2).doOnFinish(rest => promise.complete(rest)).startAndForget
+        _ <- Task.sleep(1.second)
+        promiseFinished <- promise.tryGet
+        _ <- Task(assert(promiseFinished.isEmpty))
+        exception <- Task.parMap2(srvChannelImpl.close(), promise.get)((_, ex) => ex)
+      } yield {
+        assert(exception.get.isInstanceOf[ChannelBrokenException[_]])
+      }
+  }
+
   it should "successfully flush buffer when it will be free on receiver side " in backPressureTestCase(
     clientConfig = getCorrectConfig(maxFrameLength = 64 * 1024 * 1024),
     serverConfig = getCorrectConfig(maxQueueSize = 1, maxFrameLength = 64 * 1024 * 1024)
