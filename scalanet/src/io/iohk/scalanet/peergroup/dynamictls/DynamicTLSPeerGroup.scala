@@ -18,6 +18,7 @@ import io.iohk.scalanet.peergroup.{Addressable, Channel, InetMultiAddress}
 import io.iohk.scalanet.peergroup.CloseableQueue
 import io.iohk.scalanet.peergroup.PeerGroup.ProxySupport.Socks5Config
 import io.iohk.scalanet.peergroup.dynamictls.CustomHandlers.ThrottlingIpFilter
+import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.FramingConfig.ValidLengthFieldLength
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
@@ -147,7 +148,7 @@ object DynamicTLSPeerGroup {
   sealed abstract case class FramingConfig private (
       maxFrameLength: Int,
       lengthFieldOffset: Int,
-      lengthFieldLength: Int,
+      lengthFieldLength: ValidLengthFieldLength,
       encodingLengthAdjustment: Int,
       decodingLengthAdjustment: Int,
       initialBytesToStrip: Int,
@@ -157,7 +158,41 @@ object DynamicTLSPeerGroup {
   )
 
   object FramingConfig {
-    private val possibleLengthFieldLength = Set(1, 2, 3, 4, 8)
+    sealed abstract class ValidLengthFieldLength {
+      def value: Int
+    }
+    case object SingleByteLength extends ValidLengthFieldLength {
+      val value = 1
+    }
+    case object TwoByteLength extends ValidLengthFieldLength {
+      val value = 2
+    }
+    case object ThreeByteLength extends ValidLengthFieldLength {
+      val value = 3
+    }
+    case object FourByteLength extends ValidLengthFieldLength {
+      val value = 4
+    }
+    case object EightByteLength extends ValidLengthFieldLength {
+      val value = 8
+    }
+
+    object ValidLengthFieldLength {
+      def apply(i: Int): Either[ConfigError, ValidLengthFieldLength] = {
+        i match {
+          case 1 => Right(SingleByteLength)
+          case 2 => Right(TwoByteLength)
+          case 3 => Right(ThreeByteLength)
+          case 4 => Right(FourByteLength)
+          case 8 => Right(EightByteLength)
+          case _ => Left(ConfigError("lengthFieldLength should be one of (1, 2, 3, 4, 8)"))
+        }
+      }
+    }
+
+    private def check(test: Boolean, message: String): Either[ConfigError, Unit] = {
+      Either.cond(test, (), ConfigError(message))
+    }
 
     /**
       *
@@ -191,26 +226,41 @@ object DynamicTLSPeerGroup {
         byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN,
         lengthIncludesLengthFieldLength: Boolean = false
     ): Either[ConfigError, FramingConfig] = {
+      def validateLengthFieldLengthWithMaxFrame(
+          lengthFieldLength: ValidLengthFieldLength
+      ): Either[ConfigError, Unit] = {
+        val prefixAdjustment = if (lengthIncludesLengthFieldLength) lengthFieldLength.value else 0
+
+        val maximalMessageLength = maxFrameLength + encodingLengthAdjustment + prefixAdjustment
+
+        lengthFieldLength match {
+          case SingleByteLength if maximalMessageLength >= 256 =>
+            Left(ConfigError(s"length $maximalMessageLength does not fit into a byte"))
+          case TwoByteLength if maximalMessageLength >= 65536 =>
+            Left(ConfigError(s"length $maximalMessageLength does not fit into a short integer"))
+          case ThreeByteLength if maximalMessageLength >= 16777216 =>
+            Left(ConfigError(s"length $maximalMessageLength does not fit into a medium integer"))
+          case _ => Right(())
+        }
+      }
+
       val smallEnoughOffset = lengthFieldOffset <= maxFrameLength - lengthFieldLength
       for {
-        _ <- Either.cond(maxFrameLength > 0, (), ConfigError("maxFrameLength should be positive"))
-        _ <- Either.cond(lengthFieldOffset >= 0, (), ConfigError("lengthFieldOffset should be non negative"))
-        _ <- Either.cond(initialBytesToStrip >= 0, (), ConfigError("initialBytesToStrip should be non negative"))
-        _ <- Either.cond(
-          possibleLengthFieldLength.contains(lengthFieldLength),
-          (),
-          ConfigError("lengthFieldLength should be one of (1, 2, 3, 4, 8)")
-        )
-        _ <- Either.cond(
+        _ <- check(maxFrameLength > 0, "maxFrameLength should be positive")
+        _ <- check(lengthFieldOffset >= 0, "lengthFieldOffset should be non negative")
+        _ <- check(initialBytesToStrip >= 0, "initialBytesToStrip should be non negative")
+        validLengthField <- ValidLengthFieldLength(lengthFieldLength)
+        _ <- validateLengthFieldLengthWithMaxFrame(validLengthField)
+        _ <- check(
           smallEnoughOffset,
-          (),
-          ConfigError("lengthFieldOffset should be smaller or equal (maxFrameLength - lengthFieldLength)")
+          "lengthFieldOffset should be smaller or equal (maxFrameLength - lengthFieldLength)"
         )
+
       } yield {
         new FramingConfig(
           maxFrameLength,
           lengthFieldOffset,
-          lengthFieldLength,
+          validLengthField,
           encodingLengthAdjustment,
           decodingLengthAdjustment,
           initialBytesToStrip,

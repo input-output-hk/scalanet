@@ -332,7 +332,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
 
   it should "inform user about too large frame" in taskTestCase {
     (for {
-      client <- DynamicTLSPeerGroup[Byte](getCorrectConfig())
+      client <- DynamicTLSPeerGroup[Byte](getCorrectConfig(maxFrameLength = 4, lengthFieldLength = 4))
       // 1byte message + 4 bytes length field gives frame of size 5, so maxFrameLength = 4 should end with error
       server <- DynamicTLSPeerGroup[Byte](getCorrectConfig(maxFrameLength = 4, lengthFieldLength = 4))
       ch1 <- client.client(server.processAddress)

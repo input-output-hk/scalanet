@@ -35,7 +35,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
   def buildFramingCodecs(config: FramingConfig): (LengthFieldBasedFrameDecoder, LengthFieldPrepender) = {
     val encoder = new LengthFieldPrepender(
       config.byteOrder,
-      config.lengthFieldLength,
+      config.lengthFieldLength.value,
       config.encodingLengthAdjustment,
       config.lengthIncludesLengthFieldLength
     )
@@ -44,7 +44,7 @@ private[dynamictls] object DynamicTLSPeerGroupInternals {
       config.byteOrder,
       config.maxFrameLength,
       config.lengthFieldOffset,
-      config.lengthFieldLength,
+      config.lengthFieldLength.value,
       config.decodingLengthAdjustment,
       config.initialBytesToStrip,
       config.failFast
