@@ -313,7 +313,7 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
       * To be sure that `channelInactive` had run before returning from close, we are also waiting for nettyChannel.closeFuture() after
       * nettyChannel.close()
       */
-    private[dynamictls] def close(): Task[Unit] =
+    private[peergroup] def close(): Task[Unit] =
       for {
         _ <- Task(logger.debug("Closing {} to peer {}", channelType, to))
         _ <- toTask(nettyChannel.close())
