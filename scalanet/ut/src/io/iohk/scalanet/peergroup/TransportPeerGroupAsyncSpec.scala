@@ -1,16 +1,24 @@
 package io.iohk.scalanet.peergroup
 
+import cats.effect.Resource
 import cats.implicits._
 import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.peergroup.ReqResponseProtocol._
+import io.iohk.scalanet.peergroup.TransportPeerGroupAsyncSpec.{DynamicTLS, DynamicUDP}
+import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{FramingConfig, PeerInfo}
+
 import java.util.concurrent.{Executors, TimeUnit}
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.scalatest.{Assertion, AsyncFlatSpec, BeforeAndAfterAll}
 import org.scalatest.Matchers._
 import org.scalatest.prop.TableDrivenPropertyChecks._
+import scodec.Codec
+
 import scala.concurrent.{ExecutionContext, Future}
 import scodec.codecs.implicits._
+
+import java.net.InetSocketAddress
 
 /**
   *
@@ -134,4 +142,33 @@ object TransportPeerGroupAsyncSpec {
   val i = 1
   val j = 2
   val k = 3
+
+  val testFramingConfig = FramingConfig.buildStandardFrameConfig(192000, 4).getOrElse(fail())
+
+  sealed abstract class TransportProtocol extends Product with Serializable {
+    type AddressingType
+    def getProtocol[M](
+        address: InetSocketAddress
+    )(implicit s: Scheduler, c: Codec[M]): Resource[Task, ReqResponseProtocol[AddressingType, M]]
+  }
+  case object DynamicUDP extends TransportProtocol {
+    override type AddressingType = InetMultiAddress
+
+    override def getProtocol[M](
+        address: InetSocketAddress
+    )(implicit s: Scheduler, c: Codec[M]): Resource[Task, ReqResponseProtocol[InetMultiAddress, M]] = {
+      getDynamicUdpReqResponseProtocolClient(address)
+    }
+  }
+
+  case object DynamicTLS extends TransportProtocol {
+    override type AddressingType = PeerInfo
+
+    override def getProtocol[M](
+        address: InetSocketAddress
+    )(implicit s: Scheduler, c: Codec[M]): Resource[Task, ReqResponseProtocol[PeerInfo, M]] = {
+      getTlsReqResponseProtocolClient(testFramingConfig)(address)
+    }
+  }
+
 }

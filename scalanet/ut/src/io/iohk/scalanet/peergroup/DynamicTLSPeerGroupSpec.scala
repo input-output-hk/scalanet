@@ -20,7 +20,6 @@ import io.iohk.scalanet.peergroup.PeerGroup.{
   HandshakeException,
   ProxySupport
 }
-import io.iohk.scalanet.peergroup.ReqResponseProtocol.DynamicTLS
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSExtension.SignedKey
 import io.iohk.scalanet.peergroup.dynamictls.{
   DynamicTLSExtension,
@@ -38,7 +37,8 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.{Assertion, AsyncFlatSpec, BeforeAndAfterAll}
 import scodec.Codec
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.{ByteVector}
+import scodec.bits.BitVector
 import scodec.codecs.implicits._
 import sockslib.server.{SocksProxyServer, SocksProxyServerFactory}
 
@@ -69,9 +69,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
           case (server, ch1) =>
             for {
               _ <- ch1.sendMessage("Hello enc server")
-              rec <- server.serverEventObservable.collectChannelCreated.mergeMap {
-                case (ch, release) => ch.channelEventObservable.guarantee(release)
-              }.headL
+              rec <- server.getFirstEventFromFirstIncomingChannel
             } yield {
               rec shouldEqual MessageReceived("Hello enc server")
             }
@@ -227,23 +225,26 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
     val randomString2 = Random.nextString(50000)
     val randomString3 = Random.nextString(50000)
 
-    List.fill(4)(DynamicTLS.getProtocol[String](aRandomAddress())).sequence.use {
-      case List(client1, client2, client3, server) =>
-        for {
-          _ <- server.startHandling(s => s).startAndForget
-          responses1 <- Task.parZip3(
-            client1.send(randomString1, server.processAddress),
-            client2.send(randomString2, server.processAddress),
-            client3.send(randomString3, server.processAddress)
-          )
-          (resp1a, resp1b, resp1c) = responses1
-        } yield {
-          resp1a shouldEqual randomString1
-          resp1b shouldEqual randomString2
-          resp1c shouldEqual randomString3
-        }
-      case _ => fail()
-    }
+    List
+      .fill(4)(ReqResponseProtocol.getTlsReqResponseProtocolClient[String](testFramingConfig)(aRandomAddress()))
+      .sequence
+      .use {
+        case List(client1, client2, client3, server) =>
+          for {
+            _ <- server.startHandling(s => s).startAndForget
+            responses1 <- Task.parZip3(
+              client1.send(randomString1, server.processAddress),
+              client2.send(randomString2, server.processAddress),
+              client3.send(randomString3, server.processAddress)
+            )
+            (resp1a, resp1b, resp1c) = responses1
+          } yield {
+            resp1a shouldEqual randomString1
+            resp1b shouldEqual randomString2
+            resp1c shouldEqual randomString3
+          }
+        case _ => fail()
+      }
   }
 
   it should "fail to connect to offline peer" in taskTestCase {
@@ -326,10 +327,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
         for {
           result <- Task.parZip2(
             ch1.sendMessage("Hello server, do not process this message"),
-            server.serverEventObservable.collectChannelCreated.mergeMap {
-              case (channel, release) =>
-                channel.channelEventObservable.guarantee(release)
-            }.headL
+            server.getFirstEventFromFirstIncomingChannel
           )
           (_, eventReceived) = result
         } yield {
@@ -338,6 +336,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
     }
   }
   it should "handle messages with prepended messages id-s" in taskTestCase {
+    //prepended id-s are message discriminators i.e each TestMessage, when encoded, has format: discriminatorBytes || messageBytes
     implicit val s = Codec[TestMessage[String]]
     (for {
       client <- DynamicTLSPeerGroup[TestMessage[String]](getCorrectConfig())
@@ -348,10 +347,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
         for {
           result <- Task.parZip2(
             ch1.sendMessage(TestMessage.Foo("hello")),
-            server.serverEventObservable.collectChannelCreated.mergeMap {
-              case (channel, release) =>
-                channel.channelEventObservable.guarantee(release)
-            }.headL
+            server.getFirstEventFromFirstIncomingChannel
           )
           (_, eventReceived) = result
         } yield {
@@ -362,19 +358,16 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
 
   it should "inform user about too large frame" in taskTestCase {
     (for {
-      client <- DynamicTLSPeerGroup[Byte](getCorrectConfig())
+      client <- DynamicTLSPeerGroup[Byte](getCorrectConfig(maxFrameLength = 4, lengthFieldLength = 4))
       // 1byte message + 4 bytes length field gives frame of size 5, so maxFrameLength = 4 should end with error
-      server <- DynamicTLSPeerGroup[Byte](getCorrectConfig(maxFrameLength = 4))
+      server <- DynamicTLSPeerGroup[Byte](getCorrectConfig(maxFrameLength = 4, lengthFieldLength = 4))
       ch1 <- client.client(server.processAddress)
     } yield (client, server, ch1)).use {
       case (client, server, ch1) =>
         for {
           result <- Task.parZip2(
             ch1.sendMessage(1.toByte),
-            server.serverEventObservable.collectChannelCreated.mergeMap {
-              case (channel, release) =>
-                channel.channelEventObservable.guarantee(release)
-            }.headL
+            server.getFirstEventFromFirstIncomingChannel
           )
           (_, eventReceived) = result
         } yield {
@@ -496,6 +489,17 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
 }
 
 object DynamicTLSPeerGroupSpec {
+  val testFramingConfig = FramingConfig.buildStandardFrameConfig(192000, 4).getOrElse(fail())
+
+  implicit class DynamicTlsPeerGroupOps[M](val group: DynamicTLSPeerGroup[M]) {
+    def getFirstEventFromFirstIncomingChannel: Task[ChannelEvent[M]] = {
+      group.serverEventObservable.collectChannelCreated.mergeMap {
+        case (channel, release) =>
+          channel.channelEventObservable.guarantee(release)
+      }.headL
+    }
+  }
+
   def taskTestCase(t: => Task[Assertion])(implicit s: Scheduler): Future[Assertion] =
     t.runToFuture
 
@@ -521,10 +525,11 @@ object DynamicTLSPeerGroupSpec {
       address: InetSocketAddress = aRandomAddress(),
       useNativeTlsImplementation: Boolean = false,
       maxFrameLength: Int = 192000,
-      maxQueueSize: Int = 100
+      maxQueueSize: Int = 100,
+      lengthFieldLength: Int = 4
   ): DynamicTLSPeerGroup.Config = {
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
-    val framingConfig = FramingConfig.buildConfigWithStrippedLength(maxFrameLength, 4).get
+    val framingConfig = FramingConfig.buildStandardFrameConfig(maxFrameLength, lengthFieldLength).getOrElse(fail())
     Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation, framingConfig, maxQueueSize, None).get
   }
 
@@ -532,10 +537,11 @@ object DynamicTLSPeerGroupSpec {
       address: InetSocketAddress = aRandomAddress(),
       useNativeTlsImplementation: Boolean = false,
       maxFrameLength: Int = 192000,
-      maxQueueSize: Int = 100
+      maxQueueSize: Int = 100,
+      lengthFieldLength: Int = 4
   ): DynamicTLSPeerGroup.Config = {
     val hostkeyPair = CryptoUtils.generateKeyPair(rnd)
-    val framingConfig = FramingConfig.buildConfigWithStrippedLength(maxFrameLength, 4).get
+    val framingConfig = FramingConfig.buildStandardFrameConfig(maxFrameLength, lengthFieldLength).getOrElse(fail())
     Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation, framingConfig, maxQueueSize, None).get
   }
 
@@ -564,7 +570,7 @@ object DynamicTLSPeerGroupSpec {
       SHA256withECDSA
     )
 
-    val framingConfig = FramingConfig.buildConfigWithStrippedLength(192000, 4).get
+    val framingConfig = FramingConfig.buildStandardFrameConfig(192000, 4).getOrElse(fail())
 
     DynamicTLSPeerGroup.Config(
       address,

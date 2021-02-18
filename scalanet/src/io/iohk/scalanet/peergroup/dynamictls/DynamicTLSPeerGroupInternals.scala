@@ -40,7 +40,7 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
   def buildFramingCodecs(config: FramingConfig): (LengthFieldBasedFrameDecoder, LengthFieldPrepender) = {
     val encoder = new LengthFieldPrepender(
       config.byteOrder,
-      config.lengthFieldLength,
+      config.lengthFieldLength.value,
       config.encodingLengthAdjustment,
       config.lengthIncludesLengthFieldLength
     )
@@ -49,7 +49,7 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
       config.byteOrder,
       config.maxFrameLength,
       config.lengthFieldOffset,
-      config.lengthFieldLength,
+      config.lengthFieldLength.value,
       config.decodingLengthAdjustment,
       config.initialBytesToStrip,
       config.failFast

@@ -18,6 +18,7 @@ import io.iohk.scalanet.peergroup.{Addressable, Channel, InetMultiAddress}
 import io.iohk.scalanet.peergroup.CloseableQueue
 import io.iohk.scalanet.peergroup.PeerGroup.ProxySupport.Socks5Config
 import io.iohk.scalanet.peergroup.dynamictls.CustomHandlers.ThrottlingIpFilter
+import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.FramingConfig.ValidLengthFieldLength
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
@@ -150,10 +151,12 @@ object DynamicTLSPeerGroup {
     }
   }
 
+  final case class ConfigError(description: String)
+
   sealed abstract case class FramingConfig private (
       maxFrameLength: Int,
       lengthFieldOffset: Int,
-      lengthFieldLength: Int,
+      lengthFieldLength: ValidLengthFieldLength,
       encodingLengthAdjustment: Int,
       decodingLengthAdjustment: Int,
       initialBytesToStrip: Int,
@@ -163,24 +166,60 @@ object DynamicTLSPeerGroup {
   )
 
   object FramingConfig {
-    private val possibleLengthFieldLength = Set(1, 2, 3, 4, 8)
+    sealed abstract class ValidLengthFieldLength {
+      def value: Int
+    }
+    case object SingleByteLength extends ValidLengthFieldLength {
+      val value = 1
+    }
+    case object TwoByteLength extends ValidLengthFieldLength {
+      val value = 2
+    }
+    case object ThreeByteLength extends ValidLengthFieldLength {
+      val value = 3
+    }
+    case object FourByteLength extends ValidLengthFieldLength {
+      val value = 4
+    }
+    case object EightByteLength extends ValidLengthFieldLength {
+      val value = 8
+    }
+
+    object ValidLengthFieldLength {
+      def apply(i: Int): Either[ConfigError, ValidLengthFieldLength] = {
+        i match {
+          case 1 => Right(SingleByteLength)
+          case 2 => Right(TwoByteLength)
+          case 3 => Right(ThreeByteLength)
+          case 4 => Right(FourByteLength)
+          case 8 => Right(EightByteLength)
+          case _ => Left(ConfigError("lengthFieldLength should be one of (1, 2, 3, 4, 8)"))
+        }
+      }
+    }
+
+    private def check(test: Boolean, message: String): Either[ConfigError, Unit] = {
+      Either.cond(test, (), ConfigError(message))
+    }
 
     /**
       *
       * Configures framing format for all the peers in PeerGroup
       *
+      * Check [[io.netty.handler.codec.LengthFieldPrepender]] and [[io.netty.handler.codec.LengthFieldBasedFrameDecoder]]
+      * for good description of all the fields
       *
       * @param maxFrameLength the maximum length of the frame. If the length of the frame is greater than this value
       *                       channel with generate DecodingError event.
       * @param lengthFieldOffset the offset of the length field.
       * @param lengthFieldLength  the length of the length field. Must be 1, 2, 3, 4 or 8 bytes.
+      * @param decodingLengthAdjustment  the compensation value to add to the value of the length field when decoding.
       * @param encodingLengthAdjustment the compensation value to add to the value of the length field when encoding.
-      * @param decodingLengthAdjustment the compensation value to add to the value of the length field when decoding.
       * @param initialBytesToStrip the number of first bytes to strip out from the decoded frame. In standard framing setup
       *                            it should be equal to lengthFieldLength.
       * @param failFast  If true, a DecodingError event is generated as soon as the decoder notices the length of the frame will
       *                  exceed maxFrameLength regardless of whether the entire frame has been read. If false,
-      *                  a a DecodingError event is generated after the entire frame that exceeds maxFrameLength has been read..
+      *                  a DecodingError event is generated after the entire frame that exceeds maxFrameLength has been read.
       * @param byteOrder the ByteOrder of the length field.
       * @param lengthIncludesLengthFieldLength if true, the length of the prepended length field is added to the value of the prepended length field.
       */
@@ -188,54 +227,72 @@ object DynamicTLSPeerGroup {
         maxFrameLength: Int,
         lengthFieldOffset: Int,
         lengthFieldLength: Int,
-        encodingLengthAdjustment: Int,
-        decodingLengthAdjustment: Int,
         initialBytesToStrip: Int,
+        encodingLengthAdjustment: Int = 0,
+        decodingLengthAdjustment: Int = 0,
         failFast: Boolean = true,
         byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN,
         lengthIncludesLengthFieldLength: Boolean = false
-    ): Option[FramingConfig] = {
-      val tooLargeOffset = lengthFieldOffset > maxFrameLength - lengthFieldLength
-      if (maxFrameLength <= 0 || lengthFieldOffset < 0 || initialBytesToStrip < 0 || !possibleLengthFieldLength
-          .contains(lengthFieldLength) || tooLargeOffset) {
-        None
-      } else {
-        Some(
-          new FramingConfig(
-            maxFrameLength,
-            lengthFieldOffset,
-            lengthFieldLength,
-            encodingLengthAdjustment,
-            decodingLengthAdjustment,
-            initialBytesToStrip,
-            failFast,
-            byteOrder,
-            lengthIncludesLengthFieldLength
-          ) {}
+    ): Either[ConfigError, FramingConfig] = {
+      def validateLengthFieldLengthWithMaxFrame(
+          lengthFieldLength: ValidLengthFieldLength
+      ): Either[ConfigError, Unit] = {
+        val prefixAdjustment = if (lengthIncludesLengthFieldLength) lengthFieldLength.value else 0
+
+        val maximalMessageLength = maxFrameLength + encodingLengthAdjustment + prefixAdjustment
+
+        lengthFieldLength match {
+          case SingleByteLength if maximalMessageLength >= 256 =>
+            Left(ConfigError(s"length $maximalMessageLength does not fit into a byte"))
+          case TwoByteLength if maximalMessageLength >= 65536 =>
+            Left(ConfigError(s"length $maximalMessageLength does not fit into a short integer"))
+          case ThreeByteLength if maximalMessageLength >= 16777216 =>
+            Left(ConfigError(s"length $maximalMessageLength does not fit into a medium integer"))
+          case _ => Right(())
+        }
+      }
+
+      val smallEnoughOffset = lengthFieldOffset <= maxFrameLength - lengthFieldLength
+      for {
+        _ <- check(maxFrameLength > 0, "maxFrameLength should be positive")
+        _ <- check(lengthFieldOffset >= 0, "lengthFieldOffset should be non negative")
+        _ <- check(initialBytesToStrip >= 0, "initialBytesToStrip should be non negative")
+        validLengthField <- ValidLengthFieldLength(lengthFieldLength)
+        _ <- validateLengthFieldLengthWithMaxFrame(validLengthField)
+        _ <- check(
+          smallEnoughOffset,
+          "lengthFieldOffset should be smaller or equal (maxFrameLength - lengthFieldLength)"
         )
+
+      } yield {
+        new FramingConfig(
+          maxFrameLength,
+          lengthFieldOffset,
+          validLengthField,
+          encodingLengthAdjustment,
+          decodingLengthAdjustment,
+          initialBytesToStrip,
+          failFast,
+          byteOrder,
+          lengthIncludesLengthFieldLength
+        ) {}
       }
     }
 
     /**
       *
-      * Configures framing format for all the peers in PeerGroup, which will pre-pend length to all messages when encoding
-      * and strip this length when decoding
+      * Configures framing format for all the peers in PeerGroup, which will prepend length to all messages when encoding
+      * and strip this length when decoding.
       *
       * @param maxFrameLength the maximum length of the frame. If the length of the frame is greater than this value
       *                       channel with generate DecodingError event.
       * @param lengthFieldLength  the length of the length field. Must be 1, 2, 3, 4 or 8 bytes.
-      * @param failFast  If true, a DecodingError event is generated as soon as the decoder notices the length of the frame will
-      *                  exceed maxFrameLength regardless of whether the entire frame has been read. If false,
-      *                  a a DecodingError event is generated after the entire frame that exceeds maxFrameLength has been read..
-      * @param byteOrder the ByteOrder of the length field.
       */
-    def buildConfigWithStrippedLength(
+    def buildStandardFrameConfig(
         maxFrameLength: Int,
-        lengthFieldLength: Int,
-        failFast: Boolean = true,
-        byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
-    ): Option[FramingConfig] = {
-      buildConfig(maxFrameLength, 0, lengthFieldLength, 0, 0, lengthFieldLength, failFast, byteOrder)
+        lengthFieldLength: Int
+    ): Either[ConfigError, FramingConfig] = {
+      buildConfig(maxFrameLength, 0, lengthFieldLength, lengthFieldLength)
     }
   }
 
