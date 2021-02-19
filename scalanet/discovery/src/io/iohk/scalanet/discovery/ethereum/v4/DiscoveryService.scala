@@ -16,6 +16,7 @@ import scodec.{Codec, Attempt}
 import scodec.bits.BitVector
 import com.typesafe.scalalogging.LazyLogging
 import scala.collection.immutable.SortedSet
+import io.iohk.scalanet.discovery.ethereum.KeyValueTag
 
 /** Represent the minimal set of operations the rest of the system
   * can expect from the service to be able to talk to other peers.
@@ -44,10 +45,10 @@ trait DiscoveryService {
   def getLocalNode: Task[Node]
 
   /** Lookup the nodes closest to a given target. */
-  def lookup(target: Node.Id): Task[SortedSet[Node]]
+  def getClosestNodes(target: Node.Id): Task[Seq[Node]]
 
-  /** Lookup a random target, to discovery new nodes along the way. */
-  def lookupRandom: Task[Set[Node]]
+  /** Lookup a random target, to discover new nodes along the way. */
+  def getRandomNodes: Task[Set[Node]]
 }
 
 object DiscoveryService {
@@ -76,7 +77,8 @@ object DiscoveryService {
       config: DiscoveryConfig,
       network: DiscoveryNetwork[A],
       toAddress: Node.Address => A,
-      enrollInBackground: Boolean = false
+      enrollInBackground: Boolean = false,
+      tags: List[KeyValueTag] = Nil
   )(
       implicit sigalg: SigAlg,
       enrCodec: Codec[EthereumNodeRecord.Content],
@@ -88,11 +90,24 @@ object DiscoveryService {
         for {
           _ <- checkKeySize("private key", privateKey, sigalg.PrivateKeyBytesSize)
           _ <- checkKeySize("node ID", node.id, sigalg.PublicKeyBytesSize)
+
           // Use the current time to set the ENR sequence to something fresh.
           now <- clock.monotonic(MILLISECONDS)
-          enr <- Task(EthereumNodeRecord.fromNode(node, privateKey, seq = now).require)
+          enr <- Task {
+            EthereumNodeRecord.fromNode(node, privateKey, seq = now, tags.flatMap(_.toAttr): _*).require
+          }
+
           stateRef <- Ref[Task].of(State[A](node, enr, SubnetLimits.fromConfig(config)))
-          service <- Task(new ServiceImpl[A](privateKey, config, network, stateRef, toAddress))
+
+          service = new ServiceImpl[A](
+            privateKey,
+            config,
+            network,
+            stateRef,
+            toAddress,
+            KeyValueTag.toFilter(tags)
+          )
+
           // Start handling requests, we need them during enrolling so the peers can ping and bond with us.
           cancelToken <- network.startHandling(service)
           // Contact the bootstrap nodes.
@@ -274,7 +289,8 @@ object DiscoveryService {
       config: DiscoveryConfig,
       rpc: DiscoveryRPC[Peer[A]],
       stateRef: StateRef[A],
-      toAddress: Node.Address => A
+      toAddress: Node.Address => A,
+      enrFilter: KeyValueTag.EnrFilter
   )(
       implicit clock: Clock[Task],
       sigalg: SigAlg,
@@ -308,6 +324,23 @@ object DiscoveryService {
             }
         }
       }
+
+    /** Perform a lookup and also make sure the closest results have their ENR records fetched,
+      * to rule out the chance that incorrect details were relayed in the Neighbors response.
+      */
+    override def getClosestNodes(target: Node.Id): Task[Seq[Node]] =
+      for {
+        closest <- lookup(target)
+        // Ensure we have an ENR record, so that the TCP port is retrieved from the source,
+        // not just relying on Neighbors to be correct.
+        _ <- closest.toList.parTraverse(n => maybeFetchEnr(toPeer(n), None))
+        state <- stateRef.get
+        // Get the resolved records from state.
+        resolved = closest.toList.flatMap(n => state.nodeMap.get(n.id))
+      } yield resolved
+
+    override def getRandomNodes: Task[Set[Node]] =
+      getClosestNodes(sigalg.newKeyPair._1).map(_.toSet)
 
     override def removeNode(nodeId: Node.Id): Task[Unit] =
       stateRef.update { state =>
@@ -620,31 +653,7 @@ object DiscoveryService {
                       Task(logger.debug(s"Could not fetch ENR from $peer")).as(None)
 
                     case Some(enr) =>
-                      EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
-                        case Attempt.Successful(true) =>
-                          // Try to extract the node address from the ENR record and update the node database,
-                          // otherwise if there's no address we can use remove the peer.
-                          Node.Address.fromEnr(enr) match {
-                            case None =>
-                              Task(logger.debug(s"Could not extract node address from ENR $enr")) >>
-                                removePeer(peer).as(None)
-
-                            case Some(address) if !address.checkRelay(peer) =>
-                              Task(logger.debug(s"Ignoring ENR with $address from $peer because of invalid relay IP.")) >>
-                                removePeer(peer).as(None)
-
-                            case Some(address) =>
-                              Task(logger.info(s"Storing the ENR for $peer")) >>
-                                storePeer(peer, enr, address)
-                          }
-
-                        case Attempt.Successful(false) =>
-                          Task(logger.info(s"Could not validate ENR signature from $peer!")) >>
-                            removePeer(peer).as(None)
-
-                        case Attempt.Failure(err) =>
-                          Task(logger.error(s"Error validating ENR from $peer: $err")).as(None)
-                      }
+                      validateEnr(peer, enr)
                   }
           }
 
@@ -655,6 +664,41 @@ object DiscoveryService {
             }
             .flatTap(fetch.complete)
             .guarantee(stateRef.update(_.clearEnrFetch(peer)))
+      }
+    }
+
+    private def validateEnr(peer: Peer[A], enr: EthereumNodeRecord): Task[Option[EthereumNodeRecord]] = {
+      enrFilter(enr) match {
+        case Left(reject) =>
+          Task(logger.debug(s"Ignoring ENR from $peer: $reject")) >>
+            removePeer(peer).as(None)
+
+        case Right(()) =>
+          EthereumNodeRecord.validateSignature(enr, publicKey = peer.id) match {
+            case Attempt.Successful(true) =>
+              // Try to extract the node address from the ENR record and update the node database,
+              // otherwise if there's no address we can use remove the peer.
+              Node.Address.fromEnr(enr) match {
+                case None =>
+                  Task(logger.debug(s"Could not extract node address from ENR $enr")) >>
+                    removePeer(peer).as(None)
+
+                case Some(address) if !address.checkRelay(peer) =>
+                  Task(logger.debug(s"Ignoring ENR with $address from $peer because of invalid relay IP.")) >>
+                    removePeer(peer).as(None)
+
+                case Some(address) =>
+                  Task(logger.info(s"Storing the ENR for $peer")) >>
+                    storePeer(peer, enr, address)
+              }
+
+            case Attempt.Successful(false) =>
+              Task(logger.info(s"Could not validate ENR signature from $peer!")) >>
+                removePeer(peer).as(None)
+
+            case Attempt.Failure(err) =>
+              Task(logger.error(s"Error validating ENR from $peer: $err")).as(None)
+          }
       }
     }
 
@@ -730,9 +774,12 @@ object DiscoveryService {
       * arrive from each peer we ask (or if they return k quicker then it returns earlier)
       * it could be quite slow if it was used for routing.
       *
+      * It doesn't wait fetching and validating the ENR records, that happens in the background.
+      * Use `getNode` or `getClosestNodes` which wait for that extra step after the lookup.
+      *
       * https://github.com/ethereum/devp2p/blob/master/discv4.md#recursive-lookup
       */
-    override def lookup(target: Node.Id): Task[SortedSet[Node]] = {
+    protected[v4] def lookup(target: Node.Id): Task[SortedSet[Node]] = {
       val targetId = Node.kademliaId(target)
 
       implicit val nodeOrdering: Ordering[Node] =
@@ -859,7 +906,7 @@ object DiscoveryService {
     }
 
     /** Look up a random node ID to discover new peers. */
-    override def lookupRandom: Task[Set[Node]] =
+    protected[v4] def lookupRandom: Task[Set[Node]] =
       Task(logger.info("Looking up a random target...")) >>
         lookup(target = sigalg.newKeyPair._1)
 

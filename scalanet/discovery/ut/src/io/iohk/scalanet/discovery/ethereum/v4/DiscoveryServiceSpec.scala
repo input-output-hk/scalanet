@@ -4,9 +4,11 @@ import cats.implicits._
 import cats.effect.concurrent.Ref
 import io.iohk.scalanet.discovery.crypto.{PublicKey, Signature}
 import io.iohk.scalanet.discovery.ethereum.{EthereumNodeRecord, Node}
+import io.iohk.scalanet.discovery.ethereum.KeyValueTag, KeyValueTag.NetworkId
 import io.iohk.scalanet.discovery.ethereum.codecs.DefaultCodecs
 import io.iohk.scalanet.discovery.ethereum.v4.mocks.MockSigAlg
 import io.iohk.scalanet.discovery.ethereum.v4.DiscoveryNetwork.Peer
+import io.iohk.scalanet.discovery.ethereum.v4.KBucketsWithSubnetLimits.SubnetLimits
 import io.iohk.scalanet.kademlia.Xor
 import io.iohk.scalanet.NetUtils.aRandomAddress
 import java.net.InetSocketAddress
@@ -14,12 +16,12 @@ import monix.eval.Task
 import monix.execution.Scheduler
 import monix.execution.atomic.AtomicInt
 import org.scalatest._
+import org.scalatest.prop.TableDrivenPropertyChecks
 import scala.concurrent.duration._
 import scala.util.Random
 import java.net.InetAddress
-import io.iohk.scalanet.discovery.ethereum.v4.KBucketsWithSubnetLimits.SubnetLimits
 
-class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
+class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers with TableDrivenPropertyChecks {
   import DiscoveryService.{State, BondingResults}
   import DiscoveryServiceSpec._
   import DefaultCodecs._
@@ -438,6 +440,7 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
   it should "not remove the bonded status if the ENR fetch fails" in test {
     new Fixture {
       override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(Some(None)),
         enrRequest = _ => _ => Task(None)
       )
       override val test = for {
@@ -448,6 +451,55 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
         state.lastPongTimestampMap should contain key (remotePeer)
       }
     }
+  }
+
+  class NetworkIdFixture(
+      maybeLocalNetwork: Option[String],
+      maybeRemoteNetwork: Option[String],
+      isCompatible: Boolean
+  ) extends Fixture {
+
+    override lazy val tags =
+      maybeLocalNetwork.map(NetworkId(_)).toList
+
+    override lazy val remoteENR = {
+      val attrs = maybeRemoteNetwork.flatMap(NetworkId(_).toAttr).toList
+      EthereumNodeRecord
+        .fromNode(remoteNode, remotePrivateKey, seq = 1, attrs: _*)
+        .require
+    }
+
+    override lazy val rpc = unimplementedRPC.copy(
+      ping = _ => _ => Task.pure(Some(None)),
+      enrRequest = _ => _ => Task(Some(remoteENR))
+    )
+
+    override def test =
+      for {
+        maybeEnr <- service.fetchEnr(remotePeer)
+      } yield {
+        maybeEnr.isDefined shouldBe isCompatible
+      }
+  }
+
+  it should "reject the ENR if remote network doesn't match the local one" in test {
+    new NetworkIdFixture("test-network".some, "other-network".some, isCompatible = false)
+  }
+
+  it should "reject the ENR if remote network is missing when the local is set" in test {
+    new NetworkIdFixture("test-network".some, none, isCompatible = false)
+  }
+
+  it should "accept the ENR if remote network matches the local one" in test {
+    new NetworkIdFixture("test-network".some, "test-network".some, isCompatible = true)
+  }
+
+  it should "accept the ENR if remote network is set but the local one isn't" in test {
+    new NetworkIdFixture(none, "test-network".some, isCompatible = true)
+  }
+
+  it should "accept the ENR if remote and the local networks are both empty" in test {
+    new NetworkIdFixture(none, none, isCompatible = true)
   }
 
   behavior of "storePeer"
@@ -885,6 +937,40 @@ class DiscoveryServiceSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
+  behavior of "getClosestNodes"
+
+  it should "resolve the ENR records for the lookup results" in test {
+    new LookupFixture {
+      // We can find an ENR only for half of the random nodes.
+      // Thus the 2nd half of the random nodes should never be returned.
+      val (nodesWithEnr, nodesWithoutEnr) = randomNodes.splitAt(randomNodes.size / 2)
+
+      override lazy val rpc = unimplementedRPC.copy(
+        ping = _ => _ => Task.pure(Some(None)),
+        // Only return ENR for the 1st half.
+        enrRequest = peer => _ => Task.pure { nodesWithEnr.find(_._1.id == peer.id).map(_._2) },
+        // Random selection from the whole range, some with ENR, some without.
+        findNode = _ =>
+          targetPublicKey =>
+            Task.pure {
+              Some(Random.shuffle(randomNodes).take(config.kademliaBucketSize).map(_._1))
+            }
+      )
+
+      override val test = for {
+        _ <- addRemotePeer
+        closest <- service.getClosestNodes(targetPublicKey)
+      } yield {
+        Inspectors.forAll(nodesWithoutEnr) {
+          case (node, _) => closest.contains(node) shouldBe false
+        }
+        Inspectors.forAtLeast(1, nodesWithEnr) {
+          case (node, _) => closest.contains(node) shouldBe true
+        }
+      }
+    }
+  }
+
   behavior of "getNodes"
 
   it should "return the local node among all nodes which have an ENR" in test {
@@ -1077,13 +1163,16 @@ object DiscoveryServiceSpec {
 
     lazy val rpc = unimplementedRPC
 
+    lazy val tags: List[KeyValueTag] = Nil
+
     // Only using `new` for testing, normally we'd use it as a Resource with `apply`.
     lazy val service = new DiscoveryService.ServiceImpl[InetSocketAddress](
       localPrivateKey,
       config,
       rpc,
       stateRef,
-      toAddress = nodeAddressToInetSocketAddress
+      toAddress = nodeAddressToInetSocketAddress,
+      enrFilter = KeyValueTag.toFilter(tags)
     )
   }
 
