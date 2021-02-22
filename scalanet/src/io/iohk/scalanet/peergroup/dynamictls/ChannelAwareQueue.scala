@@ -32,13 +32,13 @@ private[scalanet] final class ChannelAwareQueue[M] private (
   def size: Long = queueSize.get()
 
   def offer(a: M): Task[Either[Closed, Unit]] = {
-    Task(enableBPIfNecessary()) >> queue.offer(a)
+    Task(enableBackPressureIfNecessary()) >> queue.offer(a)
   }
 
   def next: Task[Option[M]] = {
     queue.next.map {
       case Some(value) =>
-        disableBPIfNecessary()
+        disableBackPressureIfNecessary()
         Some(value)
       case None =>
         None
@@ -47,13 +47,13 @@ private[scalanet] final class ChannelAwareQueue[M] private (
 
   def close(discard: Boolean): Task[Unit] = queue.close(discard)
 
-  private def enableBPIfNecessary(): Unit =
+  private def enableBackPressureIfNecessary(): Unit =
     if (queueSize.incrementAndGet() >= limit && channelConfig.isAutoRead) {
       channelConfig.setAutoRead(false)
       ()
     }
 
-  private def disableBPIfNecessary(): Unit =
+  private def disableBackPressureIfNecessary(): Unit =
     if (queueSize.decrementAndGet() <= lowerBound && !channelConfig.isAutoRead) {
       channelConfig.setAutoRead(true)
       ()

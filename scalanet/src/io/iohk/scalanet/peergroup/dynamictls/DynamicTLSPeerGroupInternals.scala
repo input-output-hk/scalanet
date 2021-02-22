@@ -5,7 +5,7 @@ import java.net.{ConnectException, InetSocketAddress}
 import java.nio.channels.ClosedChannelException
 import com.typesafe.scalalogging.StrictLogging
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived, UnexpectedError}
-import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
+import io.iohk.scalanet.peergroup.NettyFutureUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ProxySupport.Socks5Config
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, HandshakeException, ServerEvent}

@@ -472,6 +472,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
         // after reading first 2 messages, there place in queue for two new messages, so they are read from rcv buffer
         _ <- Task(srvChannelImpl.incomingQueueSize)
           .restartUntil(qSize => qSize == ((firstBatch.size - 2) + secondBatch.size))
+          .timeout(explicitTaskTimeOut)
         _ <- Task(assert(srvChannelImpl.incomingQueueSize == 4))
         // all received messages are in expected order
         _ <- srvChannelImpl.nextChannelEvent.map(ev => assert(ev.get == MessageReceived(firstBatch(2))))
@@ -492,7 +493,7 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
       val srvChannelImpl =
         serverChannel.asInstanceOf[DynamicTLSPeerGroupInternals.DynamicTlsChannel[ChannelEvent[SizeAbleMessage]]]
       // large message so fill the buffer after each sent
-      val messagesToSend = (0 to 24).map(_ => SizeAbleMessage.genRandomOfsizeN(4 * 1024 * 1024))
+      val messagesToSend = List.fill(25)(SizeAbleMessage.genRandomOfsizeN(4 * 1024 * 1024))
       val sendTask = Task.traverse(messagesToSend)(m => clientChannel.sendMessage(m))
       val receiveTask = serverChannel.nextChannelEvent
         .delayExecution(500.milliseconds)
@@ -515,6 +516,8 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
 
 object DynamicTLSPeerGroupSpec {
   val testFramingConfig = FramingConfig.buildStandardFrameConfig(192000, 4).getOrElse(fail())
+
+  val explicitTaskTimeOut = 5.seconds
 
   implicit class DynamicTlsPeerGroupOps[M](val group: DynamicTLSPeerGroup[M]) {
     def getFirstEventFromFirstIncomingChannel: Task[ChannelEvent[M]] = {

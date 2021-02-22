@@ -8,7 +8,7 @@ import io.iohk.scalanet.peergroup.{Channel, Release, InetMultiAddress, Closeable
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, MessageReceived, DecodingError, UnexpectedError}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.ControlEvent.InitializationError
-import io.iohk.scalanet.peergroup.InetPeerGroupUtils.toTask
+import io.iohk.scalanet.peergroup.NettyFutureUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.{
   ServerEvent,
   TerminalPeerGroup,

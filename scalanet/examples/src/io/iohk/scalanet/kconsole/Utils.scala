@@ -2,15 +2,23 @@ package io.iohk.scalanet.kconsole
 
 import com.typesafe.config.{ConfigFactory, ConfigRenderOptions, ConfigValue}
 import io.iohk.scalanet.peergroup.InetMultiAddress
-import io.iohk.scalanet.peergroup.InetPeerGroupUtils.aRandomAddress
 import io.iohk.scalanet.kademlia.KRouter
 import io.iohk.scalanet.kademlia.KRouter.NodeRecord
 import pureconfig.ConfigWriter
 import scodec.bits.BitVector
 
+import java.net.{InetSocketAddress, ServerSocket}
 import scala.util.Random
 
 object Utils {
+  private def aRandomAddress(): InetSocketAddress = {
+    val s = new ServerSocket(0)
+    try {
+      new InetSocketAddress("localhost", s.getLocalPort)
+    } finally {
+      s.close()
+    }
+  }
 
   def generateRandomConfig: KRouter.Config[InetMultiAddress] = {
 

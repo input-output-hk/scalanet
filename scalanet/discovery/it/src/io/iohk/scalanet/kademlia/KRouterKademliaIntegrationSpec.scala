@@ -2,11 +2,11 @@ package io.iohk.scalanet.kademlia
 
 import java.security.SecureRandom
 import cats.effect.Resource
+import io.iohk.scalanet.NetUtils
 import io.iohk.scalanet.kademlia.KNetwork.KNetworkScalanetImpl
 import io.iohk.scalanet.kademlia.KRouter.NodeRecord
-import io.iohk.scalanet.peergroup.{InetMultiAddress, InetPeerGroupUtils}
+import io.iohk.scalanet.peergroup.InetMultiAddress
 import monix.eval.Task
-
 import io.iohk.scalanet.peergroup.PeerGroup
 import scodec.bits.BitVector
 import io.iohk.scalanet.discovery.crypto.PrivateKey
@@ -19,7 +19,7 @@ abstract class KRouterKademliaIntegrationSpec(peerGroupName: String)
   override def generatePeerRecordWithKey: (PeerRecord, PrivateKey) = {
     val randomGen = new SecureRandom()
     val testBitLength = 16
-    val address = InetMultiAddress(InetPeerGroupUtils.aRandomAddress())
+    val address = InetMultiAddress(NetUtils.aRandomAddress())
     val id = KBuckets.generateRandomId(testBitLength, randomGen)
     val privateKey = PrivateKey(BitVector.empty) // Not using cryptography.
     NodeRecord(id, address, address) -> privateKey

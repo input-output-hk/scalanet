@@ -4,8 +4,6 @@ import java.net._
 import java.nio.ByteBuffer
 import java.security.KeyStore
 import java.security.cert.Certificate
-import io.iohk.scalanet.peergroup.InetPeerGroupUtils
-
 import scala.util.Random
 import scala.annotation.nowarn
 
@@ -25,7 +23,14 @@ object NetUtils {
     keystore
   }
 
-  def aRandomAddress(): InetSocketAddress = InetPeerGroupUtils.aRandomAddress()
+  def aRandomAddress(): InetSocketAddress = {
+    val s = new ServerSocket(0)
+    try {
+      new InetSocketAddress("localhost", s.getLocalPort)
+    } finally {
+      s.close()
+    }
+  }
 
   def isListening(address: InetSocketAddress): Boolean = {
     try {

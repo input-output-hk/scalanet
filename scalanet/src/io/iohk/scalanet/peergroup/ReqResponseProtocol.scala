@@ -9,7 +9,6 @@ import cats.effect.concurrent.{Ref, Semaphore}
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.peergroup.implicits._
 import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, MessageReceived}
-import io.iohk.scalanet.peergroup.InetPeerGroupUtils.ChannelId
 import io.iohk.scalanet.peergroup.ReqResponseProtocol._
 import io.iohk.scalanet.peergroup.dynamictls.{DynamicTLSPeerGroup, Secp256k1}
 import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{FramingConfig, PeerInfo}
@@ -143,6 +142,7 @@ class ReqResponseProtocol[A, M](
 }
 
 object ReqResponseProtocol {
+  type ChannelId = (InetSocketAddress, InetSocketAddress)
   class ReqResponseChannel[A, M](
       channel: Channel[A, MessageEnvelope[M]],
       concurrentChannel: ReqResponseChannel.ConChan[M],
