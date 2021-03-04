@@ -7,6 +7,8 @@ import mill.scalalib.{PublishModule, ScalaModule}
 import mill.scalalib.publish.{Developer, License, PomSettings, VersionControl}
 import $ivy.`com.lihaoyi::mill-contrib-versionfile:$MILL_VERSION`
 import mill.contrib.versionfile.VersionFileModule
+import $ivy.`com.lihaoyi::mill-contrib-scoverage:$MILL_VERSION`
+import mill.contrib.scoverage._
 
 object versionFile extends VersionFileModule
 object csm extends Cross[ScalanetModule]("2.12.10", "2.13.4")
@@ -42,8 +44,38 @@ class ScalanetModule(crossVersion: String) extends Module {
   // scala 2.13 might have another set of options
   private val `scala 2.13 options`: Seq[String] = Nil
 
-  trait ScalanetModule extends ScalaModule {
+  private val _scoverageVersion = "1.4.2"
+
+  trait ScalanetModule extends ScalaModule with ScoverageModule {
     override def scalaVersion = crossVersion
+
+    override def scoverageVersion = _scoverageVersion
+
+    // `extends Tests` uses the context of the module in which it's defined,
+    // which is why the trait is defined here not within `scalanet`, otherwise
+    // it wouldn't work for `kademlia` for example.
+    trait TestModule extends ScoverageTests {
+      override def scalacOptions = scalanet.scalacOptions
+
+      override def testFrameworks =
+        Seq("org.scalatest.tools.Framework")
+
+      override def ivyDeps = Agg(
+        ivy"org.scalatest::scalatest:3.0.9",
+        ivy"org.scalacheck::scalacheck:1.14.0",
+        ivy"ch.qos.logback:logback-core:1.2.3",
+        ivy"ch.qos.logback:logback-classic:1.2.3",
+        ivy"org.mockito:mockito-core:2.21.0",
+        ivy"com.github.mike10004:fengyouchao-sockslib:1.0.6"
+      )
+
+      //      override def moduleDeps: Seq[JavaModule] =
+      //        Seq(scalanet)
+
+      def single(args: String*) = T.command {
+        super.runMain("org.scalatest.run", args: _*)
+      }
+    }
 
     override def repositories =
       super.repositories ++ Seq(
@@ -70,32 +102,6 @@ class ScalanetModule(crossVersion: String) extends Module {
     }
 
     override def scalacOptions = commonScalacOptions ++ versionOptions
-
-    // `extends Tests` uses the context of the module in which it's defined,
-    // which is why the trait is defined here not within `scalanet`, otherwise
-    // it wouldn't work for `kademlia` for example.
-    trait TestModule extends Tests {
-      override def scalacOptions = ScalanetModule.this.scalacOptions
-
-      override def testFrameworks =
-        Seq("org.scalatest.tools.Framework")
-
-      override def ivyDeps = Agg(
-        ivy"org.scalatest::scalatest:3.0.9",
-        ivy"org.scalacheck::scalacheck:1.14.0",
-        ivy"ch.qos.logback:logback-core:1.2.3",
-        ivy"ch.qos.logback:logback-classic:1.2.3",
-        ivy"org.mockito:mockito-core:2.21.0",
-        ivy"com.github.mike10004:fengyouchao-sockslib:1.0.6"
-      )
-
-      override def moduleDeps: Seq[JavaModule] =
-        Seq(scalanet)
-
-      def single(args: String*) = T.command {
-        super.runMain("org.scalatest.run", args: _*)
-      }
-    }
   }
 
   // In objects inheriting this trait, use `override def moduleDeps: Seq[PublishModule]`
@@ -155,10 +161,9 @@ class ScalanetModule(crossVersion: String) extends Module {
       ivy"com.github.ben-manes.caffeine:caffeine:2.8.8"
     )
 
-    def scoverageVersion = "1.3.1"
 
-    // Scoverage disabled
-    // object test extends ScoverageTests {
+
+
     object ut extends TestModule
 
     object discovery extends ScalanetModule with ScalanetPublishModule {
@@ -173,12 +178,12 @@ class ScalanetModule(crossVersion: String) extends Module {
 
       object ut extends TestModule {
         override def moduleDeps: Seq[JavaModule] =
-          super.moduleDeps ++ Seq(scalanet.discovery, scalanet.ut)
+          super.moduleDeps ++ Seq(scalanet.ut)
       }
 
       object it extends TestModule {
         override def moduleDeps: Seq[JavaModule] =
-          super.moduleDeps ++ Seq(scalanet.discovery.ut)
+          super.moduleDeps ++ Seq(discovery.ut)
       }
     }
 
@@ -201,5 +206,10 @@ class ScalanetModule(crossVersion: String) extends Module {
           super.moduleDeps ++ Seq(scalanet.examples)
       }
     }
+  }
+
+  object scoverage extends ScoverageReport {
+    override def scalaVersion     = crossVersion
+    override def scoverageVersion = _scoverageVersion
   }
 }
