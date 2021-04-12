@@ -79,6 +79,7 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
     .childHandler(new ChannelInitializer[SocketChannel]() {
       override def initChannel(ch: SocketChannel): Unit = {
         new ServerChannelBuilder[M](
+          config.peerInfo.id,
           serverQueue,
           ch,
           sslServerCtx,
@@ -110,6 +111,7 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
     Resource.make(
       Task.suspend {
         new ClientChannelBuilder[M](
+          config.peerInfo.id,
           to,
           clientBootstrap,
           DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForClient(to), config),

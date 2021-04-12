@@ -38,11 +38,11 @@ class MockPeerGroup[A, M](
   }
 
   def getOrCreateChannel(to: A): Task[MockChannel[A, M]] =
-    Task(channels.getOrElseUpdate(to, new MockChannel[A, M](to)))
+    Task(channels.getOrElseUpdate(to, new MockChannel[A, M](processAddress, to)))
 
   def createServerChannel(from: A): Task[MockChannel[A, M]] =
     for {
-      channel <- Task(new MockChannel[A, M](from))
+      channel <- Task(new MockChannel[A, M](processAddress, from))
       _ <- Task(channel.refCount.increment())
       event = ChannelCreated(channel, Task(channel.refCount.decrement()))
       _ <- serverEvents.offer(event)
@@ -50,6 +50,7 @@ class MockPeerGroup[A, M](
 }
 
 class MockChannel[A, M](
+    override val from: A,
     override val to: A
 )(implicit val s: Scheduler)
     extends Channel[A, M] {

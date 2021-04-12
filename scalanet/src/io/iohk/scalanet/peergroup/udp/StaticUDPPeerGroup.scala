@@ -369,6 +369,9 @@ object StaticUDPPeerGroup extends StrictLogging {
     override val to =
       InetMultiAddress(remoteAddress)
 
+    override def from: InetMultiAddress =
+      InetMultiAddress(localAddress)
+
     override def nextChannelEvent =
       messageQueue.next
 

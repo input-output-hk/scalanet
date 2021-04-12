@@ -94,6 +94,27 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
     }
   }
 
+  it should s"channel local info should have local peergroup id" in taskTestCase {
+    (for {
+      client <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      server <- DynamicTLSPeerGroup[String](getCorrectConfig())
+      ch1 <- client.client(server.processAddress)
+    } yield (client, server, ch1)).use {
+      case (client, server, clientChannel) =>
+        for {
+          sChannelAndRelease <- server.serverEventObservable.collectChannelCreated.headL
+          (serverChannel, releaser) = sChannelAndRelease
+          _ <- releaser
+        } yield {
+          assert(serverChannel.from == server.processAddress)
+          assert(clientChannel.from.id == client.processAddress.id)
+          // in case of client channels, channel.from address will be different from processAddress address, as it will
+          // have assigned ephemeral port
+          assert(clientChannel.from.address.inetSocketAddress != client.processAddress.address.inetSocketAddress)
+        }
+    }
+  }
+
   it should "throttle incoming connections when configured" in taskTestCase {
     val throttlingDuration = 1.second
     val throttlingConfig = DynamicTLSPeerGroup.IncomingConnectionThrottlingConfig(

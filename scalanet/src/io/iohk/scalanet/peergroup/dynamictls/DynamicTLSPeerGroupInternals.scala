@@ -126,6 +126,7 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
   }
 
   class ClientChannelBuilder[M](
+      localId: BitVector,
       peerInfo: PeerInfo,
       clientBootstrap: Bootstrap,
       sslClientCtx: SslContext,
@@ -193,7 +194,7 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
         _ <- toTask(bootstrap.connect(peerInfo.address.inetSocketAddress))
         ch <- Task.deferFuture(activationF)
         _ <- Task(logger.debug("Connection to peer {} finished successfully", peerInfo))
-      } yield new DynamicTlsChannel[M](peerInfo, ch._1, ch._2, ClientChannel)
+      } yield new DynamicTlsChannel[M](localId, peerInfo, ch._1, ch._2, ClientChannel)
 
       connectTask.onErrorRecoverWith {
         case t: Throwable =>
@@ -218,6 +219,7 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
   }
 
   class ServerChannelBuilder[M](
+      localId: BitVector,
       serverQueue: CloseableQueue[ServerEvent[PeerInfo, M]],
       val nettyChannel: SocketChannel,
       sslServerCtx: SslContext,
@@ -257,7 +259,7 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
                     s"to $remoteAddress with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
                 )
                 val info = PeerInfo(peerId, InetMultiAddress(nettyChannel.remoteAddress()))
-                val channel = new DynamicTlsChannel[M](info, nettyChannel, messageQueue, ServerChannel)
+                val channel = new DynamicTlsChannel[M](localId, info, nettyChannel, messageQueue, ServerChannel)
                 handleEvent(ChannelCreated(channel, channel.close()))
               } else {
                 logger.debug("Ssl handshake failed from peer with address {}", remoteAddress)
@@ -284,6 +286,7 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
   }
 
   class DynamicTlsChannel[M](
+      localId: BitVector,
       val to: PeerInfo,
       nettyChannel: SocketChannel,
       incomingMessagesQueue: ChannelAwareQueue[ChannelEvent[M]],
@@ -295,6 +298,8 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
     logger.debug(
       s"Creating $channelType from ${nettyChannel.localAddress()} to ${nettyChannel.remoteAddress()} with channel id ${nettyChannel.id}"
     )
+
+    override val from: PeerInfo = PeerInfo(localId, InetMultiAddress(nettyChannel.localAddress()))
 
     override def sendMessage(message: M): Task[Unit] = {
       logger.debug("Sending message to peer {} via {}", nettyChannel.localAddress(), channelType)

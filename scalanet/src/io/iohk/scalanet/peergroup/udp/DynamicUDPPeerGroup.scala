@@ -203,6 +203,8 @@ class DynamicUDPPeerGroup[M] private (val config: DynamicUDPPeerGroup.Config)(
       channelType: ChannelType
   ) extends Channel[InetMultiAddress, M] {
 
+    override def from: InetMultiAddress = InetMultiAddress(localAddress)
+
     val closePromise: Promise[ChannelImpl] = nettyChannel.eventLoop().newPromise[ChannelImpl]()
 
     val channelId = UDPChannelId(nettyChannel.id(), remoteAddress, localAddress)

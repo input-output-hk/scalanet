@@ -28,6 +28,11 @@ import java.net.InetSocketAddress
 trait Channel[A, M] {
 
   /**
+    * The local address from this nodes point of view.
+    */
+  def from: A
+
+  /**
     * The remote address from this nodes point of view.
     */
   def to: A
