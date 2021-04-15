@@ -1,7 +1,7 @@
 package io.iohk.scalanet.discovery.ethereum.v4
 
 import cats.implicits._
-import cats.effect.{Clock}
+import cats.effect.Clock
 import cats.effect.concurrent.Deferred
 import com.typesafe.scalalogging.LazyLogging
 import io.iohk.scalanet.discovery.crypto.{PrivateKey, PublicKey, SigAlg}
@@ -10,17 +10,21 @@ import io.iohk.scalanet.discovery.hash.Hash
 import io.iohk.scalanet.peergroup.implicits.NextOps
 import io.iohk.scalanet.peergroup.{Addressable, Channel, PeerGroup}
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
-import io.iohk.scalanet.peergroup.Channel.{MessageReceived, DecodingError, UnexpectedError}
+import io.iohk.scalanet.peergroup.Channel.{ChannelIdle, DecodingError, MessageReceived, UnexpectedError}
+
 import java.util.concurrent.TimeoutException
 import java.net.InetAddress
 import monix.eval.Task
 import monix.tail.Iterant
 import monix.catnap.CancelableF
+
 import scala.concurrent.duration._
-import scodec.{Codec, Attempt}
-import scala.util.control.{NonFatal, NoStackTrace}
+import scodec.{Attempt, Codec}
+
+import scala.util.control.{NoStackTrace, NonFatal}
 import scodec.bits.BitVector
 import io.iohk.scalanet.discovery.ethereum.v4.Payload.Neighbors
+
 import java.net.InetSocketAddress
 import io.iohk.scalanet.discovery.hash.Keccak256
 
@@ -143,6 +147,10 @@ object DiscoveryNetwork {
 
             case UnexpectedError(ex) =>
               Task.raiseError(new PacketException(ex.getMessage))
+
+            case ChannelIdle(_, _) =>
+              // we do not use idle peer detection in discovery
+              Task.unit
           }
           .completedL
       }

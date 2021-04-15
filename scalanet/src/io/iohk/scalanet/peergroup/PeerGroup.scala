@@ -57,10 +57,18 @@ trait Channel[A, M] {
 }
 
 object Channel {
+  sealed abstract class IdleState
+  case object ReaderIdle extends IdleState
+  case object WriterIdle extends IdleState
+  case object AllIdle extends IdleState
+
   sealed abstract class ChannelEvent[+M]
   final case class MessageReceived[M](m: M) extends ChannelEvent[M]
   final case class UnexpectedError(e: Throwable) extends ChannelEvent[Nothing]
   final case object DecodingError extends ChannelEvent[Nothing]
+
+  // only used in DynamicTlsPeerGroup
+  final case class ChannelIdle(idleState: IdleState, first: Boolean) extends ChannelEvent[Nothing]
 }
 
 /**

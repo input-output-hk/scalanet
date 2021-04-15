@@ -238,6 +238,7 @@ object ReqResponseProtocol {
               useNativeTlsImplementation = false,
               framingConfig,
               maxIncomingMessageQueueSize = 100,
+              None,
               None
             )
         )

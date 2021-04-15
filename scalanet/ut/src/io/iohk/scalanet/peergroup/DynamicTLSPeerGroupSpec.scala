@@ -10,7 +10,15 @@ import io.iohk.scalanet.NetUtils._
 import io.iohk.scalanet.crypto.CryptoUtils
 import io.iohk.scalanet.crypto.CryptoUtils.{SHA256withECDSA, Secp256r1}
 import io.iohk.scalanet.peergroup.implicits._
-import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived}
+import io.iohk.scalanet.peergroup.Channel.{
+  AllIdle,
+  ChannelEvent,
+  ChannelIdle,
+  DecodingError,
+  MessageReceived,
+  ReaderIdle,
+  WriterIdle
+}
 import io.iohk.scalanet.peergroup.DynamicTLSPeerGroupSpec._
 import io.iohk.scalanet.peergroup.PeerGroup.ProxySupport.Socks5Config
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
@@ -27,7 +35,12 @@ import io.iohk.scalanet.peergroup.dynamictls.{
   DynamicTLSPeerGroupInternals,
   Secp256k1
 }
-import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{Config, FramingConfig, PeerInfo}
+import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{
+  Config,
+  FramingConfig,
+  PeerInfo,
+  StalePeerDetectionConfig
+}
 import io.iohk.scalanet.testutils.GeneratorUtils
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -37,12 +50,13 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.concurrent.ScalaFutures._
 import org.scalatest.{Assertion, AsyncFlatSpec, BeforeAndAfterAll}
 import scodec.Codec
-import scodec.bits.{ByteVector}
+import scodec.bits.ByteVector
 import scodec.bits.BitVector
 import scodec.codecs.implicits._
 import sockslib.server.{SocksProxyServer, SocksProxyServerFactory}
+import org.scalatest.prop.TableDrivenPropertyChecks._
 
-import java.util.concurrent.TimeoutException
+import java.util.concurrent.{TimeUnit, TimeoutException}
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Random
@@ -112,6 +126,48 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
           // have assigned ephemeral port
           assert(clientChannel.from.address.inetSocketAddress != client.processAddress.address.inetSocketAddress)
         }
+    }
+  }
+
+  private val expectedIdleEvents = Table(
+    ("Label", "Event", "Description"),
+    ("ReaderIdle", ReaderIdle, "in case of peer without reads"),
+    ("WriterIdle", WriterIdle, "in case of peer without writes"),
+    ("AllIdle", AllIdle, "in case of peer without reads and writes")
+  )
+
+  forAll(expectedIdleEvents) { (label, idleEventType, description) =>
+    it should s"generate ${label} event ${description}" in taskTestCase {
+      val stalePeerDetectionConfig = idleEventType match {
+        case Channel.ReaderIdle =>
+          StalePeerDetectionConfig(TimeUnit.SECONDS, 1, 0, 0).toOption
+        case Channel.WriterIdle =>
+          StalePeerDetectionConfig(TimeUnit.SECONDS, 0, 1, 0).toOption
+        case Channel.AllIdle =>
+          StalePeerDetectionConfig(TimeUnit.SECONDS, 0, 0, 1).toOption
+      }
+
+      (for {
+        client <- DynamicTLSPeerGroup[String](
+          getCorrectConfig(stalePeerDetectionConfig = stalePeerDetectionConfig)
+        )
+        server <- DynamicTLSPeerGroup[String](
+          getCorrectConfig(stalePeerDetectionConfig = stalePeerDetectionConfig)
+        )
+        ch1 <- client.client(server.processAddress)
+      } yield (client, server, ch1)).use {
+        case (client, server, clientChannel) =>
+          for {
+            sChannelAndRelease <- server.serverEventObservable.collectChannelCreated.headL
+            (serverChannel, releaser) = sChannelAndRelease
+            events <- Task.parZip2(clientChannel.nextChannelEvent, serverChannel.nextChannelEvent)
+            (clientEvent, serverEvent) = events
+            _ <- releaser
+          } yield {
+            assert(clientEvent.contains(ChannelIdle(idleEventType, first = true)))
+            assert(serverEvent.contains(ChannelIdle(idleEventType, first = true)))
+          }
+      }
     }
   }
 
@@ -575,11 +631,22 @@ object DynamicTLSPeerGroupSpec {
       useNativeTlsImplementation: Boolean = false,
       maxFrameLength: Int = 192000,
       maxQueueSize: Int = 100,
-      lengthFieldLength: Int = 4
+      lengthFieldLength: Int = 4,
+      stalePeerDetectionConfig: Option[StalePeerDetectionConfig] = None
   ): DynamicTLSPeerGroup.Config = {
     val hostkeyPair = CryptoUtils.genEcKeyPair(rnd, Secp256k1.curveName)
     val framingConfig = FramingConfig.buildStandardFrameConfig(maxFrameLength, lengthFieldLength).getOrElse(fail())
-    Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation, framingConfig, maxQueueSize, None).get
+    Config(
+      address,
+      Secp256k1,
+      hostkeyPair,
+      rnd,
+      useNativeTlsImplementation,
+      framingConfig,
+      maxQueueSize,
+      None,
+      stalePeerDetectionConfig
+    ).get
   }
 
   def getCorrectConfigBouncyCastle(
@@ -591,7 +658,7 @@ object DynamicTLSPeerGroupSpec {
   ): DynamicTLSPeerGroup.Config = {
     val hostkeyPair = CryptoUtils.generateKeyPair(rnd)
     val framingConfig = FramingConfig.buildStandardFrameConfig(maxFrameLength, lengthFieldLength).getOrElse(fail())
-    Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation, framingConfig, maxQueueSize, None).get
+    Config(address, Secp256k1, hostkeyPair, rnd, useNativeTlsImplementation, framingConfig, maxQueueSize, None, None).get
   }
 
   def getIncorrectConfigWrongId(address: InetSocketAddress = aRandomAddress()): DynamicTLSPeerGroup.Config = {
@@ -629,6 +696,7 @@ object DynamicTLSPeerGroupSpec {
       useNativeTlsImplementation = false,
       framingConfig,
       100,
+      None,
       None
     )
   }

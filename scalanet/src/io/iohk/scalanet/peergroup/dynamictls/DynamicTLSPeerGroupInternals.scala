@@ -4,13 +4,22 @@ import java.io.IOException
 import java.net.{ConnectException, InetSocketAddress}
 import java.nio.channels.ClosedChannelException
 import com.typesafe.scalalogging.StrictLogging
-import io.iohk.scalanet.peergroup.Channel.{ChannelEvent, DecodingError, MessageReceived, UnexpectedError}
+import io.iohk.scalanet.peergroup.Channel.{
+  AllIdle,
+  ChannelEvent,
+  ChannelIdle,
+  DecodingError,
+  MessageReceived,
+  ReaderIdle,
+  UnexpectedError,
+  WriterIdle
+}
 import io.iohk.scalanet.peergroup.NettyFutureUtils.toTask
 import io.iohk.scalanet.peergroup.PeerGroup.ProxySupport.Socks5Config
 import io.iohk.scalanet.peergroup.PeerGroup.ServerEvent.ChannelCreated
 import io.iohk.scalanet.peergroup.PeerGroup.{ChannelBrokenException, HandshakeException, ServerEvent}
 import io.iohk.scalanet.peergroup.dynamictls.CustomHandlers.ThrottlingIpFilter
-import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{FramingConfig, PeerInfo}
+import io.iohk.scalanet.peergroup.dynamictls.DynamicTLSPeerGroup.{FramingConfig, PeerInfo, StalePeerDetectionConfig}
 import io.iohk.scalanet.peergroup.{Channel, CloseableQueue, InetMultiAddress, PeerGroup}
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.{ByteBuf, Unpooled}
@@ -33,6 +42,7 @@ import scala.concurrent.Promise
 import scala.util.control.NonFatal
 import io.netty.handler.codec.{LengthFieldBasedFrameDecoder, LengthFieldPrepender, TooLongFrameException}
 import io.netty.handler.proxy.Socks5ProxyHandler
+import io.netty.handler.timeout.{IdleState, IdleStateEvent, IdleStateHandler}
 import scodec.Attempt.{Failure, Successful}
 import scodec.Codec
 
@@ -58,6 +68,10 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
     (decoder, encoder)
   }
 
+  def buildIdlePeerHandler(config: StalePeerDetectionConfig): IdleStateHandler = {
+    new IdleStateHandler(config.readerIdleTime, config.writerIdleTime, config.allIdleTime, config.timeUnit)
+  }
+
   implicit class ChannelOps(val channel: io.netty.channel.Channel) {
     def sendMessage[M](m: M)(implicit codec: Codec[M]): Task[Unit] =
       for {
@@ -69,10 +83,17 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
   class MessageNotifier[M](
       messageQueue: ChannelAwareQueue[ChannelEvent[M]],
       codec: Codec[M],
-      eventLoop: EventLoop,
-      channelConfig: ChannelConfig
+      eventLoop: EventLoop
   ) extends ChannelInboundHandlerAdapter
       with StrictLogging {
+
+    private def idleEventToChannelEvent(idleStateEvent: IdleStateEvent): ChannelIdle = {
+      idleStateEvent.state() match {
+        case IdleState.READER_IDLE => ChannelIdle(ReaderIdle, idleStateEvent.isFirst)
+        case IdleState.WRITER_IDLE => ChannelIdle(WriterIdle, idleStateEvent.isFirst)
+        case IdleState.ALL_IDLE => ChannelIdle(AllIdle, idleStateEvent.isFirst)
+      }
+    }
 
     // This should be a single threaded scheduler, so as long as we use `runAsyncAndForget` it shouldn't change the message ordering.
     val scheduler = Scheduler(eventLoop)
@@ -117,12 +138,25 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
       }
     }
 
+    override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
+      evt match {
+        case idleStateEvent: IdleStateEvent =>
+          val channelIdleEvent = idleEventToChannelEvent(idleStateEvent)
+          logger.debug("Peer with address {} generated idle event {}", ctx.channel().remoteAddress(), channelIdleEvent)
+          handleEvent(channelIdleEvent)
+      }
+    }
+
     private def handleEvent(event: ChannelEvent[M]): Unit =
       // Don't want to lose message, so `offer`, not `tryOffer`.
       executeAsync(messageQueue.offer(event).void)
 
     private def executeAsync(task: Task[Unit]): Unit =
       task.runAsyncAndForget(scheduler)
+  }
+
+  object MessageNotifier {
+    val MessageNotifiedHandlerName = "MessageNotifier"
   }
 
   class ClientChannelBuilder[M](
@@ -132,7 +166,8 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
       sslClientCtx: SslContext,
       framingConfig: DynamicTLSPeerGroup.FramingConfig,
       maxIncomingQueueSize: Int,
-      socks5Config: Option[Socks5Config]
+      socks5Config: Option[Socks5Config],
+      idlePeerConfig: Option[StalePeerDetectionConfig]
   )(implicit scheduler: Scheduler, codec: Codec[M])
       extends StrictLogging {
     val (decoder, encoder) = buildFramingCodecs(framingConfig)
@@ -167,6 +202,18 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
                     )
                     if (e.isSuccess) {
                       logger.debug("Handshake to peer {} succeeded", peerInfo)
+
+                      // idle peer handler is installed only after successful tls handshake so that only time after connection
+                      // is counted to idle time counter (not time of the handshake itself)
+                      idlePeerConfig.foreach(
+                        config =>
+                          pipeline.addBefore(
+                            MessageNotifier.MessageNotifiedHandlerName,
+                            "IdlePeerHandler",
+                            buildIdlePeerHandler(config)
+                          )
+                      )
+
                       activation.success((ch, messageQueue))
                     } else {
                       logger.debug("Handshake to peer {} failed due to {}", peerInfo, e: Any)
@@ -183,7 +230,10 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
             })
             .addLast(encoder)
             .addLast(decoder)
-            .addLast(new MessageNotifier[M](messageQueue, codec, ch.eventLoop, ch.config()))
+            .addLast(
+              MessageNotifier.MessageNotifiedHandlerName,
+              new MessageNotifier[M](messageQueue, codec, ch.eventLoop)
+            )
           ()
         }
       })
@@ -225,7 +275,8 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
       sslServerCtx: SslContext,
       framingConfig: DynamicTLSPeerGroup.FramingConfig,
       maxIncomingQueueSize: Int,
-      throttlingIpFilter: Option[ThrottlingIpFilter]
+      throttlingIpFilter: Option[ThrottlingIpFilter],
+      idlePeerConfig: Option[StalePeerDetectionConfig]
   )(implicit scheduler: Scheduler, codec: Codec[M])
       extends StrictLogging {
     val sslHandler = sslServerCtx.newHandler(nettyChannel.alloc())
@@ -233,15 +284,14 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
     val messageQueue = makeMessageQueue[M](maxIncomingQueueSize, nettyChannel.config())
     val sslEngine = sslHandler.engine()
 
-    val pipeLine = nettyChannel.pipeline()
+    val pipeline = nettyChannel.pipeline()
 
     val (decoder, encoder) = buildFramingCodecs(framingConfig)
 
     // adding throttling filter as first (if configures), so if its connection from address which breaks throttling rules
     // it will be closed immediately without using more resources
-    throttlingIpFilter.foreach(filter => pipeLine.addLast(filter))
-
-    pipeLine
+    throttlingIpFilter.foreach(filter => pipeline.addLast(filter))
+    pipeline
       .addLast("ssl", sslHandler) //This needs to be first
       .addLast(new ChannelInboundHandlerAdapter() {
         override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit = {
@@ -258,6 +308,18 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
                   s"Ssl Handshake server channel from $localAddress " +
                     s"to $remoteAddress with channel id ${ctx.channel().id} and ssl status ${e.isSuccess}"
                 )
+
+                // idle peer handler is installed only after successful tls handshake so that only time after connection
+                // is counted to idle time counter (not time of the handshake itself)
+                idlePeerConfig.foreach(
+                  config =>
+                    pipeline.addBefore(
+                      MessageNotifier.MessageNotifiedHandlerName,
+                      "IdlePeerHandler",
+                      buildIdlePeerHandler(config)
+                    )
+                )
+
                 val info = PeerInfo(peerId, InetMultiAddress(nettyChannel.remoteAddress()))
                 val channel = new DynamicTlsChannel[M](localId, info, nettyChannel, messageQueue, ServerChannel)
                 handleEvent(ChannelCreated(channel, channel.close()))
@@ -279,7 +341,10 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
       })
       .addLast(encoder)
       .addLast(decoder)
-      .addLast(new MessageNotifier(messageQueue, codec, nettyChannel.eventLoop, nettyChannel.config()))
+      .addLast(
+        MessageNotifier.MessageNotifiedHandlerName,
+        new MessageNotifier(messageQueue, codec, nettyChannel.eventLoop)
+      )
 
     private def handleEvent(event: ServerEvent[PeerInfo, M]): Unit =
       serverQueue.offer(event).void.runSyncUnsafe()

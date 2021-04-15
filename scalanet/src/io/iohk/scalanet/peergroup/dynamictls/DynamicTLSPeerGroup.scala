@@ -33,7 +33,7 @@ import scodec.Codec
 import scodec.bits.BitVector
 
 import java.nio.ByteOrder
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration.{FiniteDuration, TimeUnit}
 import scala.util.Try
 import scala.util.control.NonFatal
 
@@ -44,10 +44,13 @@ import scala.util.control.NonFatal
   * that are not instances of TLSPeerGroup.
   *
   * @param config bind address etc. See the companion object.
-  * @param codec  a decco codec for reading writing messages to NIO ByteBuffer.
+  * @param codec  a codec for reading writing messages to NIO ByteBuffer.
   * @tparam M the message type.
   */
-class DynamicTLSPeerGroup[M] private (val config: Config)(
+class DynamicTLSPeerGroup[M] private (
+    val config: Config,
+    serverQueue: CloseableQueue[ServerEvent[PeerInfo, M]]
+)(
     implicit codec: Codec[M],
     scheduler: Scheduler
 ) extends TerminalPeerGroup[PeerInfo, M]
@@ -55,10 +58,6 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
     with StrictLogging {
 
   private val sslServerCtx: SslContext = DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForServer, config)
-
-  // Using MPMC because the channel creation event is only pushed after the SSL handshake,
-  // which should take place on the channel thread, not the boss thread.
-  private val serverQueue = CloseableQueue.unbounded[ServerEvent[PeerInfo, M]](ChannelType.MPMC).runSyncUnsafe()
 
   private val workerGroup = new NioEventLoopGroup()
 
@@ -85,7 +84,8 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
           sslServerCtx,
           config.framingConfig,
           config.maxIncomingMessageQueueSize,
-          throttlingFilter
+          throttlingFilter,
+          config.stalePeerDetectionConfig
         )
         logger.info(s"$processAddress received inbound from ${ch.remoteAddress()}.")
       }
@@ -117,7 +117,8 @@ class DynamicTLSPeerGroup[M] private (val config: Config)(
           DynamicTLSPeerGroupUtils.buildCustomSSlContext(SSLContextForClient(to), config),
           config.framingConfig,
           config.maxIncomingMessageQueueSize,
-          proxyConfig
+          proxyConfig,
+          config.stalePeerDetectionConfig
         ).initialize
       }
     )(_.close())
@@ -309,6 +310,29 @@ object DynamicTLSPeerGroup {
     */
   case class IncomingConnectionThrottlingConfig(throttleLocalhost: Boolean, throttlingDuration: FiniteDuration)
 
+  class StalePeerDetectionConfig private (
+      val timeUnit: TimeUnit,
+      val readerIdleTime: Long,
+      val writerIdleTime: Long,
+      val allIdleTime: Long
+  )
+
+  object StalePeerDetectionConfig {
+    def apply(
+        timeUnit: TimeUnit,
+        readerIdleTime: Long,
+        writerIdleTime: Long,
+        allIdleTime: Long
+    ): Either[ConfigError, StalePeerDetectionConfig] = {
+      if (readerIdleTime < 0 || writerIdleTime < 0 || allIdleTime < 0) {
+        Left(ConfigError("All time values should be non-negative"))
+      } else {
+        Right(new StalePeerDetectionConfig(timeUnit, readerIdleTime, writerIdleTime, allIdleTime))
+      }
+
+    }
+  }
+
   case class Config(
       bindAddress: InetSocketAddress,
       peerInfo: PeerInfo,
@@ -317,7 +341,8 @@ object DynamicTLSPeerGroup {
       useNativeTlsImplementation: Boolean,
       framingConfig: FramingConfig,
       maxIncomingMessageQueueSize: Int,
-      incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
+      incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig],
+      stalePeerDetectionConfig: Option[StalePeerDetectionConfig]
   )
 
   object Config {
@@ -330,7 +355,8 @@ object DynamicTLSPeerGroup {
         useNativeTlsImplementation: Boolean,
         framingConfig: FramingConfig,
         maxIncomingMessageQueueSize: Int,
-        incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
+        incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig],
+        stalePeerDetectionConfig: Option[StalePeerDetectionConfig]
     ): Try[Config] = {
 
       SignedKeyExtensionNodeData(keyType, hostKeyPair, Secp256r1, secureRandom, SHA256withECDSA).map { nodeData =>
@@ -342,7 +368,8 @@ object DynamicTLSPeerGroup {
           useNativeTlsImplementation,
           framingConfig,
           maxIncomingMessageQueueSize: Int,
-          incomingConnectionsThrottling
+          incomingConnectionsThrottling,
+          stalePeerDetectionConfig
         )
       }
     }
@@ -355,7 +382,8 @@ object DynamicTLSPeerGroup {
         useNativeTlsImplementation: Boolean,
         framingConfig: FramingConfig,
         maxIncomingMessageQueueSize: Int,
-        incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig]
+        incomingConnectionsThrottling: Option[IncomingConnectionThrottlingConfig],
+        stalePeerDetectionConfig: Option[StalePeerDetectionConfig]
     ): Try[Config] = {
       val convertedKeyPair = CryptoUtils.convertBcToJceKeyPair(hostKeyPair)
       Config(
@@ -366,7 +394,8 @@ object DynamicTLSPeerGroup {
         useNativeTlsImplementation,
         framingConfig,
         maxIncomingMessageQueueSize,
-        incomingConnectionsThrottling
+        incomingConnectionsThrottling,
+        stalePeerDetectionConfig
       )
     }
   }
@@ -375,8 +404,11 @@ object DynamicTLSPeerGroup {
   def apply[M: Codec](config: Config)(implicit scheduler: Scheduler): Resource[Task, DynamicTLSPeerGroup[M]] =
     Resource.make {
       for {
+        // Using MPMC because the channel creation event is only pushed after the SSL handshake,
+        // which should take place on the channel thread, not the boss thread.
+        queue <- CloseableQueue.unbounded[ServerEvent[PeerInfo, M]](ChannelType.MPMC)
         // NOTE: The DynamicTLSPeerGroup creates Netty workgroups in its constructor, so calling `shutdown` is a must.
-        pg <- Task(new DynamicTLSPeerGroup[M](config))
+        pg <- Task(new DynamicTLSPeerGroup[M](config, queue))
         // NOTE: In theory we wouldn't have to initialize a peer group (i.e. start listening to incoming events)
         // if all we wanted was to connect to remote clients, however to clean up we must call `shutdown` at which point
         // it will start and stop the server anyway, and the interface itself suggests that one can always start concuming
