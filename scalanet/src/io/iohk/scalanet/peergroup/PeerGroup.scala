@@ -67,7 +67,22 @@ object Channel {
   final case class UnexpectedError(e: Throwable) extends ChannelEvent[Nothing]
   final case object DecodingError extends ChannelEvent[Nothing]
 
-  // only used in DynamicTlsPeerGroup
+  /**
+    *  only used in DynamicTlsPeerGroup, indicated that there was no action on particular channel
+    *  Basic rules regarding idle events:
+    *  1. Idle events are raised once per timeout i.e if reader idle time is configured to 5 second, then every
+    *     5 seconds ChannelIdle(ReaderIdle, _) event will be generated if there is no incoming traffic
+    *
+    *  2. `first` flag means that this is the first idle event of given type since last activity i.e
+    *       - in case `ReaderIdle -> AllIdle -> ReaderIdle`, the idle events look like:
+    *       `ChannelIdle(ReaderIdle, first = true) -> ChannelIdle(AllIdle, first = true) -> ChannelIdle(ReaderIdle, first = false)`
+    *       - in case `ReaderIdle -> IncomingRead -> ReaderIdle -> ReaderIdle`
+    *       `ChannelIdle(ReaderIdle, first = true) -> ChannelIdle(ReaderIdle, first = true) -> ChannelIdle(ReaderIdle, first = false)`
+    *
+    * @param idleState type of idle event
+    * @param first flag indicating if this is first idle event since last activity
+    *
+    */
   final case class ChannelIdle(idleState: IdleState, first: Boolean) extends ChannelEvent[Nothing]
 }
 

@@ -318,7 +318,7 @@ object DynamicTLSPeerGroup {
     * @param writerIdleTime a ChannelIdle event whose state is WriterIdle will be triggered when
     *                       no write was performed for the specified period of time on given channel. Specify 0 to disable.
     * @param allIdleTime a ChannelIdle event whose state is AllIdle will be triggered when
-    *                       no read was performed for the specified period of time on given channel. Specify 0 to disable.
+    *                      neither read nor write was performed for the specified period of time on given channel. Specify 0 to disable.
     *
     */
   class StalePeerDetectionConfig private (
