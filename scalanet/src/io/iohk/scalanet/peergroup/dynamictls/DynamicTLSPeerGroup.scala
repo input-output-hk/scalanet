@@ -310,6 +310,17 @@ object DynamicTLSPeerGroup {
     */
   case class IncomingConnectionThrottlingConfig(throttleLocalhost: Boolean, throttlingDuration: FiniteDuration)
 
+  /**
+    * Configures detection on idle peer
+    * @param timeUnit unit of time for all time configs
+    * @param readerIdleTime a ChannelIdle event whose state is ReaderIdle will be triggered when
+    *                       no read was performed for the specified period of time on given channel. Specify 0 to disable.
+    * @param writerIdleTime a ChannelIdle event whose state is WriterIdle will be triggered when
+    *                       no write was performed for the specified period of time on given channel. Specify 0 to disable.
+    * @param allIdleTime a ChannelIdle event whose state is AllIdle will be triggered when
+    *                       no read was performed for the specified period of time on given channel. Specify 0 to disable.
+    *
+    */
   class StalePeerDetectionConfig private (
       val timeUnit: TimeUnit,
       val readerIdleTime: Long,
@@ -329,10 +340,23 @@ object DynamicTLSPeerGroup {
       } else {
         Right(new StalePeerDetectionConfig(timeUnit, readerIdleTime, writerIdleTime, allIdleTime))
       }
-
     }
   }
 
+  /**
+    *
+    * Configuration for DynamicTlsPeerGroup with all possible options
+    *
+    * @param bindAddress the interface to which server should be bind
+    * @param peerInfo local id of the peer and server address
+    * @param connectionKeyPair keyPair used in negotiating tls connections
+    * @param connectionCertificate  connection certificate of local node
+    * @param useNativeTlsImplementation should native or java tls implementation be used
+    * @param framingConfig details about framing on the wire
+    * @param maxIncomingMessageQueueSize max number of un-read messages per remote peer
+    * @param incomingConnectionsThrottling optional possibility to throttle incoming connections
+    * @param stalePeerDetectionConfig optional possibility to detect if remote peer is idle
+    */
   case class Config(
       bindAddress: InetSocketAddress,
       peerInfo: PeerInfo,
