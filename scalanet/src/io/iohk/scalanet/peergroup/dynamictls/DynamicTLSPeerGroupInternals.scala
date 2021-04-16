@@ -46,6 +46,8 @@ import io.netty.handler.timeout.{IdleState, IdleStateEvent, IdleStateHandler}
 import scodec.Attempt.{Failure, Successful}
 import scodec.Codec
 
+import java.util.concurrent.TimeUnit
+
 private[peergroup] object DynamicTLSPeerGroupInternals {
   def buildFramingCodecs(config: FramingConfig): (LengthFieldBasedFrameDecoder, LengthFieldPrepender) = {
     val encoder = new LengthFieldPrepender(
@@ -69,7 +71,12 @@ private[peergroup] object DynamicTLSPeerGroupInternals {
   }
 
   def buildIdlePeerHandler(config: StalePeerDetectionConfig): IdleStateHandler = {
-    new IdleStateHandler(config.readerIdleTime, config.writerIdleTime, config.allIdleTime, config.timeUnit)
+    new IdleStateHandler(
+      config.readerIdleTime.toMillis,
+      config.writerIdleTime.toMillis,
+      config.allIdleTime.toMillis,
+      TimeUnit.MILLISECONDS
+    )
   }
 
   implicit class ChannelOps(val channel: io.netty.channel.Channel) {

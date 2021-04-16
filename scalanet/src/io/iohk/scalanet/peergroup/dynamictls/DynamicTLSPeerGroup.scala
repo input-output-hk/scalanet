@@ -33,7 +33,7 @@ import scodec.Codec
 import scodec.bits.BitVector
 
 import java.nio.ByteOrder
-import scala.concurrent.duration.{FiniteDuration, TimeUnit}
+import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
 import scala.util.control.NonFatal
 
@@ -312,7 +312,6 @@ object DynamicTLSPeerGroup {
 
   /**
     * Configures detection on idle peer
-    * @param timeUnit unit of time for all time configs
     * @param readerIdleTime a ChannelIdle event whose state is ReaderIdle will be triggered when
     *                       no read was performed for the specified period of time on given channel. Specify 0 to disable.
     * @param writerIdleTime a ChannelIdle event whose state is WriterIdle will be triggered when
@@ -321,27 +320,11 @@ object DynamicTLSPeerGroup {
     *                      neither read nor write was performed for the specified period of time on given channel. Specify 0 to disable.
     *
     */
-  class StalePeerDetectionConfig private (
-      val timeUnit: TimeUnit,
-      val readerIdleTime: Long,
-      val writerIdleTime: Long,
-      val allIdleTime: Long
+  case class StalePeerDetectionConfig(
+      readerIdleTime: FiniteDuration,
+      writerIdleTime: FiniteDuration,
+      allIdleTime: FiniteDuration
   )
-
-  object StalePeerDetectionConfig {
-    def apply(
-        timeUnit: TimeUnit,
-        readerIdleTime: Long,
-        writerIdleTime: Long,
-        allIdleTime: Long
-    ): Either[ConfigError, StalePeerDetectionConfig] = {
-      if (readerIdleTime < 0 || writerIdleTime < 0 || allIdleTime < 0) {
-        Left(ConfigError("All time values should be non-negative"))
-      } else {
-        Right(new StalePeerDetectionConfig(timeUnit, readerIdleTime, writerIdleTime, allIdleTime))
-      }
-    }
-  }
 
   /**
     *

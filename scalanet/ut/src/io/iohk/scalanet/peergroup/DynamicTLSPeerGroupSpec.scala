@@ -56,7 +56,7 @@ import scodec.codecs.implicits._
 import sockslib.server.{SocksProxyServer, SocksProxyServerFactory}
 import org.scalatest.prop.TableDrivenPropertyChecks._
 
-import java.util.concurrent.{TimeUnit, TimeoutException}
+import java.util.concurrent.TimeoutException
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Random
@@ -140,19 +140,19 @@ class DynamicTLSPeerGroupSpec extends AsyncFlatSpec with BeforeAndAfterAll {
     it should s"generate ${label} event ${description}" in taskTestCase {
       val stalePeerDetectionConfig = idleEventType match {
         case Channel.ReaderIdle =>
-          StalePeerDetectionConfig(TimeUnit.SECONDS, 1, 0, 0).toOption
+          StalePeerDetectionConfig(1.second, 0.second, 0.second)
         case Channel.WriterIdle =>
-          StalePeerDetectionConfig(TimeUnit.SECONDS, 0, 1, 0).toOption
+          StalePeerDetectionConfig(0.second, 1.second, 0.second)
         case Channel.AllIdle =>
-          StalePeerDetectionConfig(TimeUnit.SECONDS, 0, 0, 1).toOption
+          StalePeerDetectionConfig(0.second, 0.second, 1.second)
       }
 
       (for {
         client <- DynamicTLSPeerGroup[String](
-          getCorrectConfig(stalePeerDetectionConfig = stalePeerDetectionConfig)
+          getCorrectConfig(stalePeerDetectionConfig = Some(stalePeerDetectionConfig))
         )
         server <- DynamicTLSPeerGroup[String](
-          getCorrectConfig(stalePeerDetectionConfig = stalePeerDetectionConfig)
+          getCorrectConfig(stalePeerDetectionConfig = Some(stalePeerDetectionConfig))
         )
         ch1 <- client.client(server.processAddress)
       } yield (client, server, ch1)).use {

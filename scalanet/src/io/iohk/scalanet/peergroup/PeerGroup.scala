@@ -76,7 +76,7 @@ object Channel {
     *  2. `first` flag means that this is the first idle event of given type since last activity i.e
     *       - in case `ReaderIdle -> AllIdle -> ReaderIdle`, the idle events look like:
     *       `ChannelIdle(ReaderIdle, first = true) -> ChannelIdle(AllIdle, first = true) -> ChannelIdle(ReaderIdle, first = false)`
-    *       - in case `ReaderIdle -> IncomingRead -> ReaderIdle -> ReaderIdle`
+    *       - in case `ReaderIdle -> IncomingRead  -> ReaderIdle -> ReaderIdle`
     *       `ChannelIdle(ReaderIdle, first = true) -> ChannelIdle(ReaderIdle, first = true) -> ChannelIdle(ReaderIdle, first = false)`
     *
     * @param idleState type of idle event
